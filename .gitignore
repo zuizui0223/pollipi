@@ -13,3 +13,10 @@ adaptive_metrics.csv
 autonomous_run.json
 *.log
 .pollipi_askpass.cmd
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+dist/
+coverage/
