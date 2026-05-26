@@ -115,6 +115,8 @@ http://zuizui2.local:8000/app/
 - 各カメラの撮影中 / 停止中、撮影枚数、現在間隔、最終撮影時刻の確認
 - 1 - 3600 秒の撮影間隔設定
 - 2 台同時または個別の撮影開始・停止
+- 各 Raspberry Pi の保存画像フォルダ一覧表示
+- 不要な撮影画像の削除（確認画面あり）
 
 iPad の Safari で共有ボタンから「ホーム画面に追加」を選ぶと、PolliPi を
 アプリアイコンのように起動できます。画面は 4 秒ごとに状態を更新します。
@@ -146,6 +148,19 @@ curl http://zuizui2.local:8000/status
 ```bash
 curl http://zuizui.local:8000/latest --output latest-module3.jpg
 curl http://zuizui2.local:8000/latest --output latest-ai-camera.jpg
+```
+
+保存画像一覧を取得します。`limit` には最大 200 枚まで指定できます。
+
+```bash
+curl "http://zuizui.local:8000/images?limit=40"
+```
+
+一覧にある画像を取得、または削除します。削除は元に戻せません。
+
+```bash
+curl http://zuizui.local:8000/images/image_20260526_143010_123456.jpg --output selected.jpg
+curl -X DELETE http://zuizui.local:8000/images/image_20260526_143010_123456.jpg
 ```
 
 タイムラプスを停止します。
