@@ -1,5 +1,5 @@
 {
-  "name": "PolliPi Timelapse Controller",
+  "name": "PolliPi Field Observer",
   "short_name": "PolliPi",
   "start_url": "/app/",
   "display": "standalone",
