@@ -1,0 +1,16 @@
+{
+  "name": "PolliPi Timelapse Controller",
+  "short_name": "PolliPi",
+  "start_url": "/app/",
+  "display": "standalone",
+  "background_color": "#f3f3ec",
+  "theme_color": "#102820",
+  "icons": [
+    {
+      "src": "/app/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
