@@ -90,6 +90,29 @@
         </article>
       </section>
 
+      <section class="gallery-panel" aria-label="撮影フォルダ">
+        <div class="gallery-header">
+          <div>
+            <p class="section-title">撮影フォルダ</p>
+            <h2>保存画像を確認・整理</h2>
+            <p class="hint">削除した写真は元に戻せません。必要な画像は削除前に確認してください。</p>
+          </div>
+          <div class="gallery-switch" role="group" aria-label="表示するカメラ">
+            <button class="gallery-tab selected" data-gallery-camera="module3" type="button">Module 3</button>
+            <button class="gallery-tab" data-gallery-camera="ai" type="button">AI Camera</button>
+          </div>
+        </div>
+        <div class="folder-summary">
+          <span id="gallery-camera-label">Module 3 Wide</span>
+          <span id="gallery-count">読み込み中...</span>
+          <span id="gallery-size"></span>
+        </div>
+        <p class="folder-path" id="gallery-folder-path">保存先を読み込み中...</p>
+        <div class="gallery-grid" id="gallery-grid">
+          <p class="gallery-empty">画像一覧を読み込んでいます...</p>
+        </div>
+      </section>
+
       <footer class="footer">
         <span id="sync-label">状態を読み込み中...</span>
         <span>研究プロトタイプ</span>
