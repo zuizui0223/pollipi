@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +29,25 @@ class StatusResponse(BaseModel):
     capture_count: int
     last_capture_time: Optional[str]
     last_image: Optional[str]
+    message: str
+
+
+class ImageInfo(BaseModel):
+    filename: str
+    captured_at: str
+    size_bytes: int
+    url: str
+
+
+class ImageListResponse(BaseModel):
+    image_dir: str
+    image_count: int
+    total_size_bytes: int
+    images: list[ImageInfo]
+
+
+class DeleteImageResponse(BaseModel):
+    deleted: str
     message: str
 
 
@@ -116,6 +135,12 @@ class TimelapseController:
         path = Path(image)
         return path if path.is_file() else None
 
+    def clear_latest_if_deleted(self, deleted_path: Path) -> None:
+        with self._lock:
+            if self.last_image == str(deleted_path):
+                self.last_image = None
+                self.last_capture_time = None
+
     def _capture_loop(self, stop_event: threading.Event, interval_sec: float) -> None:
         camera = None
         try:
@@ -173,7 +198,7 @@ app = FastAPI(title="PolliPi Timelapse API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -207,3 +232,51 @@ def get_latest() -> FileResponse:
     if image_path is None:
         raise HTTPException(status_code=404, detail="No captured image is available.")
     return FileResponse(image_path, media_type="image/jpeg", filename=image_path.name)
+
+
+def image_file(filename: str) -> Path:
+    if Path(filename).name != filename or Path(filename).suffix.lower() not in {".jpg", ".jpeg"}:
+        raise HTTPException(status_code=400, detail="Invalid image filename.")
+    path = IMAGE_DIR / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Image not found.")
+    return path
+
+
+@app.get("/images", response_model=ImageListResponse)
+def list_images(limit: int = Query(default=40, ge=1, le=200)) -> ImageListResponse:
+    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    image_paths = sorted(
+        (path for path in IMAGE_DIR.iterdir() if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg"}),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    images = [
+        ImageInfo(
+            filename=path.name,
+            captured_at=datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat(timespec="seconds"),
+            size_bytes=path.stat().st_size,
+            url=f"/images/{path.name}",
+        )
+        for path in image_paths[:limit]
+    ]
+    return ImageListResponse(
+        image_dir=str(IMAGE_DIR),
+        image_count=len(image_paths),
+        total_size_bytes=sum(path.stat().st_size for path in image_paths),
+        images=images,
+    )
+
+
+@app.get("/images/{filename}")
+def get_image(filename: str) -> FileResponse:
+    path = image_file(filename)
+    return FileResponse(path, media_type="image/jpeg", filename=path.name)
+
+
+@app.delete("/images/{filename}", response_model=DeleteImageResponse)
+def delete_image(filename: str) -> DeleteImageResponse:
+    path = image_file(filename)
+    path.unlink()
+    controller.clear_latest_if_deleted(path)
+    return DeleteImageResponse(deleted=filename, message="Image deleted.")
