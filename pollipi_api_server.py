@@ -10,13 +10,14 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
 IMAGE_DIR = Path("/home/zuizui0223/pollipi_timelapse/images")
 WEB_DIR = Path(__file__).parent / "web"
+PREVIEW_PATH = Path("/tmp/pollipi_preview.jpg")
 
 
 class StartRequest(BaseModel):
@@ -51,12 +52,23 @@ class DeleteImageResponse(BaseModel):
     message: str
 
 
+class DeleteAllRequest(BaseModel):
+    confirm: str
+
+
+class DeleteAllResponse(BaseModel):
+    deleted_count: int
+    message: str
+
+
 class TimelapseController:
     def __init__(self, image_dir: Path) -> None:
         self.image_dir = image_dir
         self._lock = threading.Lock()
         self._stop_event: Optional[threading.Event] = None
         self._thread: Optional[threading.Thread] = None
+        self._camera = None
+        self._camera_lock = threading.Lock()
         self.running = False
         self.interval_sec: Optional[float] = None
         self.capture_count = 0
@@ -135,11 +147,20 @@ class TimelapseController:
         path = Path(image)
         return path if path.is_file() else None
 
-    def clear_latest_if_deleted(self, deleted_path: Path) -> None:
+    def clear_latest_if_deleted(self, deleted_path: Optional[Path] = None) -> None:
         with self._lock:
-            if self.last_image == str(deleted_path):
+            if deleted_path is None or self.last_image == str(deleted_path):
                 self.last_image = None
                 self.last_capture_time = None
+
+    def preview_frame(self) -> bytes:
+        with self._lock:
+            camera = self._camera
+        if camera is None:
+            raise RuntimeError("Start timelapse before opening live preview.")
+        with self._camera_lock:
+            camera.capture_file(str(PREVIEW_PATH))
+            return PREVIEW_PATH.read_bytes()
 
     def _capture_loop(self, stop_event: threading.Event, interval_sec: float) -> None:
         camera = None
@@ -150,6 +171,8 @@ class TimelapseController:
             camera = Picamera2()
             camera.configure(camera.create_still_configuration())
             camera.start()
+            with self._lock:
+                self._camera = camera
 
             # Give automatic exposure and white balance a moment to settle.
             if stop_event.wait(2):
@@ -162,7 +185,8 @@ class TimelapseController:
                 captured_at = datetime.now().astimezone()
                 filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
                 image_path = self.image_dir / filename
-                camera.capture_file(str(image_path))
+                with self._camera_lock:
+                    camera.capture_file(str(image_path))
 
                 with self._lock:
                     self.capture_count += 1
@@ -177,11 +201,13 @@ class TimelapseController:
                 self.message = f"Capture error: {exc}"
         finally:
             if camera is not None:
-                try:
-                    camera.stop()
-                finally:
-                    camera.close()
+                with self._camera_lock:
+                    try:
+                        camera.stop()
+                    finally:
+                        camera.close()
             with self._lock:
+                self._camera = None
                 self.running = False
 
 
@@ -234,6 +260,15 @@ def get_latest() -> FileResponse:
     return FileResponse(image_path, media_type="image/jpeg", filename=image_path.name)
 
 
+@app.get("/preview")
+def get_preview() -> Response:
+    try:
+        frame = controller.preview_frame()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(content=frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
 def image_file(filename: str) -> Path:
     if Path(filename).name != filename or Path(filename).suffix.lower() not in {".jpg", ".jpeg"}:
         raise HTTPException(status_code=400, detail="Invalid image filename.")
@@ -280,3 +315,20 @@ def delete_image(filename: str) -> DeleteImageResponse:
     path.unlink()
     controller.clear_latest_if_deleted(path)
     return DeleteImageResponse(deleted=filename, message="Image deleted.")
+
+
+@app.delete("/images", response_model=DeleteAllResponse)
+def delete_all_images(request: DeleteAllRequest) -> DeleteAllResponse:
+    if request.confirm != "DELETE_ALL":
+        raise HTTPException(status_code=400, detail="Type DELETE_ALL to confirm deletion.")
+    if controller.status().running:
+        raise HTTPException(status_code=409, detail="Stop timelapse before deleting all images.")
+    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    image_paths = [
+        path for path in IMAGE_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg"}
+    ]
+    for path in image_paths:
+        path.unlink()
+    controller.clear_latest_if_deleted()
+    return DeleteAllResponse(deleted_count=len(image_paths), message="All images deleted.")
