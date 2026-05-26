@@ -117,6 +117,8 @@ http://zuizui2.local:8000/app/
 - 2 台同時または個別の撮影開始・停止
 - 各 Raspberry Pi の保存画像フォルダ一覧表示
 - 不要な撮影画像の削除（確認画面あり）
+- 撮影中のライブ確認表示（保存画像とは別のプレビュー）
+- 表示中カメラの写真全削除（撮影停止と `DELETE_ALL` 入力が必要）
 
 iPad の Safari で共有ボタンから「ホーム画面に追加」を選ぶと、PolliPi を
 アプリアイコンのように起動できます。画面は 4 秒ごとに状態を更新します。
@@ -161,6 +163,20 @@ curl "http://zuizui.local:8000/images?limit=40"
 ```bash
 curl http://zuizui.local:8000/images/image_20260526_143010_123456.jpg --output selected.jpg
 curl -X DELETE http://zuizui.local:8000/images/image_20260526_143010_123456.jpg
+```
+
+撮影中のライブ確認用 JPEG を取得します。この画像は保存フォルダには追加されません。
+
+```bash
+curl http://zuizui.local:8000/preview --output preview.jpg
+```
+
+保存画像をすべて削除します。撮影停止中のみ実行でき、削除は元に戻せません。
+
+```bash
+curl -X DELETE http://zuizui.local:8000/images \
+  -H "Content-Type: application/json" \
+  -d '{"confirm": "DELETE_ALL"}'
 ```
 
 タイムラプスを停止します。
