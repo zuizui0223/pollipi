@@ -101,6 +101,19 @@ button:disabled {
   color: var(--ink);
 }
 
+.live-camera {
+  grid-column: 1 / -1;
+  border: 1px solid var(--leaf);
+  background: transparent;
+  color: var(--leaf);
+}
+
+.live-camera.live-active {
+  background: var(--warm);
+  border-color: var(--warm);
+  color: var(--ink);
+}
+
 .danger {
   background: #f3dfdc;
   color: var(--stop);
@@ -282,6 +295,129 @@ h2 {
   gap: 10px;
 }
 
+.gallery-panel {
+  margin-top: 22px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--card);
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+
+.gallery-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.gallery-header h2 {
+  margin-bottom: 6px;
+}
+
+.gallery-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border-radius: 14px;
+  background: #f1f2e9;
+  padding: 5px;
+}
+
+.delete-all {
+  align-self: flex-start;
+  font-size: 14px;
+  padding: 0 15px;
+}
+
+.gallery-tab {
+  min-height: 42px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 0 16px;
+}
+
+.gallery-tab.selected {
+  background: var(--leaf);
+  color: white;
+}
+
+.folder-summary {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+  margin-bottom: 15px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.folder-summary span:first-child {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.folder-path {
+  overflow: hidden;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.gallery-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-radius: 13px;
+  background: #f4f4ee;
+  color: var(--muted);
+  padding: 28px 18px;
+  text-align: center;
+}
+
+.gallery-item {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+
+.gallery-item img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #dde2d7;
+  object-fit: cover;
+}
+
+.gallery-detail {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 9px 10px 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.delete-image {
+  width: calc(100% - 20px);
+  min-height: 38px;
+  margin: 0 10px 10px;
+  border: 1px solid #efd1cd;
+  background: #fff5f3;
+  color: var(--stop);
+  font-size: 14px;
+}
+
 .footer {
   display: flex;
   justify-content: space-between;
@@ -317,5 +453,13 @@ h2 {
 
   .camera-grid {
     grid-template-columns: 1fr;
+  }
+
+  .gallery-header {
+    flex-direction: column;
+  }
+
+  .gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
