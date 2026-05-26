@@ -1,7 +1,8 @@
 # PolliPi Timelapse API
 
-Raspberry Pi 5 と Camera Module 3 を Picamera2 で制御する FastAPI サーバーです。
+Raspberry Pi 5 と Camera Module 3 / AI Camera を Picamera2 で制御する FastAPI サーバーです。
 画像は `/home/zuizui0223/pollipi_timelapse/images` に JPEG として保存されます。
+同梱の iPad 向け Web アプリから、2 台の撮影開始・停止と最新画像確認を行えます。
 
 ## 実機構成
 
@@ -43,9 +44,11 @@ python3 -m venv --system-site-packages .venv
 ```powershell
 ssh zuizui0223@zuizui.local "mkdir -p /home/zuizui0223/pollipi_timelapse"
 scp .\pollipi_api_server.py .\README.md zuizui0223@zuizui.local:/home/zuizui0223/pollipi_timelapse/
+scp -r .\web zuizui0223@zuizui.local:/home/zuizui0223/pollipi_timelapse/
 
 ssh zuizui0223@zuizui2.local "mkdir -p /home/zuizui0223/pollipi_timelapse"
 scp .\pollipi_api_server.py .\README.md zuizui0223@zuizui2.local:/home/zuizui0223/pollipi_timelapse/
+scp -r .\web zuizui0223@zuizui2.local:/home/zuizui0223/pollipi_timelapse/
 ```
 
 各 Raspberry Pi に SSH 接続し、依存パッケージをインストールします。
@@ -95,6 +98,26 @@ ssh zuizui0223@zuizui2.local "cd /home/zuizui0223/pollipi_timelapse && .venv/bin
 
 各 API はそれぞれ `http://zuizui.local:8000` と
 `http://zuizui2.local:8000` でアクセスします。
+
+## iPad 操作画面
+
+iPad を Raspberry Pi と同じ Wi-Fi ネットワークに接続し、Safari で次の URL を
+開きます。どちらの URL を開いても 2 台を同じ画面から操作できます。
+
+```text
+http://zuizui.local:8000/app/
+http://zuizui2.local:8000/app/
+```
+
+画面でできること:
+
+- Camera Module 3 Wide と AI Camera の最新画像表示
+- 各カメラの撮影中 / 停止中、撮影枚数、現在間隔、最終撮影時刻の確認
+- 1 - 3600 秒の撮影間隔設定
+- 2 台同時または個別の撮影開始・停止
+
+iPad の Safari で共有ボタンから「ホーム画面に追加」を選ぶと、PolliPi を
+アプリアイコンのように起動できます。画面は 4 秒ごとに状態を更新します。
 
 ## API
 
