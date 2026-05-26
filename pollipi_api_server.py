@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import threading
-import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
 IMAGE_DIR = Path("/home/zuizui0223/pollipi_timelapse/images")
+WEB_DIR = Path(__file__).parent / "web"
 
 
 class StartRequest(BaseModel):
@@ -168,6 +170,20 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="PolliPi Timelapse API", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+if WEB_DIR.is_dir():
+    app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="web-app")
+
+
+@app.get("/", include_in_schema=False)
+def open_app() -> RedirectResponse:
+    return RedirectResponse(url="/app/")
 
 
 @app.post("/start", response_model=StatusResponse)
