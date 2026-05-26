@@ -101,17 +101,16 @@ button:disabled {
   color: var(--ink);
 }
 
-.live-camera {
-  grid-column: 1 / -1;
+.preview-camera {
   border: 1px solid var(--leaf);
   background: transparent;
   color: var(--leaf);
 }
 
-.live-camera.live-active {
-  background: var(--warm);
-  border-color: var(--warm);
-  color: var(--ink);
+.remove-camera {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
 }
 
 .danger {
@@ -136,6 +135,54 @@ button:disabled {
   border-radius: 22px;
   background: var(--card);
   box-shadow: var(--shadow);
+}
+
+.devices-panel,
+.install-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 22px;
+  padding: 20px 24px;
+  margin-bottom: 22px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.devices-panel h2,
+.install-panel h2 {
+  margin-bottom: 5px;
+}
+
+.device-form {
+  display: flex;
+  gap: 9px;
+  width: min(450px, 100%);
+}
+
+.device-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 13px;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.install-panel {
+  align-items: flex-start;
+  background: #e8efe5;
+}
+
+.install-panel p:last-child {
+  max-width: 620px;
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .interval-input {
@@ -166,6 +213,56 @@ button:disabled {
   font-size: 13px;
 }
 
+.auto-toggle {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-top: 15px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.auto-toggle input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--leaf);
+}
+
+.auto-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.auto-settings[hidden] {
+  display: none;
+}
+
+.auto-settings label {
+  border-radius: 9px;
+  background: #f4f4ee;
+  padding: 7px 9px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auto-settings input {
+  width: 55px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px;
+  font-size: 14px;
+}
+
+.auto-settings p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .group-actions {
   display: flex;
   gap: 10px;
@@ -175,6 +272,17 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
+}
+
+.camera-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  border: 1px dashed var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--muted);
+  padding: 36px 18px;
+  text-align: center;
 }
 
 .camera-card {
@@ -257,7 +365,7 @@ h2 {
 
 .metrics {
   display: grid;
-  grid-template-columns: 0.8fr 0.7fr 1.5fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 0 0 15px;
 }
@@ -435,8 +543,11 @@ h2 {
   }
 
   .control-panel,
+  .devices-panel,
+  .install-panel,
   .hero {
     flex-direction: column;
+    align-items: stretch;
   }
 
   .ghost {
@@ -449,6 +560,10 @@ h2 {
 
   .group-actions button {
     flex: 1;
+  }
+
+  .device-form {
+    width: 100%;
   }
 
   .camera-grid {
