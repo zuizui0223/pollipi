@@ -7,17 +7,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PolliPi">
-    <title>PolliPi Timelapse</title>
+    <title>PolliPi Field Observer</title>
     <link rel="manifest" href="/app/manifest.webmanifest">
     <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/app/app.css">
+    <link rel="stylesheet" href="/app/app.css?v=20260526-5">
   </head>
   <body>
     <header class="hero">
       <div>
-        <p class="eyebrow">ADAPTIVE TIMELAPSE LAB</p>
+        <p class="eyebrow">FIELD INSECT OBSERVATION</p>
         <h1>PolliPi</h1>
-        <p class="lead">2台のカメラで変化を観察するタイムラプス・コントローラー</p>
+        <p class="lead">Raspberry Pi 観察機を追加して使える、野外昆虫観察コントローラー</p>
       </div>
       <button class="ghost" id="refresh-button" type="button">更新</button>
     </header>
@@ -31,65 +31,48 @@
             <span>秒</span>
           </label>
           <p class="hint">1 - 3600 秒。開始し直すと新しい間隔が適用されます。</p>
+          <label class="auto-toggle">
+            <input id="auto-mode" type="checkbox">
+            <span>背景差分で撮影間隔を自動調整</span>
+          </label>
+          <label class="auto-toggle">
+            <input id="autonomous-mode" type="checkbox">
+            <span>自律運行（通信切断・再起動後も撮影を継続）</span>
+          </label>
+          <div class="auto-settings" id="auto-settings" hidden>
+            <label>静かな時 <input id="idle-interval" type="number" min="1" max="3600" value="60"> 秒</label>
+            <label>動き候補あり <input id="detection-interval" type="number" min="1" max="3600" value="3"> 秒</label>
+            <p>背景差分による昆虫候補です。風や影でも反応する可能性があります。</p>
+          </div>
         </div>
         <div class="group-actions">
-          <button class="primary" id="start-all" type="button">両方を開始</button>
-          <button class="danger" id="stop-all" type="button">両方を停止</button>
+          <button class="primary" id="start-all" type="button">全機を開始</button>
+          <button class="danger" id="stop-all" type="button">全機を停止</button>
         </div>
       </section>
 
-      <section class="camera-grid" aria-label="カメラ状態">
-        <article class="camera-card" data-camera="module3">
-          <div class="camera-header">
-            <div>
-              <p class="camera-label">CAMERA A</p>
-              <h2>Module 3 Wide</h2>
-              <p class="sensor">imx708_wide / zuizui.local</p>
-            </div>
-            <span class="pill offline" data-field="pill">確認中</span>
-          </div>
-          <div class="image-frame">
-            <img data-field="image" alt="Camera Module 3 の最新画像">
-            <p data-field="empty">最新画像を待っています</p>
-          </div>
-          <dl class="metrics">
-            <div><dt>撮影枚数</dt><dd data-field="count">-</dd></div>
-            <div><dt>間隔</dt><dd data-field="interval">-</dd></div>
-            <div><dt>最終撮影</dt><dd data-field="time">-</dd></div>
-          </dl>
-          <p class="camera-message" data-field="message">接続しています...</p>
-          <div class="card-actions">
-            <button class="primary start-camera" type="button">開始</button>
-            <button class="secondary stop-camera" type="button">停止</button>
-            <button class="live-camera" type="button">ライブ確認</button>
-          </div>
-        </article>
+      <section class="devices-panel" aria-label="観察機の登録">
+        <div>
+          <p class="section-title">観察機</p>
+          <h2>Raspberry Pi を追加</h2>
+          <p class="hint">同じネットワークにある PolliPi の URL を登録します。登録内容はこの iPad に保存されます。</p>
+        </div>
+        <form class="device-form" id="device-form">
+          <input id="device-url" type="url" placeholder="http://pollipi.local:8000" required>
+          <button class="primary" type="submit">追加</button>
+        </form>
+      </section>
 
-        <article class="camera-card" data-camera="ai">
-          <div class="camera-header">
-            <div>
-              <p class="camera-label">CAMERA B</p>
-              <h2>AI Camera</h2>
-              <p class="sensor">imx500 / zuizui2.local</p>
-            </div>
-            <span class="pill offline" data-field="pill">確認中</span>
-          </div>
-          <div class="image-frame">
-            <img data-field="image" alt="AI Camera の最新画像">
-            <p data-field="empty">最新画像を待っています</p>
-          </div>
-          <dl class="metrics">
-            <div><dt>撮影枚数</dt><dd data-field="count">-</dd></div>
-            <div><dt>間隔</dt><dd data-field="interval">-</dd></div>
-            <div><dt>最終撮影</dt><dd data-field="time">-</dd></div>
-          </dl>
-          <p class="camera-message" data-field="message">接続しています...</p>
-          <div class="card-actions">
-            <button class="primary start-camera" type="button">開始</button>
-            <button class="secondary stop-camera" type="button">停止</button>
-            <button class="live-camera" type="button">ライブ確認</button>
-          </div>
-        </article>
+      <section class="install-panel" aria-label="iPadへインストール">
+        <div>
+          <p class="section-title">iPad INSTALL</p>
+          <h2>アプリのように使う</h2>
+        </div>
+        <p>Safari でこのページを開き、共有ボタンから「ホーム画面に追加」を選びます。App Store を通さず、この観察機につないだ時にすぐ起動できます。</p>
+      </section>
+
+      <section class="camera-grid" id="camera-grid" aria-label="観察機の状態">
+        <p class="camera-empty" id="camera-empty">接続する観察機を追加してください。</p>
       </section>
 
       <section class="gallery-panel" aria-label="撮影フォルダ">
@@ -99,14 +82,11 @@
             <h2>保存画像を確認・整理</h2>
             <p class="hint">削除した写真は元に戻せません。必要な画像は削除前に確認してください。</p>
           </div>
-          <div class="gallery-switch" role="group" aria-label="表示するカメラ">
-            <button class="gallery-tab selected" data-gallery-camera="module3" type="button">Module 3</button>
-            <button class="gallery-tab" data-gallery-camera="ai" type="button">AI Camera</button>
-          </div>
-          <button class="danger delete-all" id="delete-all-images" type="button">表示中の写真を全削除</button>
+          <div class="gallery-switch" id="gallery-switch" role="group" aria-label="表示する観察機"></div>
+          <button class="danger delete-all" id="delete-all-images" type="button">この観察機の写真を全削除</button>
         </div>
         <div class="folder-summary">
-          <span id="gallery-camera-label">Module 3 Wide</span>
+          <span id="gallery-camera-label">観察機未選択</span>
           <span id="gallery-count">読み込み中...</span>
           <span id="gallery-size"></span>
         </div>
@@ -118,9 +98,38 @@
 
       <footer class="footer">
         <span id="sync-label">状態を読み込み中...</span>
-        <span>研究プロトタイプ</span>
+        <span>ホーム画面に追加してフィールドで使用</span>
       </footer>
     </main>
-    <script src="/app/app.js"></script>
+    <template id="camera-template">
+      <article class="camera-card">
+        <div class="camera-header">
+          <div>
+            <p class="camera-label" data-field="device">OBSERVATION UNIT</p>
+            <h2 data-field="label">PolliPi Camera</h2>
+            <p class="sensor" data-field="sensor"></p>
+          </div>
+          <span class="pill offline" data-field="pill">確認中</span>
+        </div>
+        <div class="image-frame">
+          <img data-field="image" alt="観察機の最新画像">
+          <p data-field="empty">最新画像を待っています</p>
+        </div>
+        <dl class="metrics">
+          <div><dt>撮影枚数</dt><dd data-field="count">-</dd></div>
+          <div><dt>間隔</dt><dd data-field="interval">-</dd></div>
+          <div><dt>最終撮影</dt><dd data-field="time">-</dd></div>
+          <div><dt>自動判定</dt><dd data-field="detection">-</dd></div>
+        </dl>
+        <p class="camera-message" data-field="message">接続しています...</p>
+        <div class="card-actions">
+          <button class="primary start-camera" type="button">開始</button>
+          <button class="secondary stop-camera" type="button">停止</button>
+          <button class="preview-camera" type="button">画面確認</button>
+          <button class="remove-camera" type="button">登録を削除</button>
+        </div>
+      </article>
+    </template>
+    <script src="/app/app.js?v=20260526-5"></script>
   </body>
 </html>
