@@ -1,50 +1,147 @@
-const cameras = {
-  module3: {
-    id: "module3",
-    label: "Module 3 Wide",
-    baseUrl: "http://zuizui.local:8000",
-  },
-  ai: {
-    id: "ai",
-    label: "AI Camera",
-    baseUrl: "http://zuizui2.local:8000",
-  },
-};
+const STORAGE_KEY = "pollipi.observationDevices.v1";
 
 const intervalInput = document.querySelector("#interval-input");
+const autoModeInput = document.querySelector("#auto-mode");
+const autonomousModeInput = document.querySelector("#autonomous-mode");
+const autoSettings = document.querySelector("#auto-settings");
+const idleIntervalInput = document.querySelector("#idle-interval");
+const detectionIntervalInput = document.querySelector("#detection-interval");
 const syncLabel = document.querySelector("#sync-label");
 const refreshButton = document.querySelector("#refresh-button");
 const startAllButton = document.querySelector("#start-all");
 const stopAllButton = document.querySelector("#stop-all");
+const cameraGrid = document.querySelector("#camera-grid");
+const cameraEmpty = document.querySelector("#camera-empty");
+const cameraTemplate = document.querySelector("#camera-template");
+const deviceForm = document.querySelector("#device-form");
+const deviceUrlInput = document.querySelector("#device-url");
+const gallerySwitch = document.querySelector("#gallery-switch");
 const galleryGrid = document.querySelector("#gallery-grid");
 const galleryCameraLabel = document.querySelector("#gallery-camera-label");
 const galleryCount = document.querySelector("#gallery-count");
 const gallerySize = document.querySelector("#gallery-size");
 const galleryFolderPath = document.querySelector("#gallery-folder-path");
 const deleteAllImagesButton = document.querySelector("#delete-all-images");
-let selectedGalleryCamera = cameras.module3;
 
-for (const camera of Object.values(cameras)) {
-  camera.card = document.querySelector(`[data-camera="${camera.id}"]`);
-  camera.previousImage = null;
-  camera.live = false;
-  camera.liveTimer = null;
-  camera.card.querySelector(".start-camera").addEventListener("click", () => startCamera(camera));
-  camera.card.querySelector(".stop-camera").addEventListener("click", () => stopCamera(camera));
-  camera.card.querySelector(".live-camera").addEventListener("click", () => toggleLive(camera));
+let cameras = loadCameras();
+let selectedGalleryCamera = null;
+
+function loadCameras() {
+  try {
+    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]");
+  } catch (_) {
+    return [];
+  }
 }
 
-for (const button of document.querySelectorAll(".gallery-tab")) {
-  button.addEventListener("click", () => {
-    document.querySelector(".gallery-tab.selected").classList.remove("selected");
-    button.classList.add("selected");
-    selectedGalleryCamera = cameras[button.dataset.galleryCamera];
-    refreshGallery();
-  });
+function saveCameras() {
+  const persistent = cameras.map(({ baseUrl, device_id, device_name, camera_label, camera_model }) => ({
+    baseUrl,
+    device_id,
+    device_name,
+    camera_label,
+    camera_model,
+  }));
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persistent));
+}
+
+function normalizeBaseUrl(value) {
+  let input = value.trim();
+  if (!/^https?:\/\//i.test(input)) {
+    input = `http://${input}`;
+  }
+  const url = new URL(input);
+  url.pathname = "";
+  url.search = "";
+  url.hash = "";
+  return url.origin;
 }
 
 function field(camera, name) {
   return camera.card.querySelector(`[data-field="${name}"]`);
+}
+
+async function registerCamera(rawUrl, quiet = false) {
+  let baseUrl;
+  try {
+    baseUrl = normalizeBaseUrl(rawUrl);
+  } catch (_) {
+    if (!quiet) window.alert("観察機のURLを確認してください。");
+    return null;
+  }
+  try {
+    const response = await fetch(`${baseUrl}/device`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const device = await response.json();
+    const camera = { ...device, baseUrl };
+    const existing = cameras.findIndex((item) => item.baseUrl === baseUrl || item.device_id === camera.device_id);
+    if (existing >= 0) cameras[existing] = camera;
+    else cameras.push(camera);
+    saveCameras();
+    renderCameras();
+    await refreshAll();
+    return camera;
+  } catch (error) {
+    if (!quiet) window.alert(`観察機に接続できません: ${error.message}`);
+    return null;
+  }
+}
+
+function buildCameraCard(camera, index) {
+  const card = cameraTemplate.content.firstElementChild.cloneNode(true);
+  camera.card = card;
+  camera.previousImage = null;
+  camera.manualPreview = false;
+  field(camera, "device").textContent = `OBSERVATION UNIT ${index + 1} / ${camera.device_name}`;
+  field(camera, "label").textContent = camera.camera_label;
+  field(camera, "sensor").textContent = `${camera.camera_model} / ${camera.baseUrl}`;
+  card.querySelector(".start-camera").addEventListener("click", () => startCamera(camera));
+  card.querySelector(".stop-camera").addEventListener("click", () => stopCamera(camera));
+  card.querySelector(".preview-camera").addEventListener("click", () => showPreview(camera));
+  card.querySelector(".remove-camera").addEventListener("click", () => removeCamera(camera));
+  return card;
+}
+
+function renderCameras() {
+  cameraGrid.replaceChildren();
+  cameraEmpty.hidden = cameras.length !== 0;
+  if (cameras.length === 0) {
+    cameraGrid.append(cameraEmpty);
+  } else {
+    cameras.forEach((camera, index) => cameraGrid.append(buildCameraCard(camera, index)));
+  }
+  gallerySwitch.replaceChildren();
+  cameras.forEach((camera) => {
+    const button = document.createElement("button");
+    button.className = `gallery-tab${selectedGalleryCamera && selectedGalleryCamera.baseUrl === camera.baseUrl ? " selected" : ""}`;
+    button.type = "button";
+    button.textContent = camera.camera_label;
+    button.addEventListener("click", () => {
+      selectedGalleryCamera = camera;
+      renderGallerySelection();
+      refreshGallery();
+    });
+    gallerySwitch.append(button);
+  });
+  if (!selectedGalleryCamera || !cameras.some((camera) => camera.baseUrl === selectedGalleryCamera.baseUrl)) {
+    selectedGalleryCamera = cameras[0] || null;
+    renderGallerySelection();
+  }
+}
+
+function renderGallerySelection() {
+  for (const button of gallerySwitch.querySelectorAll(".gallery-tab")) {
+    button.classList.toggle("selected", selectedGalleryCamera && button.textContent === selectedGalleryCamera.camera_label);
+  }
+}
+
+function removeCamera(camera) {
+  if (!window.confirm(`${camera.camera_label} の登録をこの iPad から削除しますか？\n撮影画像は Raspberry Pi に残ります。`)) return;
+  cameras = cameras.filter((item) => item.baseUrl !== camera.baseUrl);
+  if (selectedGalleryCamera && selectedGalleryCamera.baseUrl === camera.baseUrl) selectedGalleryCamera = null;
+  saveCameras();
+  renderCameras();
+  refreshGallery();
 }
 
 function getInterval() {
@@ -56,21 +153,33 @@ function getInterval() {
   return interval;
 }
 
+function getAutomaticSettings() {
+  const idle = Number(idleIntervalInput.value);
+  const detection = Number(detectionIntervalInput.value);
+  if (autoModeInput.checked && (
+    !Number.isFinite(idle) || idle < 1 || idle > 3600 ||
+    !Number.isFinite(detection) || detection < 1 || detection > 3600
+  )) {
+    window.alert("自動間隔は 1 秒以上 3600 秒以下で入力してください。");
+    return null;
+  }
+  return {
+    auto_mode: autoModeInput.checked,
+    autonomous_mode: autonomousModeInput.checked,
+    idle_interval_sec: idle,
+    detection_interval_sec: detection,
+  };
+}
+
 function setBusy(camera, busy) {
   camera.card.querySelector(".start-camera").disabled = busy;
   camera.card.querySelector(".stop-camera").disabled = busy;
 }
 
 function formatCaptureTime(value) {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
   return new Intl.DateTimeFormat("ja-JP", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
   }).format(new Date(value));
 }
 
@@ -82,13 +191,16 @@ function updateCard(camera, status) {
   field(camera, "count").textContent = String(status.capture_count);
   field(camera, "interval").textContent = status.interval_sec ? `${status.interval_sec} 秒` : "-";
   field(camera, "time").textContent = formatCaptureTime(status.last_capture_time);
-  field(camera, "message").textContent = status.message;
-
-  if (!status.running && camera.live) {
-    setLive(camera, false);
+  if (status.auto_mode) {
+    const score = status.motion_score === null ? "基準作成中" : `${(status.motion_score * 100).toFixed(2)}%`;
+    field(camera, "detection").textContent = status.insect_candidate ? `候補あり ${score}` : score;
+  } else {
+    field(camera, "detection").textContent = "OFF";
   }
-
-  if (!camera.live && status.last_image && status.last_image !== camera.previousImage) {
+  const autonomous = status.autonomous_mode && status.running ? " / 自律運行" : "";
+  const message = status.auto_mode && status.interval_reason ? status.interval_reason : status.message;
+  field(camera, "message").textContent = `${message}${autonomous}`;
+  if (status.last_image && status.last_image !== camera.previousImage) {
     const image = field(camera, "image");
     image.onload = () => {
       image.classList.add("ready");
@@ -96,7 +208,8 @@ function updateCard(camera, status) {
     };
     image.src = `${camera.baseUrl}/latest?capture=${encodeURIComponent(status.last_capture_time)}`;
     camera.previousImage = status.last_image;
-  } else if (!status.last_image) {
+    camera.manualPreview = false;
+  } else if (!status.last_image && !camera.manualPreview) {
     const image = field(camera, "image");
     image.classList.remove("ready");
     image.removeAttribute("src");
@@ -114,16 +227,13 @@ function setOffline(camera, error) {
 
 async function apiRequest(camera, path, options = {}) {
   const response = await fetch(`${camera.baseUrl}${path}`, options);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
 
 async function refreshCamera(camera) {
   try {
-    const status = await apiRequest(camera, "/status");
-    updateCard(camera, status);
+    updateCard(camera, await apiRequest(camera, "/status"));
   } catch (error) {
     setOffline(camera, error);
   }
@@ -131,11 +241,9 @@ async function refreshCamera(camera) {
 
 async function refreshAll() {
   refreshButton.disabled = true;
-  await Promise.all(Object.values(cameras).map(refreshCamera));
+  await Promise.all(cameras.map(refreshCamera));
   syncLabel.textContent = `最終更新 ${new Intl.DateTimeFormat("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
   }).format(new Date())}`;
   refreshButton.disabled = false;
   await refreshGallery();
@@ -143,15 +251,14 @@ async function refreshAll() {
 
 async function startCamera(camera) {
   const interval = getInterval();
-  if (interval === null) {
-    return;
-  }
+  const automaticSettings = getAutomaticSettings();
+  if (interval === null || automaticSettings === null) return;
   setBusy(camera, true);
   try {
     const status = await apiRequest(camera, "/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ interval_sec: interval }),
+      body: JSON.stringify({ interval_sec: interval, ...automaticSettings }),
     });
     camera.previousImage = null;
     updateCard(camera, status);
@@ -174,84 +281,71 @@ async function stopCamera(camera) {
   }
 }
 
-function setLive(camera, enabled) {
-  const button = camera.card.querySelector(".live-camera");
+async function showPreview(camera) {
+  const button = camera.card.querySelector(".preview-camera");
   const image = field(camera, "image");
-  camera.live = enabled;
-  window.clearInterval(camera.liveTimer);
-  camera.liveTimer = null;
-  button.textContent = enabled ? "ライブ停止" : "ライブ確認";
-  button.classList.toggle("live-active", enabled);
-  if (!enabled) {
-    camera.previousImage = null;
-    refreshCamera(camera);
-    return;
-  }
-  const reloadPreview = () => {
-    image.onload = () => {
-      image.classList.add("ready");
-      field(camera, "empty").hidden = true;
-    };
-    image.src = `${camera.baseUrl}/preview?t=${Date.now()}`;
+  button.disabled = true;
+  button.textContent = "取得中...";
+  image.onload = () => {
+    image.classList.add("ready");
+    field(camera, "empty").hidden = true;
+    button.disabled = false;
+    button.textContent = "画面確認";
   };
-  reloadPreview();
-  camera.liveTimer = window.setInterval(reloadPreview, 1500);
-}
-
-function toggleLive(camera) {
-  if (camera.live) {
-    setLive(camera, false);
-    return;
-  }
-  if (!camera.status || !camera.status.running) {
-    window.alert("ライブ確認は撮影開始後に利用できます。先に撮影を開始してください。");
-    return;
-  }
-  setLive(camera, true);
+  image.onerror = () => {
+    setOffline(camera, new Error("画面を取得できません"));
+    button.disabled = false;
+    button.textContent = "画面確認";
+  };
+  image.src = `${camera.baseUrl}/preview?t=${Date.now()}`;
+  camera.manualPreview = true;
+  field(camera, "message").textContent = "現在の画角を表示しています（保存されません）。";
 }
 
 async function startAll() {
-  if (getInterval() === null) {
-    return;
-  }
+  if (getInterval() === null || getAutomaticSettings() === null) return;
   startAllButton.disabled = true;
-  await Promise.all(Object.values(cameras).map(startCamera));
+  await Promise.all(cameras.map(startCamera));
   startAllButton.disabled = false;
 }
 
 async function stopAll() {
   stopAllButton.disabled = true;
-  await Promise.all(Object.values(cameras).map(stopCamera));
+  await Promise.all(cameras.map(stopCamera));
   stopAllButton.disabled = false;
 }
 
 function formatBytes(bytes) {
-  if (bytes < 1024 * 1024) {
-    return `${Math.round(bytes / 1024)} KB`;
-  }
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 async function refreshGallery() {
   const camera = selectedGalleryCamera;
-  galleryCameraLabel.textContent = camera.label;
+  renderGallerySelection();
+  if (!camera) {
+    galleryCameraLabel.textContent = "観察機未選択";
+    galleryCount.textContent = "-";
+    gallerySize.textContent = "";
+    galleryFolderPath.textContent = "観察機を追加すると保存画像を表示できます。";
+    galleryGrid.innerHTML = `<p class="gallery-empty">観察機が登録されていません。</p>`;
+    return;
+  }
+  galleryCameraLabel.textContent = camera.camera_label;
   try {
     const response = await apiRequest(camera, "/images?limit=40");
+    camera.imageCount = response.image_count;
     galleryCount.textContent = `${response.image_count} 枚`;
     gallerySize.textContent = formatBytes(response.total_size_bytes);
     galleryFolderPath.textContent = response.image_dir;
     galleryGrid.replaceChildren();
     if (response.images.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "gallery-empty";
-      empty.textContent = "保存された画像はありません。";
-      galleryGrid.append(empty);
+      galleryGrid.innerHTML = `<p class="gallery-empty">保存された画像はありません。</p>`;
       return;
     }
-    for (const imageInfo of response.images) {
-      galleryGrid.append(buildGalleryItem(camera, imageInfo));
-    }
+    response.images.forEach((imageInfo) => galleryGrid.append(buildGalleryItem(camera, imageInfo)));
   } catch (error) {
+    camera.imageCount = null;
     galleryCount.textContent = "接続できません";
     gallerySize.textContent = "";
     galleryFolderPath.textContent = "-";
@@ -262,12 +356,10 @@ async function refreshGallery() {
 function buildGalleryItem(camera, imageInfo) {
   const item = document.createElement("article");
   item.className = "gallery-item";
-
   const image = document.createElement("img");
   image.src = `${camera.baseUrl}${imageInfo.url}`;
   image.alt = imageInfo.filename;
   image.loading = "lazy";
-
   const detail = document.createElement("div");
   detail.className = "gallery-detail";
   const timestamp = document.createElement("span");
@@ -275,15 +367,12 @@ function buildGalleryItem(camera, imageInfo) {
   const size = document.createElement("span");
   size.textContent = formatBytes(imageInfo.size_bytes);
   detail.append(timestamp, size);
-
   const deleteButton = document.createElement("button");
   deleteButton.className = "delete-image";
   deleteButton.type = "button";
   deleteButton.textContent = "削除";
   deleteButton.addEventListener("click", async () => {
-    if (!window.confirm(`${camera.label} のこの写真を削除しますか？\n${imageInfo.filename}\n\nこの操作は元に戻せません。`)) {
-      return;
-    }
+    if (!window.confirm(`${camera.camera_label} のこの写真を削除しますか？\n${imageInfo.filename}\n\nこの操作は元に戻せません。`)) return;
     deleteButton.disabled = true;
     try {
       await apiRequest(camera, `/images/${encodeURIComponent(imageInfo.filename)}`, { method: "DELETE" });
@@ -294,31 +383,26 @@ function buildGalleryItem(camera, imageInfo) {
       deleteButton.disabled = false;
     }
   });
-
   item.append(image, detail, deleteButton);
   return item;
 }
 
 async function deleteAllImages() {
   const camera = selectedGalleryCamera;
+  if (!camera) return;
   if (camera.status && camera.status.running) {
-    window.alert("全削除の前に、このカメラの撮影を停止してください。");
+    window.alert("全削除の前に、この観察機の撮影を停止してください。");
     return;
   }
-  if (!window.confirm(`${camera.label} の保存画像をすべて削除しますか？\n\nこの操作は元に戻せません。`)) {
-    return;
-  }
-  const confirmation = window.prompt("全削除するには DELETE_ALL と入力してください。");
-  if (confirmation !== "DELETE_ALL") {
-    window.alert("全削除をキャンセルしました。");
-    return;
-  }
+  const count = Number.isFinite(camera.imageCount) ? `${camera.imageCount} 枚の` : "";
+  if (!window.confirm(`${camera.camera_label} の${count}保存画像をすべて削除しますか？\n\n削除後は元に戻せません。`)) return;
   deleteAllImagesButton.disabled = true;
+  deleteAllImagesButton.textContent = "削除中...";
   try {
     const result = await apiRequest(camera, "/images", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: confirmation }),
+      body: JSON.stringify({ confirm: "DELETE_ALL" }),
     });
     camera.previousImage = null;
     window.alert(`${result.deleted_count} 枚を削除しました。`);
@@ -327,13 +411,30 @@ async function deleteAllImages() {
     window.alert(`全削除できませんでした: ${error.message}`);
   } finally {
     deleteAllImagesButton.disabled = false;
+    deleteAllImagesButton.textContent = "この観察機の写真を全削除";
   }
 }
 
+deviceForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const camera = await registerCamera(deviceUrlInput.value);
+  if (camera) deviceUrlInput.value = "";
+});
 refreshButton.addEventListener("click", refreshAll);
+autoModeInput.addEventListener("change", () => {
+  autoSettings.hidden = !autoModeInput.checked;
+});
 startAllButton.addEventListener("click", startAll);
 stopAllButton.addEventListener("click", stopAll);
 deleteAllImagesButton.addEventListener("click", deleteAllImages);
 
-refreshAll();
+async function initialize() {
+  renderCameras();
+  if (cameras.length === 0 && /^https?:$/.test(window.location.protocol)) {
+    await registerCamera(window.location.origin, true);
+  }
+  await refreshAll();
+}
+
+initialize();
 window.setInterval(refreshAll, 4000);
