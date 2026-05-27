@@ -10,7 +10,7 @@
     <title>PolliPi Field Observer</title>
     <link rel="manifest" href="/app/manifest.webmanifest">
     <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/app/app.css?v=20260526-5">
+    <link rel="stylesheet" href="/app/app.css?v=20260527-1">
   </head>
   <body>
     <header class="hero">
@@ -55,10 +55,10 @@
         <div>
           <p class="section-title">観察機</p>
           <h2>Raspberry Pi を追加</h2>
-          <p class="hint">同じネットワークにある PolliPi の URL を登録します。登録内容はこの iPad に保存されます。</p>
+          <p class="hint">機器名を登録します。例: <code>zuizui0223@zuizui2</code>。同じ Wi-Fi 上の <code>zuizui2.local</code> に接続します。</p>
         </div>
         <form class="device-form" id="device-form">
-          <input id="device-url" type="url" placeholder="http://pollipi.local:8000" required>
+          <input id="device-address" type="text" placeholder="zuizui0223@zuizui2" autocapitalize="none" autocomplete="off" required>
           <button class="primary" type="submit">追加</button>
         </form>
       </section>
@@ -125,11 +125,11 @@
         <div class="card-actions">
           <button class="primary start-camera" type="button">開始</button>
           <button class="secondary stop-camera" type="button">停止</button>
-          <button class="preview-camera" type="button">画面確認</button>
+          <button class="monitor-camera" type="button">画角モニター</button>
           <button class="remove-camera" type="button">登録を削除</button>
         </div>
       </article>
     </template>
-    <script src="/app/app.js?v=20260526-5"></script>
+    <script src="/app/app.js?v=20260527-1"></script>
   </body>
 </html>
