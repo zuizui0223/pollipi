@@ -199,6 +199,31 @@ Pi 用プログラムを GitHub から配布できます。画面は 4 秒ごと
 `画角モニター` は設置時の向き確認用です。長時間観察ではモニターを停止し、
 自律運行を使う方が電力消費を抑えられます。
 
+## AI Camera の簡易物体検出試験
+
+`zuizui2.local` の AI Camera (`imx500`) にはセンサー内でニューラルネット推論を
+実行する機能があります。標準でインストールされる MobileNet SSD は一般物体の検出用で、
+標準ラベルに `insect` はありません。したがって昆虫の種類判別には専用の学習モデルが
+必要ですが、AI Camera と Module 3 の検出方式を分けて試す第一段階として利用できます。
+
+`imx500_detect_test.py` は AI Camera だけで短時間の物体検出を行い、枠付きの確認画像と
+JSON 結果を `~/pollipi_timelapse/imx500_detect_trials/` に保存します。カメラを一つの
+プロセスだけで使用するため、試験中は AI Camera 側の API サービスを一時停止します。
+
+```bash
+ssh zuizui0223@zuizui2.local
+sudo systemctl stop pollipi.service
+cd /home/zuizui0223/pollipi_timelapse
+python3 imx500_detect_test.py --duration-sec 15 --threshold 0.55
+sudo systemctl start pollipi.service
+```
+
+この結果は AI Camera の標準モデルによる一般物体検出です。Module 3 側で動かしている
+背景差分は「動いた候補」を検出する方法なので、同じ場所と時間帯で保存結果を比較すると、
+将来の昆虫専用モデル設計や省電力な撮影間隔調整の検討材料になります。
+
+公式資料: [Raspberry Pi AI Camera documentation](https://www.raspberrypi.com/documentation/accessories/ai-camera.html)
+
 ## API
 
 タイムラプスを開始します。`interval_sec` は 1 以上 3600 以下の秒数です。
