@@ -27,6 +27,8 @@ METRICS_PATH = IMAGE_DIR / "adaptive_metrics.csv"
 AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
 WEB_DIR = Path(__file__).parent / "web"
 PREVIEW_PATH = Path("/tmp/pollipi_preview.jpg")
+MONITOR_SIZE = (640, 360)
+MONITOR_FRAME_INTERVAL_SEC = 0.25
 DEVICE_ID = os.getenv("POLLIPI_DEVICE_ID", socket.gethostname())
 DEVICE_NAME = os.getenv("POLLIPI_DEVICE_NAME", socket.gethostname())
 CAMERA_LABEL = os.getenv("POLLIPI_CAMERA_LABEL", "PolliPi Camera")
@@ -271,10 +273,10 @@ class TimelapseController:
                 with self._camera_lock:
                     temporary_camera = Picamera2()
                     temporary_camera.configure(
-                        temporary_camera.create_preview_configuration(main={"size": (960, 540)})
+                        temporary_camera.create_preview_configuration(main={"size": MONITOR_SIZE})
                     )
                     temporary_camera.start()
-                if stop_event.wait(1):
+                if stop_event.wait(0.5):
                     return
 
             while not stop_event.is_set():
@@ -284,7 +286,10 @@ class TimelapseController:
                 if camera is None:
                     break
                 with self._camera_lock:
-                    camera.capture_file(str(PREVIEW_PATH))
+                    if active_camera is not None:
+                        camera.capture_file(str(PREVIEW_PATH), name="lores")
+                    else:
+                        camera.capture_file(str(PREVIEW_PATH))
                     frame = PREVIEW_PATH.read_bytes()
                 yield (
                     b"--frame\r\n"
@@ -293,7 +298,7 @@ class TimelapseController:
                     + frame
                     + b"\r\n"
                 )
-                if stop_event.wait(1):
+                if stop_event.wait(MONITOR_FRAME_INTERVAL_SEC):
                     break
         finally:
             if temporary_camera is not None:
@@ -317,7 +322,7 @@ class TimelapseController:
             self.image_dir.mkdir(parents=True, exist_ok=True)
             camera = Picamera2()
             camera.configure(
-                camera.create_still_configuration(lores={"size": (320, 240), "format": "YUV420"})
+                camera.create_still_configuration(lores={"size": MONITOR_SIZE, "format": "YUV420"})
             )
             camera.start()
             with self._lock:
@@ -400,7 +405,7 @@ class TimelapseController:
     def _detect_motion(frame, background, pixel_difference: int, motion_ratio: float):
         import numpy as np
 
-        luminance = frame[:240, :320].astype(np.float32)
+        luminance = frame[:MONITOR_SIZE[1], :MONITOR_SIZE[0]].astype(np.float32)
         if background is None:
             return None, False, luminance
 
