@@ -14,7 +14,7 @@ const cameraGrid = document.querySelector("#camera-grid");
 const cameraEmpty = document.querySelector("#camera-empty");
 const cameraTemplate = document.querySelector("#camera-template");
 const deviceForm = document.querySelector("#device-form");
-const deviceUrlInput = document.querySelector("#device-url");
+const deviceAddressInput = document.querySelector("#device-address");
 const gallerySwitch = document.querySelector("#gallery-switch");
 const galleryGrid = document.querySelector("#gallery-grid");
 const galleryCameraLabel = document.querySelector("#gallery-camera-label");
@@ -35,7 +35,8 @@ function loadCameras() {
 }
 
 function saveCameras() {
-  const persistent = cameras.map(({ baseUrl, device_id, device_name, camera_label, camera_model }) => ({
+  const persistent = cameras.map(({ address, baseUrl, device_id, device_name, camera_label, camera_model }) => ({
+    address,
     baseUrl,
     device_id,
     device_name,
@@ -45,35 +46,38 @@ function saveCameras() {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persistent));
 }
 
-function normalizeBaseUrl(value) {
+function resolveBaseUrl(value) {
   let input = value.trim();
-  if (!/^https?:\/\//i.test(input)) {
-    input = `http://${input}`;
+  if (/^https?:\/\//i.test(input)) {
+    const url = new URL(input);
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.origin;
   }
-  const url = new URL(input);
-  url.pathname = "";
-  url.search = "";
-  url.hash = "";
-  return url.origin;
+  const hostname = input.includes("@") ? input.split("@").pop() : input;
+  if (!hostname || /[/?#]/.test(hostname)) throw new Error("Invalid device name");
+  const localHostname = hostname.includes(".") ? hostname : `${hostname}.local`;
+  return `http://${localHostname}:8000`;
 }
 
 function field(camera, name) {
   return camera.card.querySelector(`[data-field="${name}"]`);
 }
 
-async function registerCamera(rawUrl, quiet = false) {
+async function registerCamera(rawAddress, quiet = false) {
   let baseUrl;
   try {
-    baseUrl = normalizeBaseUrl(rawUrl);
+    baseUrl = resolveBaseUrl(rawAddress);
   } catch (_) {
-    if (!quiet) window.alert("観察機のURLを確認してください。");
+    if (!quiet) window.alert("観察機名を確認してください。例: zuizui0223@zuizui2");
     return null;
   }
   try {
     const response = await fetch(`${baseUrl}/device`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const device = await response.json();
-    const camera = { ...device, baseUrl };
+    const camera = { ...device, address: rawAddress.trim(), baseUrl };
     const existing = cameras.findIndex((item) => item.baseUrl === baseUrl || item.device_id === camera.device_id);
     if (existing >= 0) cameras[existing] = camera;
     else cameras.push(camera);
@@ -92,12 +96,13 @@ function buildCameraCard(camera, index) {
   camera.card = card;
   camera.previousImage = null;
   camera.manualPreview = false;
+  camera.monitoring = false;
   field(camera, "device").textContent = `OBSERVATION UNIT ${index + 1} / ${camera.device_name}`;
   field(camera, "label").textContent = camera.camera_label;
   field(camera, "sensor").textContent = `${camera.camera_model} / ${camera.baseUrl}`;
   card.querySelector(".start-camera").addEventListener("click", () => startCamera(camera));
   card.querySelector(".stop-camera").addEventListener("click", () => stopCamera(camera));
-  card.querySelector(".preview-camera").addEventListener("click", () => showPreview(camera));
+  card.querySelector(".monitor-camera").addEventListener("click", () => toggleMonitor(camera));
   card.querySelector(".remove-camera").addEventListener("click", () => removeCamera(camera));
   return card;
 }
@@ -200,7 +205,7 @@ function updateCard(camera, status) {
   const autonomous = status.autonomous_mode && status.running ? " / 自律運行" : "";
   const message = status.auto_mode && status.interval_reason ? status.interval_reason : status.message;
   field(camera, "message").textContent = `${message}${autonomous}`;
-  if (status.last_image && status.last_image !== camera.previousImage) {
+  if (!camera.monitoring && status.last_image && status.last_image !== camera.previousImage) {
     const image = field(camera, "image");
     image.onload = () => {
       image.classList.add("ready");
@@ -219,6 +224,7 @@ function updateCard(camera, status) {
 }
 
 function setOffline(camera, error) {
+  setMonitor(camera, false);
   const pill = field(camera, "pill");
   pill.textContent = "接続なし";
   pill.className = "pill offline";
@@ -253,6 +259,7 @@ async function startCamera(camera) {
   const interval = getInterval();
   const automaticSettings = getAutomaticSettings();
   if (interval === null || automaticSettings === null) return;
+  setMonitor(camera, false);
   setBusy(camera, true);
   try {
     const status = await apiRequest(camera, "/start", {
@@ -271,6 +278,7 @@ async function startCamera(camera) {
 }
 
 async function stopCamera(camera) {
+  setMonitor(camera, false);
   setBusy(camera, true);
   try {
     updateCard(camera, await apiRequest(camera, "/stop", { method: "POST" }));
@@ -281,25 +289,42 @@ async function stopCamera(camera) {
   }
 }
 
-async function showPreview(camera) {
-  const button = camera.card.querySelector(".preview-camera");
+function setMonitor(camera, monitoring) {
+  const button = camera.card.querySelector(".monitor-camera");
   const image = field(camera, "image");
-  button.disabled = true;
-  button.textContent = "取得中...";
+  camera.monitoring = monitoring;
+  button.classList.toggle("active", monitoring);
+  button.textContent = monitoring ? "モニター停止" : "画角モニター";
+  if (!monitoring) {
+    if (camera.status && camera.status.last_image) {
+      image.src = `${camera.baseUrl}/latest?capture=${encodeURIComponent(camera.status.last_capture_time)}`;
+    } else {
+      image.classList.remove("ready");
+      image.removeAttribute("src");
+      field(camera, "empty").hidden = false;
+    }
+  }
+}
+
+function toggleMonitor(camera) {
+  if (camera.monitoring) {
+    setMonitor(camera, false);
+    field(camera, "message").textContent = "画角モニターを停止しました。";
+    return;
+  }
+  const image = field(camera, "image");
   image.onload = () => {
     image.classList.add("ready");
     field(camera, "empty").hidden = true;
-    button.disabled = false;
-    button.textContent = "画面確認";
   };
   image.onerror = () => {
+    setMonitor(camera, false);
     setOffline(camera, new Error("画面を取得できません"));
-    button.disabled = false;
-    button.textContent = "画面確認";
   };
-  image.src = `${camera.baseUrl}/preview?t=${Date.now()}`;
+  setMonitor(camera, true);
+  image.src = `${camera.baseUrl}/mjpeg?t=${Date.now()}`;
   camera.manualPreview = true;
-  field(camera, "message").textContent = "現在の画角を表示しています（保存されません）。";
+  field(camera, "message").textContent = "画角を低負荷モニター表示しています（保存されません）。";
 }
 
 async function startAll() {
@@ -417,8 +442,8 @@ async function deleteAllImages() {
 
 deviceForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const camera = await registerCamera(deviceUrlInput.value);
-  if (camera) deviceUrlInput.value = "";
+  const camera = await registerCamera(deviceAddressInput.value);
+  if (camera) deviceAddressInput.value = "";
 });
 refreshButton.addEventListener("click", refreshAll);
 autoModeInput.addEventListener("change", () => {
