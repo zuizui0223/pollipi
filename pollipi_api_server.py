@@ -11,11 +11,11 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Generator, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -103,6 +103,8 @@ class TimelapseController:
         self._thread: Optional[threading.Thread] = None
         self._camera = None
         self._camera_lock = threading.Lock()
+        self._monitor_stop_event: Optional[threading.Event] = None
+        self._monitor_closed_event: Optional[threading.Event] = None
         self.running = False
         self.interval_sec: Optional[float] = None
         self.capture_count = 0
@@ -165,6 +167,7 @@ class TimelapseController:
         return self.status()
 
     def stop(self, preserve_autonomous: bool = False) -> StatusResponse:
+        self.stop_monitor()
         with self._lock:
             stop_event = self._stop_event
             thread = self._thread
@@ -241,6 +244,69 @@ class TimelapseController:
             finally:
                 preview_camera.stop()
                 preview_camera.close()
+
+    def stop_monitor(self) -> None:
+        with self._lock:
+            stop_event = self._monitor_stop_event
+            closed_event = self._monitor_closed_event
+            if stop_event is not None:
+                stop_event.set()
+        if closed_event is not None:
+            closed_event.wait(timeout=3)
+
+    def monitor_frames(self) -> Generator[bytes, None, None]:
+        self.stop_monitor()
+        stop_event = threading.Event()
+        closed_event = threading.Event()
+        temporary_camera = None
+        with self._lock:
+            self._monitor_stop_event = stop_event
+            self._monitor_closed_event = closed_event
+            timelapse_camera = self._camera
+
+        try:
+            if timelapse_camera is None:
+                from picamera2 import Picamera2
+
+                with self._camera_lock:
+                    temporary_camera = Picamera2()
+                    temporary_camera.configure(
+                        temporary_camera.create_preview_configuration(main={"size": (960, 540)})
+                    )
+                    temporary_camera.start()
+                if stop_event.wait(1):
+                    return
+
+            while not stop_event.is_set():
+                with self._lock:
+                    active_camera = self._camera
+                camera = active_camera or temporary_camera
+                if camera is None:
+                    break
+                with self._camera_lock:
+                    camera.capture_file(str(PREVIEW_PATH))
+                    frame = PREVIEW_PATH.read_bytes()
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
+                    + frame
+                    + b"\r\n"
+                )
+                if stop_event.wait(1):
+                    break
+        finally:
+            if temporary_camera is not None:
+                with self._camera_lock:
+                    try:
+                        temporary_camera.stop()
+                    finally:
+                        temporary_camera.close()
+            with self._lock:
+                if self._monitor_stop_event is stop_event:
+                    self._monitor_stop_event = None
+                    self._monitor_closed_event = None
+            closed_event.set()
 
     def _capture_loop(self, stop_event: threading.Event, request: StartRequest) -> None:
         camera = None
@@ -466,6 +532,15 @@ def get_latest() -> FileResponse:
 def get_preview() -> Response:
     frame = controller.preview_frame()
     return Response(content=frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/mjpeg")
+def get_mjpeg() -> StreamingResponse:
+    return StreamingResponse(
+        controller.monitor_frames(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def image_file(filename: str) -> Path:
