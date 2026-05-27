@@ -101,10 +101,15 @@ button:disabled {
   color: var(--ink);
 }
 
-.preview-camera {
+.monitor-camera {
   border: 1px solid var(--leaf);
   background: transparent;
   color: var(--leaf);
+}
+
+.monitor-camera.active {
+  background: #d8efdf;
+  color: var(--leaf-dark);
 }
 
 .remove-camera {
