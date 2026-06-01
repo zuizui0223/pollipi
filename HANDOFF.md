@@ -12,6 +12,7 @@ Before starting any task, read:
 - `CHANGELOG_AI.md`
 - `HANDOFF.md`
 - `FIELD_METHOD_ROADMAP.md`
+- `LOW_POWER_DESIGN_ABSORPTION.md`
 
 After finishing any task, update `HANDOFF.md`.
 
@@ -39,73 +40,97 @@ flower_id × timestamp × recording_mode × candidate event × camera metadata �
 
 ## Current priority
 
-Fix iPad preview-based ROI drawing first.
+The user reports that Codex has implemented and deployed ROI tracking to four Raspberry Pi units, but the code was not pushed to GitHub.
 
-Then:
+The immediate priority is now:
 
-1. preserve autonomous field operation after Wi-Fi/tethering disconnects
-2. clarify recording modes in UI/logs
-3. optional lightweight ROI tracking
-4. positive/negative/unclear correction-based review workflow
-5. camera-specific profiles for Module 3, AI Camera, and NoIR Wide
-6. analysis scripts for method validation
+1. Sync the deployed code back to GitHub.
+2. Verify the actual deployed files match the reported behavior.
+3. Run an iPad field usability test for ROI drawing and ROI tracking.
+4. Only after GitHub is synced, proceed to low-power ROI-local motion detection improvements.
 
 ## Latest handoff
 
 ### Last owner
 
-ChatGPT
+ChatGPT, based on Codex's reported final message from the user.
 
-### Last completed work
+### Last reported Codex work
 
-Refocused the project management documents around the user's clarified goal: staged comparison of field recording methods rather than novelty-first automation.
+Codex reported that ROI tracking was implemented and deployed to four devices:
 
-Updated:
+- `zuizui`
+- `zuizui2`
+- `zuizui3`
+- `zuizui4`
 
-- `MASTER_SPEC.md`
-- `DECISIONS.md`
-- `TASKS.md`
-- `CHANGELOG_AI.md`
-- `HANDOFF.md`
+Reported behavior:
 
-Added:
+- `/start` includes `roi_x`, `roi_y`, `roi_w`, `roi_h` when ROI is set.
+- `/start` includes `roi_tracking=true`, `roi_search_margin`, and `roi_tracking_min_score` when tracking is enabled.
+- On successful tracking, ROI moves with flower/head movement.
+- On tracking failure, the previous ROI is retained.
+- The tracking template is not updated during recording, so insects are less likely to pull the ROI away from the flower/head.
+- Logs/status include existing schema fields:
+  - `roi_tracking_score`
+  - `roi_tracking_success`
+  - `roi_shift_x`
+  - `roi_shift_y`
+- PWA version reported as `v=20260601-roi-track1`.
 
-- `FIELD_METHOD_ROADMAP.md`
+Reported checks:
+
+- `python -m py_compile pollipi_api_server.py imx500_detect_test.py` OK.
+- `web/app.js` syntax check OK.
+- Deployed to four units: `zuizui`, `zuizui2`, `zuizui3`, `zuizui4`.
+- All four units responded to:
+  - `/status`
+  - `/device`
+  - `/events?limit=1`
+  - `/app/`
+
+### Important limitation
+
+GitHub was not updated by Codex. Therefore, the repository may not contain the deployed ROI tracking code.
+
+Do not assume GitHub matches the deployed Pi state until code is pushed or synced back.
+
+### Not tested
+
+- Real iPad field test under wind-driven flower movement.
+- Actual ROI tracking performance on moving flowers.
+- Local PC FastAPI import test, because FastAPI is unavailable on the local PC.
 
 ### Current blocker
 
-ROI drawing on the iPad preview is still not reliably working.
-
-The user can see the monitor angle, but cannot draw a rectangle directly on that camera view to select the flower/head as ROI. Manual numeric `roi_x`, `roi_y`, `roi_w`, and `roi_h` input is not acceptable in field conditions.
+The deployed code and GitHub repository are out of sync.
 
 ### Next recommended task
 
-Implement or fix manual ROI rectangle drawing on a still preview image from `GET /preview`.
+Sync the deployed Pi code back to GitHub before any new feature work.
 
-This task should be completed before ROI tracking, learning, or UI refinements.
+The next implementation task should be one of:
 
-### Acceptance criteria
+1. From the Pi, commit and push the deployed files to GitHub; or
+2. From Codex, generate a patch containing the deployed changes and push it to GitHub.
 
-- works on iPad Safari
-- works with desktop mouse if possible
-- visible rectangle overlay on the preview image
-- overlay is aligned with the image
-- coordinates convert to 640 × 360 monitor coordinates
-- ROI fields auto-fill
-- `/start` includes ROI only when valid
-- Clear ROI and Use full frame work
-- Review events remains functional
-- README and `HANDOFF.md` are updated
+### After sync, next recommended task
+
+Perform iPad field usability testing:
+
+- Can the user easily set ROI on the iPad?
+- Is ROI drawing usable enough in the field?
+- Does ROI tracking behave under wind?
+- Are tracking score/success/shift visible and logged?
 
 ### Do not do next
 
-- YOLO
-- automatic flower detection
-- species identification
-- neural network training
-- video recording
-- cloud upload
-- database migration
+- Do not start low-power prototype absorption until GitHub contains the deployed ROI tracking code.
+- Do not delete legacy prototype files yet.
+- Do not implement YOLO.
+- Do not implement species identification.
+- Do not implement video-first workflow.
+- Do not implement database/cloud migration.
 
 ## Handoff update template
 
