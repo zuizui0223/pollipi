@@ -10,44 +10,65 @@
     <title>PolliPi Field Observer</title>
     <link rel="manifest" href="/app/manifest.webmanifest">
     <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/app/app.css?v=20260527-2">
+    <link rel="stylesheet" href="/app/app.css?v=20260601-roi-preview">
   </head>
   <body>
     <header class="hero">
       <div>
         <p class="eyebrow">FIELD INSECT OBSERVATION</p>
         <h1>PolliPi</h1>
-        <p class="lead">Raspberry Pi 観察機を追加して使える、野外昆虫観察コントローラー</p>
+        <p class="lead">Raspberry Pi 観察機を iPad からまとめて操作する、野外昆虫観察コントローラー。</p>
       </div>
       <button class="ghost" id="refresh-button" type="button">更新</button>
     </header>
 
     <main>
-      <section class="control-panel" aria-label="撮影設定">
+      <section class="control-panel field-mode-panel" aria-label="撮影設定">
         <div>
-          <p class="section-title">撮影間隔</p>
+          <p class="section-title">FIELD MODE</p>
+          <h2>現地で使う基本設定</h2>
           <label class="interval-input">
             <input id="interval-input" type="number" min="1" max="3600" value="10" inputmode="decimal">
             <span>秒</span>
           </label>
-          <p class="hint">1 - 3600 秒。開始し直すと新しい間隔が適用されます。</p>
-          <label class="auto-toggle">
-            <input id="auto-mode" type="checkbox">
-            <span>背景差分で撮影間隔を自動調整</span>
-          </label>
-          <label class="auto-toggle">
-            <input id="autonomous-mode" type="checkbox">
-            <span>自律運行（通信切断・再起動後も撮影を継続）</span>
-          </label>
-          <div class="auto-settings" id="auto-settings" hidden>
-            <label>静かな時 <input id="idle-interval" type="number" min="1" max="3600" value="60"> 秒</label>
-            <label>動き候補あり <input id="detection-interval" type="number" min="1" max="3600" value="3"> 秒</label>
-            <p>背景差分による昆虫候補です。風や影でも反応する可能性があります。</p>
-          </div>
+          <p class="hint">まずは対象花を指定し、必要なら Preview / Set ROI で花を囲んでから開始します。</p>
+          <label class="auto-toggle"><input id="auto-mode" type="checkbox"><span>背景差分で撮影間隔を自動調整</span></label>
+        </div>
+        <div class="session-settings field-basic-grid">
+          <p class="section-title">調査メタデータ</p>
+          <label>site_id <input id="site-id-input" type="text" placeholder="site_A" autocapitalize="none"></label>
+          <label>flower_id <input id="flower-id-input" type="text" placeholder="plant_03_flower_01" autocapitalize="none"></label>
+          <label>plant_species <input id="plant-species-input" type="text" placeholder="Cirsium sp." autocapitalize="none"></label>
+          <label>method_mode <input id="method-mode-input" type="text" placeholder="event_based_timelapse" autocapitalize="none"></label>
+          <details class="advanced-fields field-advanced">
+            <summary>Advanced settings</summary>
+            <div class="advanced-grid">
+              <label>observer <input id="observer-input" type="text" placeholder="observer"></label>
+              <label>comparison_session_id <input id="comparison-session-input" type="text" placeholder="2026-plotA-pair01" autocapitalize="none"></label>
+              <label>camera_role <input id="camera-role-input" type="text" placeholder="module3_reference / ai_camera_test" autocapitalize="none"></label>
+              <label>pixel_difference <input id="pixel-difference-input" type="number" min="1" max="255" value="30" inputmode="numeric"></label>
+              <label>motion_ratio <input id="motion-ratio-input" type="number" min="0.0001" max="1" step="0.0001" value="0.01" inputmode="decimal"></label>
+              <label id="idle-setting">idle_interval_sec <input id="idle-interval" type="number" min="1" max="3600" value="60"> 秒</label>
+              <label><span id="detection-setting-label">detection_interval_sec</span> <input id="detection-interval" type="number" min="1" max="3600" value="3"> 秒</label>
+              <label>roi_x <input id="roi-x-input" type="number" min="0" max="640" inputmode="numeric"></label>
+              <label>roi_y <input id="roi-y-input" type="number" min="0" max="360" inputmode="numeric"></label>
+              <label>roi_w <input id="roi-w-input" type="number" min="1" max="640" inputmode="numeric"></label>
+              <label>roi_h <input id="roi-h-input" type="number" min="1" max="360" inputmode="numeric"></label>
+              <label class="wide-field">notes <input id="notes-input" type="text" placeholder="weather, block, treatment"></label>
+            </div>
+            <div class="advanced-modes" id="auto-settings">
+              <p class="hint" id="auto-settings-help">動き候補は昆虫分類ではありません。風、影、花の揺れも候補になります。</p>
+              <label class="auto-toggle"><input id="motion-trigger-mode" type="checkbox"><span>動いた時だけ撮影</span></label>
+              <label class="auto-toggle"><input id="hybrid-mode" type="checkbox"><span>研究用: 定間隔 + 動いた時に追加撮影</span></label>
+              <label class="auto-toggle"><input id="autonomous-mode" type="checkbox"><span>自律運行（通信が切れても継続）</span></label>
+              <label class="auto-toggle"><input id="ml-assist-mode" type="checkbox"><span>保存写真を positive / negative に仮分類</span></label>
+            </div>
+          </details>
         </div>
         <div class="group-actions">
           <button class="primary" id="start-all" type="button">全機を開始</button>
           <button class="danger" id="stop-all" type="button">全機を停止</button>
+          <button class="secondary" id="review-events-button" type="button">イベント確認</button>
         </div>
       </section>
 
@@ -55,7 +76,7 @@
         <div>
           <p class="section-title">観察機</p>
           <h2>Raspberry Pi を追加</h2>
-          <p class="hint">機器名を登録します。例: <code>zuizui0223@zuizui2</code>。同じ Wi-Fi 上の <code>zuizui2.local</code> に接続します。</p>
+          <p class="hint"><code>zuizui0223@zuizui2</code> のように入れると <code>http://zuizui2.local:8000</code> へ接続します。</p>
         </div>
         <form class="device-form" id="device-form">
           <input id="device-address" type="text" placeholder="zuizui0223@zuizui2" autocapitalize="none" autocomplete="off" required>
@@ -63,36 +84,65 @@
         </form>
       </section>
 
-      <section class="install-panel" aria-label="iPadへインストール">
-        <div>
-          <p class="section-title">iPad INSTALL</p>
-          <h2>アプリのように使う</h2>
-        </div>
-        <p>Safari でこのページを開き、共有ボタンから「ホーム画面に追加」を選びます。App Store を通さず、この観察機につないだ時にすぐ起動できます。</p>
-      </section>
-
       <section class="camera-grid" id="camera-grid" aria-label="観察機の状態">
-        <p class="camera-empty" id="camera-empty">接続する観察機を追加してください。</p>
+        <p class="camera-empty" id="camera-empty">観察機を追加してください。</p>
       </section>
 
       <section class="gallery-panel" aria-label="撮影フォルダ">
         <div class="gallery-header">
           <div>
             <p class="section-title">撮影フォルダ</p>
-            <h2>保存画像を確認・整理</h2>
-            <p class="hint">削除した写真は元に戻せません。必要な画像は削除前に確認してください。</p>
+            <h2>画像を確認・整理</h2>
+            <p class="hint">all / positive / negative を各台ごとに確認できます。</p>
           </div>
-          <div class="gallery-switch" id="gallery-switch" role="group" aria-label="表示する観察機"></div>
-          <button class="danger delete-all" id="delete-all-images" type="button">この観察機の写真を全削除</button>
+          <div class="gallery-switch" id="gallery-switch" role="group" aria-label="観察機選択"></div>
+          <a class="download-zip disabled" id="download-zip" href="#" download>ZIP保存</a>
+          <button class="danger delete-all" id="delete-all-images" type="button">全画像を削除</button>
+        </div>
+        <div class="collection-switch" role="group" aria-label="表示フォルダ">
+          <button class="collection-tab selected" id="all-images-tab" type="button">all</button>
+          <button class="collection-tab" id="positive-images-tab" type="button">positive</button>
+          <button class="collection-tab" id="negative-images-tab" type="button">negative</button>
         </div>
         <div class="folder-summary">
           <span id="gallery-camera-label">観察機未選択</span>
-          <span id="gallery-count">読み込み中...</span>
+          <span id="gallery-count">-</span>
           <span id="gallery-size"></span>
         </div>
         <p class="folder-path" id="gallery-folder-path">保存先を読み込み中...</p>
-        <div class="gallery-grid" id="gallery-grid">
-          <p class="gallery-empty">画像一覧を読み込んでいます...</p>
+        <div class="gallery-grid" id="gallery-grid"></div>
+      </section>
+
+      <section class="event-review-panel" aria-label="event review">
+        <div class="gallery-header">
+          <div>
+            <p class="section-title">EVENT REVIEW</p>
+            <h2>候補イベントを確認</h2>
+            <p class="hint">候補を insect / non_insect / unclear として保存します。これは将来の学習データになります。</p>
+          </div>
+          <a class="download-zip disabled" id="download-event-labels" href="#" download>Export labels CSV</a>
+        </div>
+        <div class="folder-summary">
+          <span id="event-camera-label">観察機未選択</span>
+          <span id="event-count">events -</span>
+        </div>
+        <div class="event-grid" id="event-grid"></div>
+      </section>
+
+      <section class="training-panel" aria-label="二値機械学習">
+        <div>
+          <p class="section-title">SAME-DAY LEARNING</p>
+          <h2>帰宅後・給電時の再学習準備</h2>
+          <p id="training-message">positive / negative の確認済み画像を読み込み中...</p>
+        </div>
+        <dl class="training-metrics">
+          <div><dt>positive</dt><dd id="positive-count">-</dd></div>
+          <div><dt>negative</dt><dd id="negative-count">-</dd></div>
+          <div><dt>model</dt><dd id="training-model">-</dd></div>
+        </dl>
+        <div class="group-actions">
+          <button class="primary" id="training-start" type="button">この観察機で再学習</button>
+          <button class="secondary" id="training-reset" type="button">モデルを破棄</button>
         </div>
       </section>
 
@@ -101,6 +151,7 @@
         <span>ホーム画面に追加してフィールドで使用</span>
       </footer>
     </main>
+
     <template id="camera-template">
       <article class="camera-card">
         <div class="camera-header">
@@ -108,28 +159,60 @@
             <p class="camera-label" data-field="device">OBSERVATION UNIT</p>
             <h2 data-field="label">PolliPi Camera</h2>
             <p class="sensor" data-field="sensor"></p>
+            <p class="session-line" data-field="session"></p>
+            <div class="camera-badges" data-field="badges"></div>
+            <p class="camera-note" data-field="camera-note"></p>
           </div>
           <span class="pill offline" data-field="pill">確認中</span>
         </div>
-        <div class="image-frame">
-          <img data-field="image" alt="観察機の最新画像">
+        <div class="image-frame" data-field="image-frame">
+          <img data-field="image" alt="観察機の画像" draggable="false">
+          <span class="roi-box monitor-roi-box" data-field="monitor-roi-box" hidden></span>
           <p data-field="empty">最新画像を待っています</p>
         </div>
+        <section class="roi-panel">
+          <div class="roi-actions">
+            <button class="secondary roi-preview-camera" type="button">Preview / Set ROI</button>
+            <button class="secondary roi-clear-camera" type="button">Clear ROI</button>
+            <button class="secondary roi-full-camera" type="button">Use full frame</button>
+          </div>
+          <p class="roi-status" data-field="roi-status">ROI: full frame</p>
+          <p class="roi-note">ROI is defined on the 640 x 360 monitoring frame.</p>
+          <label class="roi-track-toggle"><input data-field="roi-tracking" type="checkbox"><span>Track ROI during recording</span></label>
+          <details class="roi-advanced">
+            <summary>Advanced ROI tracking</summary>
+            <div class="advanced-grid compact">
+              <label>roi_search_margin <input data-field="roi-search-margin" type="number" min="0" max="160" value="30" inputmode="numeric"></label>
+              <label>roi_tracking_min_score <input data-field="roi-tracking-min-score" type="number" min="-1" max="1" step="0.05" value="0.45" inputmode="decimal"></label>
+            </div>
+          </details>
+          <p class="roi-status" data-field="roi-tracking-status">ROI mode: full frame</p>
+          <div class="roi-drawer" data-field="roi-drawer" hidden>
+            <p>Draw a rectangle around the flower/head. You can redraw before starting.</p>
+            <div class="roi-preview-wrap" data-field="roi-wrap">
+              <img data-field="roi-preview" alt="ROI preview" draggable="false">
+              <span class="roi-box" data-field="roi-box"></span>
+            </div>
+          </div>
+        </section>
         <dl class="metrics">
           <div><dt>撮影枚数</dt><dd data-field="count">-</dd></div>
           <div><dt>間隔</dt><dd data-field="interval">-</dd></div>
           <div><dt>最終撮影</dt><dd data-field="time">-</dd></div>
-          <div><dt>自動判定</dt><dd data-field="detection">-</dd></div>
+          <div><dt>動き候補</dt><dd data-field="detection">-</dd></div>
+          <div><dt>保存容量</dt><dd data-field="storage">-</dd></div>
+          <div><dt>電源状態</dt><dd data-field="power">-</dd></div>
         </dl>
         <p class="camera-message" data-field="message">接続しています...</p>
         <div class="card-actions">
           <button class="primary start-camera" type="button">開始</button>
           <button class="secondary stop-camera" type="button">停止</button>
           <button class="monitor-camera" type="button">画角モニター</button>
+          <button class="ai-monitor-camera" type="button" hidden>AI検出モニター</button>
           <button class="remove-camera" type="button">登録を削除</button>
         </div>
       </article>
     </template>
-    <script src="/app/app.js?v=20260527-2"></script>
+    <script src="/app/app.js?v=20260601-roi-preview"></script>
   </body>
 </html>

@@ -1,15 +1,39 @@
-const STORAGE_KEY = "pollipi.observationDevices.v1";
+const STORAGE_KEY = "pollipi.observationDevices.v2";
+const MONITOR_WIDTH = 640;
+const MONITOR_HEIGHT = 360;
+const MIN_ROI_SIZE = 8;
 
 const intervalInput = document.querySelector("#interval-input");
 const autoModeInput = document.querySelector("#auto-mode");
+const motionTriggerInput = document.querySelector("#motion-trigger-mode");
+const hybridModeInput = document.querySelector("#hybrid-mode");
 const autonomousModeInput = document.querySelector("#autonomous-mode");
+const mlAssistModeInput = document.querySelector("#ml-assist-mode");
 const autoSettings = document.querySelector("#auto-settings");
+const autoSettingsHelp = document.querySelector("#auto-settings-help");
 const idleIntervalInput = document.querySelector("#idle-interval");
 const detectionIntervalInput = document.querySelector("#detection-interval");
+const pixelDifferenceInput = document.querySelector("#pixel-difference-input");
+const motionRatioInput = document.querySelector("#motion-ratio-input");
+const idleSetting = document.querySelector("#idle-setting");
+const detectionSettingLabel = document.querySelector("#detection-setting-label");
+const siteIdInput = document.querySelector("#site-id-input");
+const flowerIdInput = document.querySelector("#flower-id-input");
+const plantSpeciesInput = document.querySelector("#plant-species-input");
+const observerInput = document.querySelector("#observer-input");
+const notesInput = document.querySelector("#notes-input");
+const comparisonSessionInput = document.querySelector("#comparison-session-input");
+const cameraRoleInput = document.querySelector("#camera-role-input");
+const methodModeInput = document.querySelector("#method-mode-input");
+const roiXInput = document.querySelector("#roi-x-input");
+const roiYInput = document.querySelector("#roi-y-input");
+const roiWInput = document.querySelector("#roi-w-input");
+const roiHInput = document.querySelector("#roi-h-input");
 const syncLabel = document.querySelector("#sync-label");
 const refreshButton = document.querySelector("#refresh-button");
 const startAllButton = document.querySelector("#start-all");
 const stopAllButton = document.querySelector("#stop-all");
+const reviewEventsButton = document.querySelector("#review-events-button");
 const cameraGrid = document.querySelector("#camera-grid");
 const cameraEmpty = document.querySelector("#camera-empty");
 const cameraTemplate = document.querySelector("#camera-template");
@@ -22,9 +46,24 @@ const galleryCount = document.querySelector("#gallery-count");
 const gallerySize = document.querySelector("#gallery-size");
 const galleryFolderPath = document.querySelector("#gallery-folder-path");
 const deleteAllImagesButton = document.querySelector("#delete-all-images");
+const downloadZipLink = document.querySelector("#download-zip");
+const allImagesTab = document.querySelector("#all-images-tab");
+const positiveImagesTab = document.querySelector("#positive-images-tab");
+const negativeImagesTab = document.querySelector("#negative-images-tab");
+const eventCameraLabel = document.querySelector("#event-camera-label");
+const eventCount = document.querySelector("#event-count");
+const eventGrid = document.querySelector("#event-grid");
+const downloadEventLabelsLink = document.querySelector("#download-event-labels");
+const positiveCount = document.querySelector("#positive-count");
+const negativeCount = document.querySelector("#negative-count");
+const trainingModel = document.querySelector("#training-model");
+const trainingMessage = document.querySelector("#training-message");
+const trainingStartButton = document.querySelector("#training-start");
+const trainingResetButton = document.querySelector("#training-reset");
 
 let cameras = loadCameras();
 let selectedGalleryCamera = null;
+let selectedCollection = "all";
 
 function loadCameras() {
   try {
@@ -35,13 +74,21 @@ function loadCameras() {
 }
 
 function saveCameras() {
-  const persistent = cameras.map(({ address, baseUrl, device_id, device_name, camera_label, camera_model }) => ({
-    address,
-    baseUrl,
-    device_id,
-    device_name,
-    camera_label,
-    camera_model,
+  const persistent = cameras.map((camera) => ({
+    address: camera.address,
+    baseUrl: camera.baseUrl,
+    device_id: camera.device_id,
+    device_name: camera.device_name,
+    camera_label: camera.camera_label,
+    camera_model: camera.camera_model,
+    camera_profile: camera.camera_profile,
+    is_ai_camera: camera.is_ai_camera,
+    is_noir: camera.is_noir,
+    is_wide: camera.is_wide,
+    roi: camera.roi || null,
+    roi_tracking: Boolean(camera.roi_tracking),
+    roi_search_margin: camera.roi_search_margin || 30,
+    roi_tracking_min_score: camera.roi_tracking_min_score || 0.45,
   }));
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persistent));
 }
@@ -65,6 +112,171 @@ function field(camera, name) {
   return camera.card.querySelector(`[data-field="${name}"]`);
 }
 
+function optionalValue(input) {
+  const value = input && input.value ? input.value.trim() : "";
+  return value || undefined;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeRoi(rawRoi) {
+  if (!rawRoi) return null;
+  let x = Math.round(Number(rawRoi.roi_x));
+  let y = Math.round(Number(rawRoi.roi_y));
+  let w = Math.round(Number(rawRoi.roi_w));
+  let h = Math.round(Number(rawRoi.roi_h));
+  if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null;
+  x = clamp(x, 0, MONITOR_WIDTH - 1);
+  y = clamp(y, 0, MONITOR_HEIGHT - 1);
+  w = clamp(w, 1, MONITOR_WIDTH - x);
+  h = clamp(h, 1, MONITOR_HEIGHT - y);
+  return { roi_x: x, roi_y: y, roi_w: w, roi_h: h };
+}
+
+function fillRoiInputs(roi) {
+  if (!roi) {
+    [roiXInput, roiYInput, roiWInput, roiHInput].forEach((input) => { input.value = ""; });
+    return;
+  }
+  roiXInput.value = roi.roi_x;
+  roiYInput.value = roi.roi_y;
+  roiWInput.value = roi.roi_w;
+  roiHInput.value = roi.roi_h;
+}
+
+function readRoiInputs({ quiet = false } = {}) {
+  const values = [roiXInput, roiYInput, roiWInput, roiHInput].map(optionalValue);
+  if (values.every((value) => value === undefined)) return undefined;
+  if (values.some((value) => value === undefined)) {
+    if (!quiet) window.alert("ROI requires roi_x, roi_y, roi_w, and roi_h together.");
+    return null;
+  }
+  const roi = normalizeRoi({ roi_x: values[0], roi_y: values[1], roi_w: values[2], roi_h: values[3] });
+  if (!roi) {
+    if (!quiet) window.alert("ROI must fit inside the 640 x 360 monitoring frame.");
+    return null;
+  }
+  return roi;
+}
+
+function getSessionMetadata() {
+  return {
+    site_id: optionalValue(siteIdInput),
+    flower_id: optionalValue(flowerIdInput),
+    plant_species: optionalValue(plantSpeciesInput),
+    observer: optionalValue(observerInput),
+    notes: optionalValue(notesInput),
+    comparison_session_id: optionalValue(comparisonSessionInput),
+    camera_role: optionalValue(cameraRoleInput),
+    method_mode: optionalValue(methodModeInput),
+  };
+}
+
+function getInterval() {
+  const interval = Number(intervalInput.value);
+  if (!Number.isFinite(interval) || interval < 1 || interval > 3600) {
+    window.alert("撮影間隔は 1 秒以上 3600 秒以下で入力してください。");
+    return null;
+  }
+  return interval;
+}
+
+function getAutomaticSettings() {
+  const idle = Number(idleIntervalInput.value);
+  const detection = Number(detectionIntervalInput.value);
+  const pixelDifference = Number(pixelDifferenceInput.value || 30);
+  const motionRatio = Number(motionRatioInput.value || 0.01);
+  if ((autoModeInput.checked || motionTriggerInput.checked || hybridModeInput.checked) && (
+    !Number.isFinite(idle) || idle < 1 || idle > 3600 ||
+    !Number.isFinite(detection) || detection < 1 || detection > 3600
+  )) {
+    window.alert("自動間隔は 1 秒以上 3600 秒以下で入力してください。");
+    return null;
+  }
+  if (!Number.isFinite(pixelDifference) || pixelDifference < 1 || pixelDifference > 255) {
+    window.alert("pixel_difference は 1 以上 255 以下で入力してください。");
+    return null;
+  }
+  if (!Number.isFinite(motionRatio) || motionRatio < 0.0001 || motionRatio > 1) {
+    window.alert("motion_ratio は 0.0001 以上 1 以下で入力してください。");
+    return null;
+  }
+  return {
+    auto_mode: autoModeInput.checked,
+    motion_trigger_mode: motionTriggerInput.checked,
+    hybrid_mode: hybridModeInput.checked,
+    ml_assist_mode: mlAssistModeInput.checked,
+    autonomous_mode: autonomousModeInput.checked,
+    idle_interval_sec: idle,
+    detection_interval_sec: detection,
+    pixel_difference: Math.round(pixelDifference),
+    motion_ratio: motionRatio,
+  };
+}
+
+function getRoiTrackingSettings(camera, hasRoi) {
+  if (!hasRoi) return {};
+  const trackingInput = field(camera, "roi-tracking");
+  const tracking = Boolean(trackingInput && trackingInput.checked);
+  camera.roi_tracking = tracking;
+  if (!tracking) {
+    saveCameras();
+    return { roi_tracking: false };
+  }
+  const margin = Number(field(camera, "roi-search-margin").value || 30);
+  const minScore = Number(field(camera, "roi-tracking-min-score").value || 0.45);
+  if (!Number.isFinite(margin) || margin < 0 || margin > 160) {
+    window.alert("roi_search_margin は 0 以上 160 以下で入力してください。");
+    return null;
+  }
+  if (!Number.isFinite(minScore) || minScore < -1 || minScore > 1) {
+    window.alert("roi_tracking_min_score は -1 以上 1 以下で入力してください。");
+    return null;
+  }
+  camera.roi_search_margin = Math.round(margin);
+  camera.roi_tracking_min_score = minScore;
+  saveCameras();
+  return {
+    roi_tracking: true,
+    roi_search_margin: Math.round(margin),
+    roi_tracking_min_score: minScore,
+  };
+}
+
+function getStartPayload(camera) {
+  const interval = getInterval();
+  const automaticSettings = getAutomaticSettings();
+  if (interval === null || automaticSettings === null) return null;
+  const metadata = getSessionMetadata();
+  const drawnRoi = normalizeRoi(camera && camera.roi);
+  const manualRoi = drawnRoi ? undefined : readRoiInputs({ quiet: true });
+  if (manualRoi === null) return null;
+  const roi = drawnRoi || manualRoi;
+  const payload = { interval_sec: interval, ...automaticSettings, ...metadata };
+  if (roi) {
+    const tracking = getRoiTrackingSettings(camera, true);
+    if (tracking === null) return null;
+    Object.assign(payload, roi, tracking);
+  }
+  return payload;
+}
+
+async function apiRequest(camera, path, options = {}) {
+  const response = await fetch(`${camera.baseUrl}${path}`, options);
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const body = await response.json();
+      detail = body.detail || detail;
+    } catch (_) {}
+    throw new Error(detail);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  return contentType.includes("application/json") ? response.json() : response.text();
+}
+
 async function registerCamera(rawAddress, quiet = false) {
   let baseUrl;
   try {
@@ -79,6 +291,13 @@ async function registerCamera(rawAddress, quiet = false) {
     const device = await response.json();
     const camera = { ...device, address: rawAddress.trim(), baseUrl };
     const existing = cameras.findIndex((item) => item.baseUrl === baseUrl || item.device_id === camera.device_id);
+    const old = existing >= 0 ? cameras[existing] : {};
+    Object.assign(camera, {
+      roi: old.roi || null,
+      roi_tracking: Boolean(old.roi_tracking),
+      roi_search_margin: old.roi_search_margin || 30,
+      roi_tracking_min_score: old.roi_tracking_min_score || 0.45,
+    });
     if (existing >= 0) cameras[existing] = camera;
     else cameras.push(camera);
     saveCameras();
@@ -97,14 +316,51 @@ function buildCameraCard(camera, index) {
   camera.previousImage = null;
   camera.manualPreview = false;
   camera.monitoring = false;
-  field(camera, "device").textContent = `OBSERVATION UNIT ${index + 1} / ${camera.device_name}`;
-  field(camera, "label").textContent = camera.camera_label;
-  field(camera, "sensor").textContent = `${camera.camera_model} / ${camera.baseUrl}`;
+  camera.aiMonitoring = false;
+  field(camera, "device").textContent = `OBSERVATION UNIT ${index + 1} / ${camera.device_name || camera.device_id}`;
+  field(camera, "label").textContent = camera.camera_label || "PolliPi Camera";
+  field(camera, "sensor").textContent = `${camera.camera_model || "-"} / ${camera.camera_profile || "unspecified"} / ${camera.baseUrl}`;
+  card.classList.toggle("noir-card", Boolean(camera.is_noir));
+  updateCameraBadges(camera);
+  restoreRoiControls(camera);
   card.querySelector(".start-camera").addEventListener("click", () => startCamera(camera));
   card.querySelector(".stop-camera").addEventListener("click", () => stopCamera(camera));
   card.querySelector(".monitor-camera").addEventListener("click", () => toggleMonitor(camera));
+  card.querySelector(".roi-preview-camera").addEventListener("click", () => openRoiPreview(camera));
+  card.querySelector(".roi-clear-camera").addEventListener("click", () => clearCameraRoi(camera));
+  card.querySelector(".roi-full-camera").addEventListener("click", () => useFullFrame(camera));
+  const aiButton = card.querySelector(".ai-monitor-camera");
+  if (camera.is_ai_camera || (camera.camera_model || "").toLowerCase() === "imx500") {
+    aiButton.hidden = false;
+    aiButton.addEventListener("click", () => toggleMonitor(camera, true));
+  }
   card.querySelector(".remove-camera").addEventListener("click", () => removeCamera(camera));
+  setupRoiDrawing(camera);
+  renderCameraRoi(camera);
   return card;
+}
+
+function restoreRoiControls(camera) {
+  camera.roi = normalizeRoi(camera.roi);
+  const tracking = field(camera, "roi-tracking");
+  const margin = field(camera, "roi-search-margin");
+  const score = field(camera, "roi-tracking-min-score");
+  tracking.checked = Boolean(camera.roi_tracking);
+  margin.value = camera.roi_search_margin || 30;
+  score.value = camera.roi_tracking_min_score || 0.45;
+  tracking.addEventListener("change", () => {
+    camera.roi_tracking = tracking.checked;
+    saveCameras();
+    renderTrackingStatus(camera);
+  });
+  margin.addEventListener("change", () => {
+    camera.roi_search_margin = Number(margin.value || 30);
+    saveCameras();
+  });
+  score.addEventListener("change", () => {
+    camera.roi_tracking_min_score = Number(score.value || 0.45);
+    saveCameras();
+  });
 }
 
 function renderCameras() {
@@ -115,29 +371,43 @@ function renderCameras() {
   } else {
     cameras.forEach((camera, index) => cameraGrid.append(buildCameraCard(camera, index)));
   }
+  renderGallerySelection();
+  if (!selectedGalleryCamera || !cameras.some((camera) => camera.baseUrl === selectedGalleryCamera.baseUrl)) {
+    selectedGalleryCamera = cameras[0] || null;
+  }
+}
+
+function updateCameraBadges(camera) {
+  const badges = field(camera, "badges");
+  badges.replaceChildren();
+  [
+    camera.is_ai_camera ? "AI" : null,
+    camera.is_noir ? "IR / NoIR" : null,
+    camera.is_wide ? "Wide" : null,
+    camera.camera_profile || null,
+    camera.camera_role || (camera.status && camera.status.camera_role) || null,
+    camera.comparison_session_id || (camera.status && camera.status.comparison_session_id) || null,
+  ].filter(Boolean).forEach((value) => {
+    const badge = document.createElement("span");
+    badge.className = "camera-badge";
+    badge.textContent = value;
+    badges.append(badge);
+  });
+}
+
+function renderGallerySelection() {
   gallerySwitch.replaceChildren();
   cameras.forEach((camera) => {
     const button = document.createElement("button");
     button.className = `gallery-tab${selectedGalleryCamera && selectedGalleryCamera.baseUrl === camera.baseUrl ? " selected" : ""}`;
     button.type = "button";
-    button.textContent = camera.camera_label;
-    button.addEventListener("click", () => {
+    button.textContent = camera.camera_label || camera.device_name || camera.baseUrl;
+    button.addEventListener("click", async () => {
       selectedGalleryCamera = camera;
-      renderGallerySelection();
-      refreshGallery();
+      await Promise.all([refreshGallery(), refreshEvents(), refreshTraining()]);
     });
     gallerySwitch.append(button);
   });
-  if (!selectedGalleryCamera || !cameras.some((camera) => camera.baseUrl === selectedGalleryCamera.baseUrl)) {
-    selectedGalleryCamera = cameras[0] || null;
-    renderGallerySelection();
-  }
-}
-
-function renderGallerySelection() {
-  for (const button of gallerySwitch.querySelectorAll(".gallery-tab")) {
-    button.classList.toggle("selected", selectedGalleryCamera && button.textContent === selectedGalleryCamera.camera_label);
-  }
 }
 
 function removeCamera(camera) {
@@ -147,33 +417,208 @@ function removeCamera(camera) {
   saveCameras();
   renderCameras();
   refreshGallery();
+  refreshEvents();
 }
 
-function getInterval() {
-  const interval = Number(intervalInput.value);
-  if (!Number.isFinite(interval) || interval < 1 || interval > 3600) {
-    window.alert("撮影間隔は 1 秒以上 3600 秒以下で入力してください。");
-    return null;
-  }
-  return interval;
+function setCameraRoi(camera, roi, { fillInputs = true } = {}) {
+  const normalized = normalizeRoi(roi);
+  if (!normalized) return false;
+  camera.roi = normalized;
+  if (fillInputs) fillRoiInputs(normalized);
+  saveCameras();
+  renderCameraRoi(camera);
+  return true;
 }
 
-function getAutomaticSettings() {
-  const idle = Number(idleIntervalInput.value);
-  const detection = Number(detectionIntervalInput.value);
-  if (autoModeInput.checked && (
-    !Number.isFinite(idle) || idle < 1 || idle > 3600 ||
-    !Number.isFinite(detection) || detection < 1 || detection > 3600
-  )) {
-    window.alert("自動間隔は 1 秒以上 3600 秒以下で入力してください。");
-    return null;
+function clearCameraRoi(camera) {
+  camera.roi = null;
+  fillRoiInputs(null);
+  saveCameras();
+  renderCameraRoi(camera);
+  field(camera, "message").textContent = "ROI cleared. Full frame will be used unless you draw a new ROI.";
+}
+
+function useFullFrame(camera) {
+  clearCameraRoi(camera);
+  field(camera, "roi-tracking").checked = false;
+  camera.roi_tracking = false;
+  saveCameras();
+  field(camera, "message").textContent = "Full frame will be used for motion detection.";
+}
+
+function renderCameraRoi(camera) {
+  const status = field(camera, "roi-status");
+  const previewBox = field(camera, "roi-box");
+  const monitorBox = field(camera, "monitor-roi-box");
+  const statusInfo = camera.status || {};
+  const trackedRoi = statusInfo.tracked_roi_w ? normalizeRoi({
+    roi_x: statusInfo.tracked_roi_x,
+    roi_y: statusInfo.tracked_roi_y,
+    roi_w: statusInfo.tracked_roi_w,
+    roi_h: statusInfo.tracked_roi_h,
+  }) : null;
+  const roi = statusInfo.roi_tracking && trackedRoi ? trackedRoi : normalizeRoi(camera.roi);
+  if (!roi) {
+    status.textContent = "ROI: full frame";
+    previewBox.hidden = true;
+    monitorBox.hidden = true;
+    renderTrackingStatus(camera);
+    return;
   }
+  status.textContent = `ROI: x=${roi.roi_x}, y=${roi.roi_y}, w=${roi.roi_w}, h=${roi.roi_h}`;
+  renderRoiBoxOnImage(previewBox, field(camera, "roi-preview"), field(camera, "roi-wrap"), roi);
+  renderRoiBoxOnImage(monitorBox, field(camera, "image"), field(camera, "image-frame"), roi);
+  renderTrackingStatus(camera);
+}
+
+function renderRoiBoxOnImage(box, image, wrap, roi) {
+  if (!box || !image || !wrap) return;
+  if (!(image.complete && image.clientWidth > 0 && image.clientHeight > 0)) return;
+  const imageRect = image.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
+  box.hidden = false;
+  box.style.left = `${imageRect.left - wrapRect.left + roi.roi_x / MONITOR_WIDTH * imageRect.width}px`;
+  box.style.top = `${imageRect.top - wrapRect.top + roi.roi_y / MONITOR_HEIGHT * imageRect.height}px`;
+  box.style.width = `${roi.roi_w / MONITOR_WIDTH * imageRect.width}px`;
+  box.style.height = `${roi.roi_h / MONITOR_HEIGHT * imageRect.height}px`;
+}
+
+function renderTrackingStatus(camera) {
+  const node = field(camera, "roi-tracking-status");
+  if (!node) return;
+  const status = camera.status || {};
+  const roi = normalizeRoi(camera.roi);
+  if (!roi && !status.tracked_roi_w) {
+    node.textContent = "ROI mode: full frame";
+  } else if (!status.roi_tracking && !field(camera, "roi-tracking").checked) {
+    node.textContent = "ROI mode: fixed ROI";
+  } else {
+    const score = status.roi_tracking_score == null ? "-" : Number(status.roi_tracking_score).toFixed(2);
+    const ok = status.roi_tracking_success ? "ok" : "holding";
+    const sx = status.roi_shift_x == null ? "-" : status.roi_shift_x;
+    const sy = status.roi_shift_y == null ? "-" : status.roi_shift_y;
+    node.textContent = `ROI mode: tracked ROI / score ${score} / ${ok} / shift x=${sx}, y=${sy}`;
+  }
+}
+
+function pointInImage(event, image) {
+  const rect = image.getBoundingClientRect();
+  const source = event.touches ? event.touches[0] || event.changedTouches[0] : event;
+  if (!source || rect.width <= 0 || rect.height <= 0) return null;
   return {
-    auto_mode: autoModeInput.checked,
-    autonomous_mode: autonomousModeInput.checked,
-    idle_interval_sec: idle,
-    detection_interval_sec: detection,
+    x: clamp(source.clientX - rect.left, 0, rect.width),
+    y: clamp(source.clientY - rect.top, 0, rect.height),
+    width: rect.width,
+    height: rect.height,
   };
+}
+
+function displayRectToRoi(start, end) {
+  const left = Math.min(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const width = Math.abs(end.x - start.x);
+  const height = Math.abs(end.y - start.y);
+  if (width < MIN_ROI_SIZE || height < MIN_ROI_SIZE) return null;
+  return normalizeRoi({
+    roi_x: Math.round(left * MONITOR_WIDTH / start.width),
+    roi_y: Math.round(top * MONITOR_HEIGHT / start.height),
+    roi_w: Math.round(width * MONITOR_WIDTH / start.width),
+    roi_h: Math.round(height * MONITOR_HEIGHT / start.height),
+  });
+}
+
+function drawRoiBoxFromPoints(box, start, end) {
+  const left = Math.min(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const width = Math.abs(end.x - start.x);
+  const height = Math.abs(end.y - start.y);
+  box.hidden = false;
+  box.style.left = `${left}px`;
+  box.style.top = `${top}px`;
+  box.style.width = `${width}px`;
+  box.style.height = `${height}px`;
+}
+
+function setupRoiDrawing(camera) {
+  setupRoiDrawingTarget(camera, field(camera, "roi-wrap"), field(camera, "roi-preview"), field(camera, "roi-box"), "preview");
+}
+
+function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
+  let drawing = false;
+  let startPoint = null;
+  let previousRoi = null;
+  let usedPointer = false;
+  const begin = (event) => {
+    if (event.type.startsWith("touch") && usedPointer) return;
+    const point = pointInImage(event, image);
+    if (!point) return;
+    event.preventDefault();
+    drawing = true;
+    startPoint = point;
+    previousRoi = normalizeRoi(camera.roi);
+    drawRoiBoxFromPoints(box, point, point);
+    if (event.pointerId !== undefined && wrap.setPointerCapture) {
+      usedPointer = true;
+      wrap.setPointerCapture(event.pointerId);
+    }
+  };
+  const move = (event) => {
+    if (event.type.startsWith("touch") && usedPointer) return;
+    if (!drawing || !startPoint) return;
+    const point = pointInImage(event, image);
+    if (!point) return;
+    event.preventDefault();
+    drawRoiBoxFromPoints(box, startPoint, point);
+  };
+  const end = (event) => {
+    if (event.type.startsWith("touch") && usedPointer) return;
+    if (!drawing || !startPoint) return;
+    const point = pointInImage(event, image);
+    const origin = startPoint;
+    drawing = false;
+    startPoint = null;
+    if (!point) return;
+    event.preventDefault();
+    const roi = displayRectToRoi(origin, point);
+    if (roi) {
+      setCameraRoi(camera, roi);
+      field(camera, "message").textContent = "ROI set from preview. Start recording to use it.";
+    } else {
+      camera.roi = previousRoi;
+      renderCameraRoi(camera);
+      field(camera, "message").textContent = "ROI is too small. Please draw a larger rectangle.";
+    }
+  };
+  if (window.PointerEvent) {
+    wrap.addEventListener("pointerdown", begin);
+    wrap.addEventListener("pointermove", move);
+    wrap.addEventListener("pointerup", end);
+    wrap.addEventListener("pointercancel", end);
+  }
+  wrap.addEventListener("touchstart", begin, { passive: false });
+  wrap.addEventListener("touchmove", move, { passive: false });
+  wrap.addEventListener("touchend", end, { passive: false });
+  wrap.addEventListener("mousedown", begin);
+  wrap.addEventListener("mousemove", move);
+  wrap.addEventListener("mouseup", end);
+}
+
+async function openRoiPreview(camera) {
+  setMonitor(camera, false);
+  const drawer = field(camera, "roi-drawer");
+  const image = field(camera, "roi-preview");
+  drawer.hidden = false;
+  image.classList.remove("ready");
+  image.onload = () => {
+    image.classList.add("ready");
+    renderCameraRoi(camera);
+  };
+  image.onerror = () => {
+    image.classList.remove("ready");
+    field(camera, "message").textContent = "Could not load preview for ROI setting.";
+  };
+  image.src = `${camera.baseUrl}/preview?t=${Date.now()}`;
+  field(camera, "message").textContent = "Draw on the preview to set ROI.";
 }
 
 function setBusy(camera, busy) {
@@ -188,30 +633,47 @@ function formatCaptureTime(value) {
   }).format(new Date(value));
 }
 
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return "-";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function updateCard(camera, status) {
   camera.status = status;
+  Object.assign(camera, {
+    device_id: status.device_id || camera.device_id,
+    device_name: status.device_name || camera.device_name,
+    camera_label: status.camera_label || camera.camera_label,
+    camera_model: status.camera_model || camera.camera_model,
+    camera_profile: status.camera_profile || camera.camera_profile,
+    is_ai_camera: Boolean(status.is_ai_camera),
+    is_noir: Boolean(status.is_noir),
+    is_wide: Boolean(status.is_wide),
+    camera_role: status.camera_role || camera.camera_role,
+    comparison_session_id: status.comparison_session_id || camera.comparison_session_id,
+  });
+  field(camera, "sensor").textContent = `${camera.camera_model} / ${camera.camera_profile || "unspecified"} / ${camera.baseUrl}`;
+  updateCameraBadges(camera);
   const pill = field(camera, "pill");
   pill.textContent = status.running ? "撮影中" : "停止中";
   pill.className = `pill ${status.running ? "running" : "stopped"}`;
   field(camera, "count").textContent = String(status.capture_count);
   field(camera, "interval").textContent = status.interval_sec ? `${status.interval_sec} 秒` : "-";
   field(camera, "time").textContent = formatCaptureTime(status.last_capture_time);
-  if (status.auto_mode) {
-    const score = status.motion_score === null ? "基準作成中" : `${(status.motion_score * 100).toFixed(2)}%`;
-    field(camera, "detection").textContent = status.insect_candidate ? `候補あり ${score}` : score;
-  } else {
-    field(camera, "detection").textContent = "OFF";
-  }
-  const autonomous = status.autonomous_mode && status.running ? " / 自律運行" : "";
+  const score = status.motion_score === null ? "基準作成中" : `${(Number(status.motion_score || 0) * 100).toFixed(2)}%`;
+  field(camera, "detection").textContent = status.auto_mode ? `${status.motion_type || "motion"} / ${score}` : "OFF";
   const message = status.auto_mode && status.interval_reason ? status.interval_reason : status.message;
-  field(camera, "message").textContent = `${message}${autonomous}`;
+  field(camera, "message").textContent = `${message}${status.autonomous_mode && status.running ? " / 自律運行" : ""}`;
+  renderCameraRoi(camera);
   if (!camera.monitoring && status.last_image && status.last_image !== camera.previousImage) {
     const image = field(camera, "image");
     image.onload = () => {
       image.classList.add("ready");
       field(camera, "empty").hidden = true;
+      renderCameraRoi(camera);
     };
-    image.src = `${camera.baseUrl}/latest?capture=${encodeURIComponent(status.last_capture_time)}`;
+    image.src = `${camera.baseUrl}/latest?capture=${encodeURIComponent(status.last_capture_time || Date.now())}`;
     camera.previousImage = status.last_image;
     camera.manualPreview = false;
   } else if (!status.last_image && !camera.manualPreview) {
@@ -219,7 +681,17 @@ function updateCard(camera, status) {
     image.classList.remove("ready");
     image.removeAttribute("src");
     field(camera, "empty").hidden = false;
-    camera.previousImage = null;
+  }
+}
+
+async function updateSystemCard(camera) {
+  try {
+    const system = await apiRequest(camera, "/system");
+    field(camera, "storage").textContent = `${formatBytes(system.storage_free_bytes)} 空き`;
+    field(camera, "power").textContent = system.undervoltage_now ? "電圧低下中" : system.undervoltage_occurred ? "電圧低下履歴" : "電圧OK";
+  } catch (_) {
+    field(camera, "storage").textContent = "-";
+    field(camera, "power").textContent = "-";
   }
 }
 
@@ -231,15 +703,10 @@ function setOffline(camera, error) {
   field(camera, "message").textContent = `接続できません: ${error.message}`;
 }
 
-async function apiRequest(camera, path, options = {}) {
-  const response = await fetch(`${camera.baseUrl}${path}`, options);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
 async function refreshCamera(camera) {
   try {
     updateCard(camera, await apiRequest(camera, "/status"));
+    await updateSystemCard(camera);
   } catch (error) {
     setOffline(camera, error);
   }
@@ -252,20 +719,19 @@ async function refreshAll() {
     hour: "2-digit", minute: "2-digit", second: "2-digit",
   }).format(new Date())}`;
   refreshButton.disabled = false;
-  await refreshGallery();
+  await Promise.all([refreshGallery(), refreshEvents(), refreshTraining()]);
 }
 
 async function startCamera(camera) {
-  const interval = getInterval();
-  const automaticSettings = getAutomaticSettings();
-  if (interval === null || automaticSettings === null) return;
+  const payload = getStartPayload(camera);
+  if (!payload) return;
   setMonitor(camera, false);
   setBusy(camera, true);
   try {
     const status = await apiRequest(camera, "/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ interval_sec: interval, ...automaticSettings }),
+      body: JSON.stringify(payload),
     });
     camera.previousImage = null;
     updateCard(camera, status);
@@ -289,15 +755,19 @@ async function stopCamera(camera) {
   }
 }
 
-function setMonitor(camera, monitoring) {
+function setMonitor(camera, monitoring, aiDetection = false) {
   const button = camera.card.querySelector(".monitor-camera");
+  const aiButton = camera.card.querySelector(".ai-monitor-camera");
   const image = field(camera, "image");
   camera.monitoring = monitoring;
-  button.classList.toggle("active", monitoring);
-  button.textContent = monitoring ? "モニター停止" : "画角モニター";
+  camera.aiMonitoring = monitoring && aiDetection;
+  button.classList.toggle("active", monitoring && !aiDetection);
+  aiButton.classList.toggle("active", camera.aiMonitoring);
+  button.textContent = monitoring && !aiDetection ? "モニター停止" : "画角モニター";
+  aiButton.textContent = camera.aiMonitoring ? "AIモニター停止" : "AI検出モニター";
   if (!monitoring) {
     if (camera.status && camera.status.last_image) {
-      image.src = `${camera.baseUrl}/latest?capture=${encodeURIComponent(camera.status.last_capture_time)}`;
+      image.src = `${camera.baseUrl}/latest?capture=${encodeURIComponent(camera.status.last_capture_time || Date.now())}`;
     } else {
       image.classList.remove("ready");
       image.removeAttribute("src");
@@ -306,25 +776,32 @@ function setMonitor(camera, monitoring) {
   }
 }
 
-function toggleMonitor(camera) {
-  if (camera.monitoring) {
+function toggleMonitor(camera, aiDetection = false) {
+  if (camera.monitoring && camera.aiMonitoring === aiDetection) {
     setMonitor(camera, false);
-    field(camera, "message").textContent = "画角モニターを停止しました。";
+    field(camera, "message").textContent = aiDetection ? "AI検出モニターを停止しました。" : "画角モニターを停止しました。";
+    return;
+  }
+  if (aiDetection && camera.status && camera.status.running) {
+    window.alert("AI検出モニターは撮影を停止してから使用してください。");
     return;
   }
   const image = field(camera, "image");
   image.onload = () => {
     image.classList.add("ready");
     field(camera, "empty").hidden = true;
+    renderCameraRoi(camera);
   };
   image.onerror = () => {
     setMonitor(camera, false);
     setOffline(camera, new Error("画面を取得できません"));
   };
-  setMonitor(camera, true);
-  image.src = `${camera.baseUrl}/mjpeg?t=${Date.now()}`;
+  setMonitor(camera, true, aiDetection);
+  image.src = `${camera.baseUrl}/mjpeg?detect=${aiDetection ? "true" : "false"}&t=${Date.now()}`;
   camera.manualPreview = true;
-  field(camera, "message").textContent = "画角を低負荷モニター表示しています（保存されません）。";
+  field(camera, "message").textContent = aiDetection
+    ? "AI検出モニター表示中（保存されません）。"
+    : "画角モニター表示中。画面上をドラッグしてROIを指定できます。";
 }
 
 async function startAll() {
@@ -340,40 +817,40 @@ async function stopAll() {
   stopAllButton.disabled = false;
 }
 
-function formatBytes(bytes) {
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 async function refreshGallery() {
   const camera = selectedGalleryCamera;
   renderGallerySelection();
+  allImagesTab.classList.toggle("selected", selectedCollection === "all");
+  positiveImagesTab.classList.toggle("selected", selectedCollection === "positive");
+  negativeImagesTab.classList.toggle("selected", selectedCollection === "negative");
+  deleteAllImagesButton.hidden = selectedCollection !== "all";
   if (!camera) {
     galleryCameraLabel.textContent = "観察機未選択";
     galleryCount.textContent = "-";
     gallerySize.textContent = "";
     galleryFolderPath.textContent = "観察機を追加すると保存画像を表示できます。";
     galleryGrid.innerHTML = `<p class="gallery-empty">観察機が登録されていません。</p>`;
+    downloadZipLink.classList.add("disabled");
+    downloadZipLink.removeAttribute("href");
     return;
   }
-  galleryCameraLabel.textContent = camera.camera_label;
+  downloadZipLink.classList.remove("disabled");
+  downloadZipLink.href = `${camera.baseUrl}/exports/images.zip?collection=${selectedCollection}`;
+  downloadZipLink.textContent = selectedCollection === "all" ? "全画像とログをZIP保存" : `${selectedCollection} をZIP保存`;
+  galleryCameraLabel.textContent = `${camera.camera_label} / ${selectedCollection}`;
   try {
-    const response = await apiRequest(camera, "/images?limit=40");
-    camera.imageCount = response.image_count;
+    const response = await apiRequest(camera, `/images?limit=40&collection=${selectedCollection}`);
+    if (selectedCollection === "all") camera.imageCount = response.image_count;
     galleryCount.textContent = `${response.image_count} 枚`;
     gallerySize.textContent = formatBytes(response.total_size_bytes);
     galleryFolderPath.textContent = response.image_dir;
     galleryGrid.replaceChildren();
-    if (response.images.length === 0) {
-      galleryGrid.innerHTML = `<p class="gallery-empty">保存された画像はありません。</p>`;
+    if (!response.images.length) {
+      galleryGrid.innerHTML = `<p class="gallery-empty">画像はまだありません。</p>`;
       return;
     }
     response.images.forEach((imageInfo) => galleryGrid.append(buildGalleryItem(camera, imageInfo)));
   } catch (error) {
-    camera.imageCount = null;
-    galleryCount.textContent = "接続できません";
-    gallerySize.textContent = "";
-    galleryFolderPath.textContent = "-";
     galleryGrid.innerHTML = `<p class="gallery-empty">画像一覧を取得できません: ${error.message}</p>`;
   }
 }
@@ -387,17 +864,40 @@ function buildGalleryItem(camera, imageInfo) {
   image.loading = "lazy";
   const detail = document.createElement("div");
   detail.className = "gallery-detail";
-  const timestamp = document.createElement("span");
-  timestamp.textContent = formatCaptureTime(imageInfo.captured_at);
-  const size = document.createElement("span");
-  size.textContent = formatBytes(imageInfo.size_bytes);
-  detail.append(timestamp, size);
+  detail.innerHTML = `<span>${formatCaptureTime(imageInfo.captured_at)}</span><span>${formatBytes(imageInfo.size_bytes)}</span>`;
+  const labelBadge = document.createElement("p");
+  labelBadge.className = `label-badge ${imageInfo.review_status || "unlabeled"}`;
+  labelBadge.textContent = `${imageInfo.label || "未分類"} / ${imageInfo.review_status || "unlabeled"}`;
+  const downloadLink = document.createElement("a");
+  downloadLink.className = "download-image";
+  downloadLink.href = `${camera.baseUrl}${imageInfo.url}${imageInfo.url.includes("?") ? "&" : "?"}download=true`;
+  downloadLink.download = imageInfo.filename;
+  downloadLink.textContent = "iPadに保存";
+  const actions = document.createElement("div");
+  actions.className = "review-actions";
+  const confirmButton = document.createElement("button");
+  confirmButton.className = "label-confirm";
+  confirmButton.type = "button";
+  confirmButton.textContent = "この分類でOK";
+  confirmButton.disabled = !imageInfo.label || imageInfo.review_status === "reviewed";
+  confirmButton.addEventListener("click", () => reviewLabel(camera, imageInfo.filename, "confirmed"));
+  const positiveButton = document.createElement("button");
+  positiveButton.className = "label-positive";
+  positiveButton.type = "button";
+  positiveButton.textContent = "positiveに修正";
+  positiveButton.addEventListener("click", () => reviewLabel(camera, imageInfo.filename, "positive"));
+  const negativeButton = document.createElement("button");
+  negativeButton.className = "label-negative";
+  negativeButton.type = "button";
+  negativeButton.textContent = "negativeに修正";
+  negativeButton.addEventListener("click", () => reviewLabel(camera, imageInfo.filename, "negative"));
+  actions.append(confirmButton, positiveButton, negativeButton);
   const deleteButton = document.createElement("button");
   deleteButton.className = "delete-image";
   deleteButton.type = "button";
   deleteButton.textContent = "削除";
   deleteButton.addEventListener("click", async () => {
-    if (!window.confirm(`${camera.camera_label} のこの写真を削除しますか？\n${imageInfo.filename}\n\nこの操作は元に戻せません。`)) return;
+    if (!window.confirm(`${camera.camera_label} のこの写真を削除しますか？\n${imageInfo.filename}`)) return;
     deleteButton.disabled = true;
     try {
       await apiRequest(camera, `/images/${encodeURIComponent(imageInfo.filename)}`, { method: "DELETE" });
@@ -408,8 +908,178 @@ function buildGalleryItem(camera, imageInfo) {
       deleteButton.disabled = false;
     }
   });
-  item.append(image, detail, deleteButton);
+  item.append(image, detail, labelBadge, downloadLink, actions, deleteButton);
   return item;
+}
+
+async function reviewLabel(camera, filename, label) {
+  try {
+    await apiRequest(camera, `/images/${encodeURIComponent(filename)}/label`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
+    });
+    await refreshGallery();
+  } catch (error) {
+    window.alert(`ラベルを保存できませんでした: ${error.message}`);
+  }
+}
+
+async function refreshEvents() {
+  const camera = selectedGalleryCamera;
+  eventGrid.replaceChildren();
+  if (!camera) {
+    eventCameraLabel.textContent = "観察機未選択";
+    eventCount.textContent = "events -";
+    downloadEventLabelsLink.classList.add("disabled");
+    downloadEventLabelsLink.removeAttribute("href");
+    return;
+  }
+  eventCameraLabel.textContent = camera.camera_label;
+  downloadEventLabelsLink.classList.remove("disabled");
+  downloadEventLabelsLink.href = `${camera.baseUrl}/events/export_labels.csv`;
+  try {
+    const response = await apiRequest(camera, "/events?limit=50");
+    eventCount.textContent = `${response.event_count} events`;
+    if (!response.events.length) {
+      eventGrid.innerHTML = `<p class="gallery-empty">イベント候補はまだありません。</p>`;
+      return;
+    }
+    response.events.forEach((eventInfo) => eventGrid.append(buildEventItem(camera, eventInfo)));
+  } catch (error) {
+    eventGrid.innerHTML = `<p class="gallery-empty">イベントを取得できません: ${error.message}</p>`;
+  }
+}
+
+function buildEventItem(camera, eventInfo) {
+  const item = document.createElement("article");
+  item.className = "event-item";
+  const image = document.createElement("img");
+  image.src = eventInfo.image_url ? `${camera.baseUrl}${eventInfo.image_url}` : "";
+  image.alt = eventInfo.image_filename || eventInfo.event_id;
+  image.loading = "lazy";
+  const meta = document.createElement("div");
+  meta.className = "event-meta";
+  meta.innerHTML = `
+    <strong>${eventInfo.timestamp || "-"}</strong>
+    <span>${eventInfo.device_name || camera.camera_label} / ${eventInfo.camera_profile || "-"}</span>
+    <span>site ${eventInfo.site_id || "-"} / flower ${eventInfo.flower_id || "-"} / plant ${eventInfo.plant_species || "-"}</span>
+    <span>motion ${eventInfo.motion_score || "-"} / changed ${eventInfo.changed_area_ratio || "-"} / wind ${eventInfo.wind_like_motion || "-"}</span>
+    <span>label: ${eventInfo.manual_label || "unreviewed"}</span>
+  `;
+  const form = document.createElement("div");
+  form.className = "event-review-form";
+  const labelSelect = document.createElement("select");
+  ["", "insect", "non_insect", "unclear"].forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value || "manual label";
+    option.selected = value === (eventInfo.manual_label || "");
+    labelSelect.append(option);
+  });
+  const taxon = document.createElement("input");
+  taxon.placeholder = "manual taxon";
+  taxon.value = eventInfo.manual_taxon || "";
+  const reason = document.createElement("select");
+  ["", "wind", "shadow", "flower_movement", "camera_shake", "non_insect_object", "lighting_change", "unclear", "other"].forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value || "false positive reason";
+    option.selected = value === (eventInfo.false_positive_reason || "");
+    reason.append(option);
+  });
+  const notes = document.createElement("input");
+  notes.placeholder = "manual notes";
+  notes.value = eventInfo.manual_notes || "";
+  const actions = document.createElement("div");
+  actions.className = "event-review-actions";
+  [["insect", "insect"], ["non_insect", "non insect"], ["unclear", "unclear"]].forEach(([value, text]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    button.className = eventInfo.manual_label === value ? "selected-label" : "";
+    button.addEventListener("click", () => {
+      labelSelect.value = value;
+      saveEventReview(camera, eventInfo.event_id, {
+        manual_label: value,
+        manual_taxon: taxon.value,
+        false_positive_reason: reason.value,
+        manual_notes: notes.value,
+      });
+    });
+    actions.append(button);
+  });
+  const saveButton = document.createElement("button");
+  saveButton.type = "button";
+  saveButton.className = "label-confirm";
+  saveButton.textContent = "Save label";
+  saveButton.addEventListener("click", () => {
+    if (!labelSelect.value) {
+      window.alert("manual_labelを選んでください。");
+      return;
+    }
+    saveEventReview(camera, eventInfo.event_id, {
+      manual_label: labelSelect.value,
+      manual_taxon: taxon.value,
+      false_positive_reason: reason.value,
+      manual_notes: notes.value,
+    });
+  });
+  actions.append(saveButton);
+  form.append(labelSelect, taxon, reason, notes, actions);
+  item.append(image, meta, form);
+  return item;
+}
+
+async function saveEventReview(camera, eventId, payload) {
+  try {
+    await apiRequest(camera, `/events/${encodeURIComponent(eventId)}/label`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await refreshEvents();
+  } catch (error) {
+    window.alert(`Event reviewを保存できませんでした: ${error.message}`);
+  }
+}
+
+async function refreshTraining() {
+  const camera = selectedGalleryCamera;
+  if (!camera) return;
+  try {
+    const status = await apiRequest(camera, "/training/status");
+    positiveCount.textContent = status.positive_count;
+    negativeCount.textContent = status.negative_count;
+    trainingModel.textContent = status.model_available ? "available" : "none";
+    trainingMessage.textContent = status.message;
+  } catch (error) {
+    trainingMessage.textContent = `学習状態を取得できません: ${error.message}`;
+  }
+}
+
+async function startTraining() {
+  const camera = selectedGalleryCamera;
+  if (!camera) return;
+  if (!window.confirm(`${camera.camera_label} の positive / negative を使って再学習しますか？`)) return;
+  try {
+    await apiRequest(camera, "/training/start", { method: "POST" });
+    await refreshTraining();
+  } catch (error) {
+    window.alert(`再学習できませんでした: ${error.message}`);
+  }
+}
+
+async function resetTrainingModel() {
+  const camera = selectedGalleryCamera;
+  if (!camera) return;
+  if (!window.confirm(`${camera.camera_label} の学習済みモデルを破棄しますか？`)) return;
+  try {
+    await apiRequest(camera, "/training/model", { method: "DELETE" });
+    await refreshTraining();
+  } catch (error) {
+    window.alert(`モデルを破棄できませんでした: ${error.message}`);
+  }
 }
 
 async function deleteAllImages() {
@@ -422,7 +1092,6 @@ async function deleteAllImages() {
   const count = Number.isFinite(camera.imageCount) ? `${camera.imageCount} 枚の` : "";
   if (!window.confirm(`${camera.camera_label} の${count}保存画像をすべて削除しますか？\n\n削除後は元に戻せません。`)) return;
   deleteAllImagesButton.disabled = true;
-  deleteAllImagesButton.textContent = "削除中...";
   try {
     const result = await apiRequest(camera, "/images", {
       method: "DELETE",
@@ -436,8 +1105,28 @@ async function deleteAllImages() {
     window.alert(`全削除できませんでした: ${error.message}`);
   } finally {
     deleteAllImagesButton.disabled = false;
-    deleteAllImagesButton.textContent = "この観察機の写真を全削除";
   }
+}
+
+function selectExclusiveMode(selectedInput) {
+  if (selectedInput.checked) {
+    [autoModeInput, motionTriggerInput, hybridModeInput].forEach((input) => {
+      if (input !== selectedInput) input.checked = false;
+    });
+  }
+  updateAutomaticControls();
+}
+
+function updateAutomaticControls() {
+  const enabled = autoModeInput.checked || motionTriggerInput.checked || hybridModeInput.checked;
+  autoSettings.classList.toggle("active", enabled);
+  idleSetting.hidden = motionTriggerInput.checked || hybridModeInput.checked;
+  detectionSettingLabel.textContent = (motionTriggerInput.checked || hybridModeInput.checked) ? "候補チェック" : "動き候補あり";
+  autoSettingsHelp.textContent = hybridModeInput.checked
+    ? "研究用: 定間隔写真を必ず保存し、動き候補があれば追加撮影します。"
+    : motionTriggerInput.checked
+    ? "低解像度で動きを見て、候補が出た時だけ保存します。"
+    : "背景差分で候補がない時は間隔を長くし、候補があれば短くします。";
 }
 
 deviceForm.addEventListener("submit", async (event) => {
@@ -446,14 +1135,23 @@ deviceForm.addEventListener("submit", async (event) => {
   if (camera) deviceAddressInput.value = "";
 });
 refreshButton.addEventListener("click", refreshAll);
-autoModeInput.addEventListener("change", () => {
-  autoSettings.hidden = !autoModeInput.checked;
-});
+autoModeInput.addEventListener("change", () => selectExclusiveMode(autoModeInput));
+motionTriggerInput.addEventListener("change", () => selectExclusiveMode(motionTriggerInput));
+hybridModeInput.addEventListener("change", () => selectExclusiveMode(hybridModeInput));
 startAllButton.addEventListener("click", startAll);
 stopAllButton.addEventListener("click", stopAll);
+reviewEventsButton.addEventListener("click", () => {
+  document.querySelector(".event-review-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+allImagesTab.addEventListener("click", () => { selectedCollection = "all"; refreshGallery(); });
+positiveImagesTab.addEventListener("click", () => { selectedCollection = "positive"; refreshGallery(); });
+negativeImagesTab.addEventListener("click", () => { selectedCollection = "negative"; refreshGallery(); });
 deleteAllImagesButton.addEventListener("click", deleteAllImages);
+trainingStartButton.addEventListener("click", startTraining);
+trainingResetButton.addEventListener("click", resetTrainingModel);
 
 async function initialize() {
+  updateAutomaticControls();
   renderCameras();
   if (cameras.length === 0 && /^https?:$/.test(window.location.protocol)) {
     await registerCamera(window.location.origin, true);

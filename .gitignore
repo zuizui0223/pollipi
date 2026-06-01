@@ -1,0 +1,15 @@
+__pycache__/
+.venv/
+*.pyc
+pollipi_timelapse/images/
+images/
+events/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+event_log.csv
+adaptive_metrics.csv
+autonomous_run.json
+*.log
+.pollipi_askpass.cmd
