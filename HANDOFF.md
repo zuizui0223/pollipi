@@ -1,176 +1,153 @@
 # PolliPi AI Handoff
 
-This file is the relay handoff note between Claude, Codex, and ChatGPT. Each AI must update this file at the end of its work so the next AI knows exactly what changed, what was tested, what failed, and what should happen next.
+This file is the relay handoff note between Claude, Codex, and ChatGPT.
+Read this file before starting any task. Update it when you finish.
+Do not assume previous chat context.
 
-## Rule
+## Source of truth files
 
-Before starting any task, read:
+Before starting, read:
+- MASTER_SPEC.md
+- DECISIONS.md
+- TASKS.md
+- CHANGELOG_AI.md
+- HANDOFF.md
+- FIELD_METHOD_ROADMAP.md
 
-- `MASTER_SPEC.md`
-- `DECISIONS.md`
-- `TASKS.md`
-- `CHANGELOG_AI.md`
-- `HANDOFF.md`
-- `FIELD_METHOD_ROADMAP.md`
-- `LOW_POWER_DESIGN_ABSORPTION.md`
+## Project concept
 
-After finishing any task, update `HANDOFF.md`.
+PolliPi is a field-adaptive, human-in-the-loop, event-based timelapse workflow
+for comparing plant-insect interaction recording methods (7 modes, from standard
+timelapse to tracked ROI detection). Goal is MEE-oriented method validation.
 
-Do not assume previous chat context. Use this file as the relay handoff.
+Core data unit:
+  flower_id x timestamp x recording_mode x candidate event x camera metadata x ROI metadata x label
 
-## Current project concept
+## Current deployment state (roi-track1, 2026-06-01)
 
-PolliPi is a field system for comparing recording methods for plant–insect interaction monitoring.
+All 4 Pis have been updated:
+- zuizui.local  (Module 3 Wide)
+- zuizui2.local (AI Camera / IMX500)
+- zuizui3.local (NoIR Wide)
+- zuizui4.local (Module 3 Wide)
 
-The user wants to compare:
+### What roi-track1 changed
 
-1. user-scheduled ordinary timelapse
-2. motion-triggered recording
-3. hybrid timelapse + motion-triggered recording
-4. adaptive timelapse
-5. flower/head ROI-based motion detection
-6. tracked flower/head ROI detection
-7. later positive/negative learning-assisted filtering
+Optional lightweight flower/head ROI tracking is now usable from the iPad PWA.
 
-The core data unit is:
+Workflow:
+  1. Use "ROIを指定" to draw a fixed ROI on the still /preview image.
+  2. Turn "ROI追跡" ON.
+  3. Start recording.
+  4. /start includes roi_x/y/w/h plus roi_tracking=true, roi_search_margin, and roi_tracking_min_score.
 
-```text
-flower_id × timestamp × recording_mode × candidate event × camera metadata × ROI metadata × label
-```
+Backend tracking behavior:
+  - Target is the selected flower/head, not insects.
+  - First low-resolution ROI luminance patch is stored as a fixed template.
+  - During recording, template matching searches near the previous ROI.
+  - If score >= roi_tracking_min_score, the ROI moves with the flower/head.
+  - If tracking fails, the previous ROI is kept.
+  - Template is not updated during recording, so insects should not pull the ROI away.
+  - Logged/status metrics: roi_tracking_score, roi_tracking_success, roi_shift_x, roi_shift_y.
 
-## Current priority
+### ROI drawing system (structure is correct, was only a visibility bug)
 
-The user reports that Codex has implemented and deployed ROI tracking to four Raspberry Pi units, but the code was not pushed to GitHub.
+These functions exist and are structurally correct in current app.js:
+  openRoiPreview(camera)        -- fetches /preview, shows roi-drawer
+  setupRoiDrawing(camera)       -- attaches pointer/touch/mouse listeners to roi-wrap
+  setupRoiDrawingTarget(...)    -- event handler (begin/move/end)
+  pointInImage(event, image)    -- coordinates relative to image rect
+  displayRectToRoi(start, end)  -- converts display px to 640x360 monitor coords
+  drawRoiBoxFromPoints(box,s,e) -- draws yellow overlay (FIXED)
+  renderRoiBoxOnImage(...)      -- shows stored ROI on image (FIXED)
+  setCameraRoi(camera, roi)     -- stores ROI, fills inputs, updates display
+  clearCameraRoi(camera)        -- clears ROI
+  useFullFrame(camera)          -- clears ROI + unchecks tracking
+  renderCameraRoi(camera)       -- full ROI state refresh (FIXED)
 
-The immediate priority is now:
+Touch/pointer handling:
+  - touch-action: none on .roi-preview-wrap (CSS) prevents scroll during draw
+  - PointerEvents + touch fallback both implemented
+  - setPointerCapture used for drag-outside-element support
+  - MIN_ROI_SIZE = 8px minimum drawn rectangle size
 
-1. Sync the deployed code back to GitHub.
-2. Verify the actual deployed files match the reported behavior.
-3. Run an iPad field usability test for ROI drawing and ROI tracking.
-4. Only after GitHub is synced, proceed to low-power ROI-local motion detection improvements.
+### Files changed in roi-track1
 
-## Latest handoff
+- web/index.html
+- web/app.js
+- web/app.css
+- README.md
+- CHANGELOG_AI.md
+- HANDOFF.md
 
-### Last owner
+### Checks run
 
-ChatGPT, based on Codex's reported final message from the user.
+- python -m py_compile pollipi_api_server.py imx500_detect_test.py: passed
+- node --check web/app.js using bundled Codex Node: passed
+- Import/minimal FastAPI route checks on local PC: not run because local Python lacks FastAPI.
+- Deployed to all 4 Pis with deploy_pollipi_pi.ps1.
+- Verified /status, /device, /events?limit=1, and /app/ respond on all 4 Pis.
+- Verified zuizui.local serves app.js/app.css version v=20260601-roi-track1.
 
-### Last reported Codex work
+## Next recommended task
 
-Codex reported that ROI tracking was implemented and deployed to four devices:
+### Step 1 (required): iPad field test
 
-- `zuizui`
-- `zuizui2`
-- `zuizui3`
-- `zuizui4`
+Physically test ROI drawing and ROI tracking on iPad Safari with zuizui.local.
 
-Reported behavior:
+Acceptance tests:
+  1. Open http://zuizui.local:8000/app/ in Safari
+  2. Register camera: zuizui.local or zuizui0223@zuizui
+  3. Tap "ROIを指定" on camera card
+  4. Verify "Preview loading..." message appears immediately
+  5. Verify camera still image loads (16:9 format)
+  6. Drag finger to draw a rectangle over the focal flower
+  7. Verify yellow rectangle appears DURING drag
+  8. Release finger
+  9. Verify ROI status shows "ROI: x=... y=... w=... h=..."
+  10. Turn ROI追跡 ON
+  11. Tap Start -> confirm /start payload includes roi_x, roi_y, roi_w, roi_h, roi_tracking=true
+      (check Safari DevTools > Network, or look at Pi server logs)
+  12. Confirm status shows ROI tracking score/success/shift while running
+  13. Tap "ROIを解除" -> status shows full-frame ROI and start omits ROI fields
+  14. Verify event review section still works
 
-- `/start` includes `roi_x`, `roi_y`, `roi_w`, `roi_h` when ROI is set.
-- `/start` includes `roi_tracking=true`, `roi_search_margin`, and `roi_tracking_min_score` when tracking is enabled.
-- On successful tracking, ROI moves with flower/head movement.
-- On tracking failure, the previous ROI is retained.
-- The tracking template is not updated during recording, so insects are less likely to pull the ROI away from the flower/head.
-- Logs/status include existing schema fields:
-  - `roi_tracking_score`
-  - `roi_tracking_success`
-  - `roi_shift_x`
-  - `roi_shift_y`
-- PWA version reported as `v=20260601-roi-track1`.
+### Step 2 (after iPad confirms working): Push to GitHub
 
-Reported checks:
+GitHub may still be out of sync if this workspace has no git remote/token.
+Push these files when a safe route is available:
+  web/index.html
+  web/app.js
+  web/app.css
+  README.md
+  CHANGELOG_AI.md
+  HANDOFF.md
 
-- `python -m py_compile pollipi_api_server.py imx500_detect_test.py` OK.
-- `web/app.js` syntax check OK.
-- Deployed to four units: `zuizui`, `zuizui2`, `zuizui3`, `zuizui4`.
-- All four units responded to:
-  - `/status`
-  - `/device`
-  - `/events?limit=1`
-  - `/app/`
+### Step 3 (next feature): Choose from TASKS.md
 
-### Important limitation
+After ROI drawing is confirmed:
+  - Task 2: Verify autonomous mode (systemd) works on all 4 Pis
+  - Task 5: Grouped event review workflow (not per-item confirmation buttons)
 
-GitHub was not updated by Codex. Therefore, the repository may not contain the deployed ROI tracking code.
+## Do not do
 
-Do not assume GitHub matches the deployed Pi state until code is pushed or synced back.
+- YOLO or automatic flower detection
+- Species identification
+- Neural network training
+- Video recording
+- Cloud upload
+- Database migration
+- Rewriting the drawing system (structure is correct)
 
-### Not tested
+## Known issues
 
-- Real iPad field test under wind-driven flower movement.
-- Actual ROI tracking performance on moving flowers.
-- Local PC FastAPI import test, because FastAPI is unavailable on the local PC.
+1. GitHub out of sync with Pi. Push required.
+2. /preview endpoint requires camera not locked by another process.
+   If timelapse is running, preview still works (uses timelapse camera).
+   If another process holds the camera, preview fails (onerror message shown).
+3. ROI tracking is implemented and deployed, but still needs a physical windy-flower field test.
 
-### Current blocker
+## Last updated
 
-The deployed code and GitHub repository are out of sync.
-
-### Next recommended task
-
-Sync the deployed Pi code back to GitHub before any new feature work.
-
-The next implementation task should be one of:
-
-1. From the Pi, commit and push the deployed files to GitHub; or
-2. From Codex, generate a patch containing the deployed changes and push it to GitHub.
-
-### After sync, next recommended task
-
-Perform iPad field usability testing:
-
-- Can the user easily set ROI on the iPad?
-- Is ROI drawing usable enough in the field?
-- Does ROI tracking behave under wind?
-- Are tracking score/success/shift visible and logged?
-
-### Do not do next
-
-- Do not start low-power prototype absorption until GitHub contains the deployed ROI tracking code.
-- Do not delete legacy prototype files yet.
-- Do not implement YOLO.
-- Do not implement species identification.
-- Do not implement video-first workflow.
-- Do not implement database/cloud migration.
-
-## Handoff update template
-
-Copy and update this section at the end of each AI task:
-
-```md
-## Handoff YYYY-MM-DD HH:MM JST
-
-### Owner
-Codex / Claude / ChatGPT
-
-### Task
-Short task description
-
-### Files changed
-- file1
-- file2
-
-### What changed
-- item
-- item
-
-### Tests run
-- item
-- item
-
-### Not tested
-- item
-- item
-
-### Known issues
-- item
-- item
-
-### Next recommended task
-One task only.
-
-### Do not do next
-- YOLO
-- species identification
-- video recording
-- database migration
-```
+2026-06-01 by Codex
+Task: Optional lightweight flower/head ROI tracking enabled and deployed to all 4 Pis.

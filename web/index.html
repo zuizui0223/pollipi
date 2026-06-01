@@ -10,7 +10,7 @@
     <title>PolliPi Field Observer</title>
     <link rel="manifest" href="/app/manifest.webmanifest">
     <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/app/app.css?v=20260601-roi-preview">
+    <link rel="stylesheet" href="/app/app.css?v=20260601-roi-track1">
   </head>
   <body>
     <header class="hero">
@@ -31,7 +31,7 @@
             <input id="interval-input" type="number" min="1" max="3600" value="10" inputmode="decimal">
             <span>秒</span>
           </label>
-          <p class="hint">まずは対象花を指定し、必要なら Preview / Set ROI で花を囲んでから開始します。</p>
+          <p class="hint">まずは対象花を指定し、必要なら各観察機カードの「ROIを指定」で花を囲んでから開始します。</p>
           <label class="auto-toggle"><input id="auto-mode" type="checkbox"><span>背景差分で撮影間隔を自動調整</span></label>
         </div>
         <div class="session-settings field-basic-grid">
@@ -172,15 +172,14 @@
         </div>
         <section class="roi-panel">
           <div class="roi-actions">
-            <button class="secondary roi-preview-camera" type="button">Preview / Set ROI</button>
-            <button class="secondary roi-clear-camera" type="button">Clear ROI</button>
-            <button class="secondary roi-full-camera" type="button">Use full frame</button>
+            <button class="secondary roi-preview-camera" type="button">ROIを指定</button>
+            <button class="secondary roi-clear-camera" type="button">ROIを解除</button>
           </div>
           <p class="roi-status" data-field="roi-status">ROI: full frame</p>
           <p class="roi-note">ROI is defined on the 640 x 360 monitoring frame.</p>
-          <label class="roi-track-toggle"><input data-field="roi-tracking" type="checkbox"><span>Track ROI during recording</span></label>
+          <label class="roi-track-toggle"><input data-field="roi-tracking" type="checkbox"><span>ROI追跡: OFF</span></label>
           <details class="roi-advanced">
-            <summary>Advanced ROI tracking</summary>
+            <summary>ROI追跡の詳細設定</summary>
             <div class="advanced-grid compact">
               <label>roi_search_margin <input data-field="roi-search-margin" type="number" min="0" max="160" value="30" inputmode="numeric"></label>
               <label>roi_tracking_min_score <input data-field="roi-tracking-min-score" type="number" min="-1" max="1" step="0.05" value="0.45" inputmode="decimal"></label>
@@ -188,7 +187,7 @@
           </details>
           <p class="roi-status" data-field="roi-tracking-status">ROI mode: full frame</p>
           <div class="roi-drawer" data-field="roi-drawer" hidden>
-            <p>Draw a rectangle around the flower/head. You can redraw before starting.</p>
+            <p>静止プレビュー上で花を囲んでROIを指定してください。</p>
             <div class="roi-preview-wrap" data-field="roi-wrap">
               <img data-field="roi-preview" alt="ROI preview" draggable="false">
               <span class="roi-box" data-field="roi-box"></span>
@@ -213,6 +212,6 @@
         </div>
       </article>
     </template>
-    <script src="/app/app.js?v=20260601-roi-preview"></script>
+    <script src="/app/app.js?v=20260601-roi-track1"></script>
   </body>
 </html>

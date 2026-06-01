@@ -328,7 +328,6 @@ function buildCameraCard(camera, index) {
   card.querySelector(".monitor-camera").addEventListener("click", () => toggleMonitor(camera));
   card.querySelector(".roi-preview-camera").addEventListener("click", () => openRoiPreview(camera));
   card.querySelector(".roi-clear-camera").addEventListener("click", () => clearCameraRoi(camera));
-  card.querySelector(".roi-full-camera").addEventListener("click", () => useFullFrame(camera));
   const aiButton = card.querySelector(".ai-monitor-camera");
   if (camera.is_ai_camera || (camera.camera_model || "").toLowerCase() === "imx500") {
     aiButton.hidden = false;
@@ -345,12 +344,20 @@ function restoreRoiControls(camera) {
   const tracking = field(camera, "roi-tracking");
   const margin = field(camera, "roi-search-margin");
   const score = field(camera, "roi-tracking-min-score");
-  tracking.checked = Boolean(camera.roi_tracking);
+  tracking.checked = Boolean(camera.roi_tracking && camera.roi);
+  tracking.disabled = false;
+  camera.roi_tracking = tracking.checked;
   margin.value = camera.roi_search_margin || 30;
   score.value = camera.roi_tracking_min_score || 0.45;
+  renderTrackingToggle(camera);
   tracking.addEventListener("change", () => {
+    if (tracking.checked && !normalizeRoi(camera.roi)) {
+      window.alert("先に「ROIを指定」で花や花序を囲んでください。");
+      tracking.checked = false;
+    }
     camera.roi_tracking = tracking.checked;
     saveCameras();
+    renderTrackingToggle(camera);
     renderTrackingStatus(camera);
   });
   margin.addEventListener("change", () => {
@@ -361,6 +368,14 @@ function restoreRoiControls(camera) {
     camera.roi_tracking_min_score = Number(score.value || 0.45);
     saveCameras();
   });
+}
+
+function renderTrackingToggle(camera) {
+  const tracking = field(camera, "roi-tracking");
+  if (!tracking) return;
+  const label = tracking.closest("label");
+  const text = label ? label.querySelector("span") : null;
+  if (text) text.textContent = `ROI追跡: ${tracking.checked ? "ON" : "OFF"}`;
 }
 
 function renderCameras() {
@@ -427,23 +442,24 @@ function setCameraRoi(camera, roi, { fillInputs = true } = {}) {
   if (fillInputs) fillRoiInputs(normalized);
   saveCameras();
   renderCameraRoi(camera);
+  renderTrackingToggle(camera);
   return true;
 }
 
 function clearCameraRoi(camera) {
   camera.roi = null;
   fillRoiInputs(null);
+  camera.roi_tracking = false;
+  const tracking = field(camera, "roi-tracking");
+  if (tracking) tracking.checked = false;
   saveCameras();
   renderCameraRoi(camera);
-  field(camera, "message").textContent = "ROI cleared. Full frame will be used unless you draw a new ROI.";
+  renderTrackingToggle(camera);
+  field(camera, "message").textContent = "ROIを解除しました。動き検出は全画面で行います。";
 }
 
 function useFullFrame(camera) {
   clearCameraRoi(camera);
-  field(camera, "roi-tracking").checked = false;
-  camera.roi_tracking = false;
-  saveCameras();
-  field(camera, "message").textContent = "Full frame will be used for motion detection.";
 }
 
 function renderCameraRoi(camera) {
@@ -460,8 +476,8 @@ function renderCameraRoi(camera) {
   const roi = statusInfo.roi_tracking && trackedRoi ? trackedRoi : normalizeRoi(camera.roi);
   if (!roi) {
     status.textContent = "ROI: full frame";
-    previewBox.hidden = true;
-    monitorBox.hidden = true;
+    previewBox.style.display = "";
+    monitorBox.style.display = "";
     renderTrackingStatus(camera);
     return;
   }
@@ -476,7 +492,7 @@ function renderRoiBoxOnImage(box, image, wrap, roi) {
   if (!(image.complete && image.clientWidth > 0 && image.clientHeight > 0)) return;
   const imageRect = image.getBoundingClientRect();
   const wrapRect = wrap.getBoundingClientRect();
-  box.hidden = false;
+  box.style.display = "block";
   box.style.left = `${imageRect.left - wrapRect.left + roi.roi_x / MONITOR_WIDTH * imageRect.width}px`;
   box.style.top = `${imageRect.top - wrapRect.top + roi.roi_y / MONITOR_HEIGHT * imageRect.height}px`;
   box.style.width = `${roi.roi_w / MONITOR_WIDTH * imageRect.width}px`;
@@ -489,15 +505,15 @@ function renderTrackingStatus(camera) {
   const status = camera.status || {};
   const roi = normalizeRoi(camera.roi);
   if (!roi && !status.tracked_roi_w) {
-    node.textContent = "ROI mode: full frame";
+    node.textContent = "ROI: 全画面";
   } else if (!status.roi_tracking && !field(camera, "roi-tracking").checked) {
-    node.textContent = "ROI mode: fixed ROI";
+    node.textContent = "ROI: 固定";
   } else {
     const score = status.roi_tracking_score == null ? "-" : Number(status.roi_tracking_score).toFixed(2);
-    const ok = status.roi_tracking_success ? "ok" : "holding";
+    const ok = status.roi_tracking_success ? "追跡中" : "前回ROIを保持";
     const sx = status.roi_shift_x == null ? "-" : status.roi_shift_x;
     const sy = status.roi_shift_y == null ? "-" : status.roi_shift_y;
-    node.textContent = `ROI mode: tracked ROI / score ${score} / ${ok} / shift x=${sx}, y=${sy}`;
+    node.textContent = `ROI追跡: ON / score ${score} / ${ok} / shift x=${sx}, y=${sy}`;
   }
 }
 
@@ -532,7 +548,7 @@ function drawRoiBoxFromPoints(box, start, end) {
   const top = Math.min(start.y, end.y);
   const width = Math.abs(end.x - start.x);
   const height = Math.abs(end.y - start.y);
-  box.hidden = false;
+  box.style.display = "block";
   box.style.left = `${left}px`;
   box.style.top = `${top}px`;
   box.style.width = `${width}px`;
@@ -582,7 +598,7 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
     const roi = displayRectToRoi(origin, point);
     if (roi) {
       setCameraRoi(camera, roi);
-      field(camera, "message").textContent = "ROI set from preview. Start recording to use it.";
+      field(camera, "message").textContent = "ROIを指定しました。開始するとこの範囲で動き検出します。";
     } else {
       camera.roi = previousRoi;
       renderCameraRoi(camera);
@@ -612,13 +628,14 @@ async function openRoiPreview(camera) {
   image.onload = () => {
     image.classList.add("ready");
     renderCameraRoi(camera);
+    field(camera, "message").textContent = "静止プレビュー上で花を囲んでROIを指定してください。";
   };
   image.onerror = () => {
     image.classList.remove("ready");
-    field(camera, "message").textContent = "Could not load preview for ROI setting.";
+    field(camera, "message").textContent = "プレビューを取得できません。カメラ接続を確認してください。";
   };
   image.src = `${camera.baseUrl}/preview?t=${Date.now()}`;
-  field(camera, "message").textContent = "Draw on the preview to set ROI.";
+  field(camera, "message").textContent = "プレビューを読み込み中...";
 }
 
 function setBusy(camera, busy) {
@@ -801,7 +818,7 @@ function toggleMonitor(camera, aiDetection = false) {
   camera.manualPreview = true;
   field(camera, "message").textContent = aiDetection
     ? "AI検出モニター表示中（保存されません）。"
-    : "画角モニター表示中。画面上をドラッグしてROIを指定できます。";
+    : "画角モニター表示中。ROI指定は『ROIを指定』から行ってください。";
 }
 
 async function startAll() {
