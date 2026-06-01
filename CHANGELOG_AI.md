@@ -1,5 +1,58 @@
 # AI Change Log
 
+## 2026-06-01 — ROI tracking reportedly deployed, GitHub not synced
+
+The user reported Codex's final message before token cutoff.
+
+### Reported implementation
+
+Codex reported that ROI tracking was implemented and deployed to four Raspberry Pi units:
+
+- `zuizui`
+- `zuizui2`
+- `zuizui3`
+- `zuizui4`
+
+Reported behavior:
+
+- `/start` includes `roi_x`, `roi_y`, `roi_w`, `roi_h` when ROI is set.
+- `/start` includes `roi_tracking=true`, `roi_search_margin`, and `roi_tracking_min_score` when tracking is enabled.
+- ROI moves with flower/head movement when tracking succeeds.
+- Previous ROI is retained when tracking fails.
+- Template is not updated during recording, reducing risk that insects pull the ROI away from the flower/head.
+- Logs/status contain:
+  - `roi_tracking_score`
+  - `roi_tracking_success`
+  - `roi_shift_x`
+  - `roi_shift_y`
+- PWA is reportedly served as `v=20260601-roi-track1`.
+
+### Reported checks
+
+- `python -m py_compile pollipi_api_server.py imx500_detect_test.py` OK.
+- `web/app.js` syntax check OK.
+- All four deployed units responded to:
+  - `/status`
+  - `/device`
+  - `/events?limit=1`
+  - `/app/`
+
+### Limitation
+
+GitHub was not updated. The repository may not contain the deployed ROI tracking code.
+
+### Do next
+
+Sync the deployed Pi code back to GitHub before further feature work.
+
+### Do not do next
+
+- Do not start low-power prototype absorption until GitHub has the deployed ROI tracking code.
+- Do not delete legacy prototype files yet.
+- Do not add YOLO.
+- Do not add species identification.
+- Do not add video-first workflow.
+
 ## 2026-06-01 — Field-method roadmap refocus
 
 The user clarified that the immediate goal is to compare field recording methods, not to chase novelty or full automation first.
