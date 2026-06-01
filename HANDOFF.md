@@ -11,6 +11,7 @@ Before starting any task, read:
 - `TASKS.md`
 - `CHANGELOG_AI.md`
 - `HANDOFF.md`
+- `FIELD_METHOD_ROADMAP.md`
 
 After finishing any task, update `HANDOFF.md`.
 
@@ -18,12 +19,22 @@ Do not assume previous chat context. Use this file as the relay handoff.
 
 ## Current project concept
 
-PolliPi is a field-adaptive, human-in-the-loop, event-based timelapse workflow for plant–insect interaction monitoring.
+PolliPi is a field system for comparing recording methods for plant–insect interaction monitoring.
+
+The user wants to compare:
+
+1. user-scheduled ordinary timelapse
+2. motion-triggered recording
+3. hybrid timelapse + motion-triggered recording
+4. adaptive timelapse
+5. flower/head ROI-based motion detection
+6. tracked flower/head ROI detection
+7. later positive/negative learning-assisted filtering
 
 The core data unit is:
 
 ```text
-flower_id × timestamp × candidate event × camera metadata × manual review label
+flower_id × timestamp × recording_mode × candidate event × camera metadata × ROI metadata × label
 ```
 
 ## Current priority
@@ -32,10 +43,12 @@ Fix iPad preview-based ROI drawing first.
 
 Then:
 
-1. optional lightweight ROI tracking
-2. positive/negative/unclear review workflow
-3. simplified field-mode start UI
-4. analysis scripts for method validation
+1. preserve autonomous field operation after Wi-Fi/tethering disconnects
+2. clarify recording modes in UI/logs
+3. optional lightweight ROI tracking
+4. positive/negative/unclear correction-based review workflow
+5. camera-specific profiles for Module 3, AI Camera, and NoIR Wide
+6. analysis scripts for method validation
 
 ## Latest handoff
 
@@ -45,7 +58,9 @@ ChatGPT
 
 ### Last completed work
 
-Created shared management files:
+Refocused the project management documents around the user's clarified goal: staged comparison of field recording methods rather than novelty-first automation.
+
+Updated:
 
 - `MASTER_SPEC.md`
 - `DECISIONS.md`
@@ -53,27 +68,34 @@ Created shared management files:
 - `CHANGELOG_AI.md`
 - `HANDOFF.md`
 
+Added:
+
+- `FIELD_METHOD_ROADMAP.md`
+
 ### Current blocker
 
 ROI drawing on the iPad preview is still not reliably working.
 
-Manual numeric `roi_x`, `roi_y`, `roi_w`, and `roi_h` input is impractical in the field.
+The user can see the monitor angle, but cannot draw a rectangle directly on that camera view to select the flower/head as ROI. Manual numeric `roi_x`, `roi_y`, `roi_w`, and `roi_h` input is not acceptable in field conditions.
 
 ### Next recommended task
 
 Implement or fix manual ROI rectangle drawing on a still preview image from `GET /preview`.
 
+This task should be completed before ROI tracking, learning, or UI refinements.
+
 ### Acceptance criteria
 
 - works on iPad Safari
 - works with desktop mouse if possible
-- visible rectangle overlay
+- visible rectangle overlay on the preview image
+- overlay is aligned with the image
 - coordinates convert to 640 × 360 monitor coordinates
 - ROI fields auto-fill
 - `/start` includes ROI only when valid
 - Clear ROI and Use full frame work
 - Review events remains functional
-- README is updated
+- README and `HANDOFF.md` are updated
 
 ### Do not do next
 
