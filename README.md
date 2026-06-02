@@ -675,8 +675,9 @@ The iPad PWA separates camera-angle checking from ROI selection.
 3. Adjust the camera so the focal flower/head is near the center of the image.
 4. Tap `この画角でOK`. PolliPi closes the live monitor and fetches a still frame from `/preview`.
 5. Draw a rectangle around the flower or flower head on the frozen still image.
-6. Tap `この花を使う` to save the ROI.
-7. Start recording. The backend receives the current valid ROI in the `/start` payload.
+6. If needed, drag inside the rectangle to move it, drag an edge or corner to resize it, or use `やり直す` to redraw it.
+7. Tap `この花を使う` to save the ROI.
+8. Start recording. The backend receives the current valid ROI in the `/start` payload.
 
 The main card shows `画角: 確認済み` and `ROI: 設定済み` after this sequence. If the camera angle is changed later,
 tap `画角を再調整`; the old ROI is cleared or marked invalid, and the user must select the flower again from the new

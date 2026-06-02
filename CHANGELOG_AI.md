@@ -4,6 +4,7 @@
 
 - Simplified the iPad camera-angle and ROI workflow.
 - Added a clear sequence in the PWA: `画角を確認` -> `この画角でOK` -> frozen still frame -> draw flower ROI -> `この花を使う`.
+- The frozen ROI editor now supports redrawing, dragging inside the rectangle to move it, and dragging an edge/corner to resize it.
 - Added per-device UI state for angle confirmation, pending ROI, and stale ROI.
 - Starting capture is blocked when a previously selected ROI is stale or has not been confirmed with `この花を使う`.
 - `画角を再調整` clears or invalidates the old ROI and returns the user to live camera-angle checking.

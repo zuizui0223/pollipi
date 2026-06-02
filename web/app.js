@@ -652,11 +652,101 @@ function drawRoiBoxFromPoints(box, start, end) {
   const top = Math.min(start.y, end.y);
   const width = Math.abs(end.x - start.x);
   const height = Math.abs(end.y - start.y);
+  drawRoiBoxFromDisplayRect(box, { left, top, width, height });
+}
+
+function drawRoiBoxFromDisplayRect(box, rect) {
   box.style.display = "block";
-  box.style.left = `${left}px`;
-  box.style.top = `${top}px`;
-  box.style.width = `${width}px`;
-  box.style.height = `${height}px`;
+  box.style.left = `${rect.left}px`;
+  box.style.top = `${rect.top}px`;
+  box.style.width = `${rect.width}px`;
+  box.style.height = `${rect.height}px`;
+}
+
+function roiToDisplayRect(roi, image) {
+  const normalized = normalizeRoi(roi);
+  if (!normalized) return null;
+  const imageRect = image.getBoundingClientRect();
+  if (imageRect.width <= 0 || imageRect.height <= 0) return null;
+  return {
+    left: normalized.roi_x * imageRect.width / MONITOR_WIDTH,
+    top: normalized.roi_y * imageRect.height / MONITOR_HEIGHT,
+    width: normalized.roi_w * imageRect.width / MONITOR_WIDTH,
+    height: normalized.roi_h * imageRect.height / MONITOR_HEIGHT,
+  };
+}
+
+function displayRectToRoiRect(rect, displayWidth, displayHeight) {
+  if (!rect || rect.width < MIN_ROI_SIZE || rect.height < MIN_ROI_SIZE) return null;
+  return normalizeRoi({
+    roi_x: Math.round(rect.left * MONITOR_WIDTH / displayWidth),
+    roi_y: Math.round(rect.top * MONITOR_HEIGHT / displayHeight),
+    roi_w: Math.round(rect.width * MONITOR_WIDTH / displayWidth),
+    roi_h: Math.round(rect.height * MONITOR_HEIGHT / displayHeight),
+  });
+}
+
+function getRoiDragMode(point, rect) {
+  if (!rect) return { type: "draw" };
+  const handle = 18;
+  const insideX = point.x >= rect.left && point.x <= rect.left + rect.width;
+  const insideY = point.y >= rect.top && point.y <= rect.top + rect.height;
+  if (!insideX || !insideY) return { type: "draw" };
+  const nearLeft = Math.abs(point.x - rect.left) <= handle;
+  const nearRight = Math.abs(point.x - (rect.left + rect.width)) <= handle;
+  const nearTop = Math.abs(point.y - rect.top) <= handle;
+  const nearBottom = Math.abs(point.y - (rect.top + rect.height)) <= handle;
+  if (nearLeft || nearRight || nearTop || nearBottom) {
+    return {
+      type: "resize",
+      left: nearLeft,
+      right: nearRight,
+      top: nearTop,
+      bottom: nearBottom,
+    };
+  }
+  return { type: "move" };
+}
+
+function clampDisplayRoiRect(rect, displayWidth, displayHeight) {
+  const width = clamp(rect.width, MIN_ROI_SIZE, displayWidth);
+  const height = clamp(rect.height, MIN_ROI_SIZE, displayHeight);
+  return {
+    left: clamp(rect.left, 0, displayWidth - width),
+    top: clamp(rect.top, 0, displayHeight - height),
+    width,
+    height,
+  };
+}
+
+function updateDisplayRoiRect(mode, baseRect, start, point) {
+  const dx = point.x - start.x;
+  const dy = point.y - start.y;
+  let next = { ...baseRect };
+  if (mode.type === "move") {
+    next.left += dx;
+    next.top += dy;
+  } else if (mode.type === "resize") {
+    if (mode.left) {
+      next.left = baseRect.left + dx;
+      next.width = baseRect.width - dx;
+    }
+    if (mode.right) next.width = baseRect.width + dx;
+    if (mode.top) {
+      next.top = baseRect.top + dy;
+      next.height = baseRect.height - dy;
+    }
+    if (mode.bottom) next.height = baseRect.height + dy;
+  }
+  if (next.width < 0) {
+    next.left += next.width;
+    next.width = Math.abs(next.width);
+  }
+  if (next.height < 0) {
+    next.top += next.height;
+    next.height = Math.abs(next.height);
+  }
+  return clampDisplayRoiRect(next, point.width, point.height);
 }
 
 function setupRoiDrawing(camera) {
@@ -667,6 +757,9 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
   let drawing = false;
   let startPoint = null;
   let previousRoi = null;
+  let dragMode = { type: "draw" };
+  let baseRect = null;
+  let currentRect = null;
   let usedPointer = false;
   const begin = (event) => {
     if (event.type.startsWith("touch") && usedPointer) return;
@@ -676,7 +769,11 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
     drawing = true;
     startPoint = point;
     previousRoi = normalizeRoi(camera.roi);
-    drawRoiBoxFromPoints(box, point, point);
+    baseRect = roiToDisplayRect(previousRoi, image);
+    dragMode = getRoiDragMode(point, baseRect);
+    currentRect = dragMode.type === "draw" ? null : baseRect;
+    if (currentRect) drawRoiBoxFromDisplayRect(box, currentRect);
+    else drawRoiBoxFromPoints(box, point, point);
     if (event.pointerId !== undefined && wrap.setPointerCapture) {
       usedPointer = true;
       wrap.setPointerCapture(event.pointerId);
@@ -688,7 +785,12 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
     const point = pointInImage(event, image);
     if (!point) return;
     event.preventDefault();
-    drawRoiBoxFromPoints(box, startPoint, point);
+    if (dragMode.type === "draw") {
+      drawRoiBoxFromPoints(box, startPoint, point);
+    } else {
+      currentRect = updateDisplayRoiRect(dragMode, baseRect, startPoint, point);
+      drawRoiBoxFromDisplayRect(box, currentRect);
+    }
   };
   const end = (event) => {
     if (event.type.startsWith("touch") && usedPointer) return;
@@ -699,7 +801,9 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
     startPoint = null;
     if (!point) return;
     event.preventDefault();
-    const roi = displayRectToRoi(origin, point);
+    const roi = dragMode.type === "draw"
+      ? displayRectToRoi(origin, point)
+      : displayRectToRoiRect(currentRect, point.width, point.height);
     if (roi) {
       setCameraRoi(camera, roi, { pending: true });
       field(camera, "message").textContent = "花を囲みました。よければ「この花を使う」を押してください。";

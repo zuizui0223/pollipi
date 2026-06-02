@@ -42,8 +42,9 @@ New user sequence:
   4. Tap `この画角でOK`.
   5. Live monitor closes and a frozen `/preview` still frame opens.
   6. Draw the flower/head ROI.
-  7. Tap `この花を使う`.
-  8. Main card shows `画角: 確認済み` and `ROI: 設定済み`.
+  7. If needed, drag inside the rectangle to move it, drag an edge/corner to resize it, or tap `やり直す` to redraw it.
+  8. Tap `この花を使う`.
+  9. Main card shows `画角: 確認済み` and `ROI: 設定済み`.
 
 State rules:
   - Opening angle check after an ROI exists marks the old ROI stale.
