@@ -23,6 +23,51 @@ timelapse to tracked ROI detection). Goal is MEE-oriented method validation.
 Core data unit:
   flower_id x timestamp x recording_mode x candidate event x camera metadata x ROI metadata x label
 
+## Current working state (review-auto1 + angle-roi1, 2026-06-02)
+
+### Device fleet update: zuizui5.local
+
+`zuizui5.local` is now defined as the fifth PolliPi observation unit.
+
+Profile:
+  - `POLLIPI_DEVICE_ID=zuizui5`
+  - `POLLIPI_CAMERA_LABEL=Module 3 Wide`
+  - `POLLIPI_CAMERA_MODEL=imx708_wide`
+  - `POLLIPI_CAMERA_PROFILE=module3_wide_daylight`
+  - `POLLIPI_IS_AI_CAMERA=false`
+  - `POLLIPI_IS_NOIR=false`
+  - `POLLIPI_IS_WIDE=true`
+
+Deployment:
+  - Use `deploy_pollipi_pi.ps1 -HostName zuizui5.local -Preset module3-wide -DeviceId zuizui5`.
+  - Use `-InstallDependencies` on the first deployment if FastAPI/Uvicorn are not installed.
+  - See `DEVICE_ONBOARDING.md` for future device additions and verification checklist.
+
+### What review-auto1 changed
+
+The event/image review workflow is now correction-based instead of confirmation-based.
+
+Backend:
+  - `/events` adds derived fields for every event row:
+    `auto_category`, `final_category`, `category_source`, `review_status`, and `final_label`.
+  - `manual_label` always overrides automatic grouping.
+  - Automatic grouping is intentionally lightweight:
+    motion/blob/brightness/wind-like metrics produce `positive`, `negative`, or `unclear`.
+  - `/events?category=positive|negative|unclear|all` filters by final category.
+  - `events/export_labels.csv` keeps exporting reviewed rows and now includes automatic and final category columns.
+  - No YOLO, species identification, neural network training, video-first workflow, cloud upload, or database migration was added.
+
+PWA:
+  - `EVENT REVIEW` has `Positive`, `Negative`, `Unclear`, and `All` tabs.
+  - Event cards show current category, category source, review status, motion/blob/wind metrics, and camera/flower metadata.
+  - Quick buttons `Positive`, `Negative`, and `Unclear` save immediately through `/events/{event_id}/label`.
+  - Negative corrections can include `false_positive_reason`.
+  - The old `この分類でOK` image confirmation action was removed from the normal gallery workflow.
+  - Label saving still exists internally; there is no separate confirmation-only save step.
+
+Known limitation:
+  - Automatic categories are simple field heuristics, not insect classification. They are meant to reduce review burden and make false positives easier to audit.
+
 ## Current deployment state (angle-roi1, 2026-06-02)
 
 All 4 Pis have been updated:
@@ -54,6 +99,9 @@ State rules:
   - Dragging/resizing updates only `editing_roi`; it must not overwrite or snap back to the confirmed ROI until `このROIで決定` is tapped.
   - Normal main workflow is step-based: `画角を確認` -> `この画角でOK` -> `ROIを指定` -> `このROIで決定` -> `撮影開始`.
   - Main ROI controls are hidden unless they are relevant to the current step. The frozen ROI editor shows only `このROIで決定`, `リセット`, and `戻る`.
+  - Confirmed angle must never trap the user. If `angleConfirmed=true`, the main button must show `画角を再調整`.
+  - If `roiConfirmed=true`, the ROI button must show `ROIを再指定`; otherwise it shows `ROIを指定`.
+  - Starting capture is blocked when `angleConfirmed=false` with the message `撮影前に画角を確認してください。`.
   - Capture start is blocked when ROI exists but is stale after camera-angle readjustment.
   - `花の揺れに追従` remains optional and only starts with a confirmed current ROI.
 

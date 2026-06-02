@@ -103,6 +103,13 @@ EVENT_LOG_COLUMNS = [
     "tracked_roi_x", "tracked_roi_y", "tracked_roi_w", "tracked_roi_h", "roi_shift_x", "roi_shift_y",
     "manual_label", "manual_taxon", "false_positive_reason", "manual_notes", "reviewed_at",
 ]
+DERIVED_EVENT_COLUMNS = {
+    "auto_category",
+    "final_category",
+    "category_source",
+    "review_status",
+    "final_label",
+}
 
 
 class StartRequest(BaseModel):
@@ -231,6 +238,9 @@ class ImageInfo(BaseModel):
     label: Optional[str] = None
     label_source: Optional[str] = None
     review_status: str = "unlabeled"
+    auto_category: str = "unclear"
+    final_category: str = "unclear"
+    category_source: str = "auto"
 
 
 class ImageListResponse(BaseModel):
@@ -2121,7 +2131,70 @@ def read_event_rows() -> list[dict[str, str]]:
             row.setdefault(column, "")
         filename = row.get("image_filename", "")
         row["image_url"] = f"/images/{filename}" if filename else ""
+        add_event_categories(row)
     return rows
+
+
+def row_float(row: dict[str, str], key: str) -> Optional[float]:
+    value = row.get(key, "")
+    if value in {None, ""}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def row_bool(row: dict[str, str], key: str) -> bool:
+    return str(row.get(key, "")).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def auto_event_category(row: dict[str, str]) -> str:
+    motion_score = row_float(row, "motion_score")
+    changed_area_ratio = row_float(row, "changed_area_ratio")
+    largest_blob_ratio = row_float(row, "largest_blob_ratio")
+    small_blob_count = row_float(row, "small_blob_count")
+    brightness_delta = row_float(row, "brightness_delta")
+    detection_count = row_float(row, "detection_count")
+    wind_like = row_bool(row, "wind_like_motion")
+    insect_candidate = row_bool(row, "insect_candidate")
+    motion_type = row.get("motion_type", "")
+
+    if insect_candidate or (detection_count is not None and detection_count > 0):
+        return "positive" if not wind_like else "unclear"
+    if wind_like or motion_type == "wind_like_large_motion":
+        return "negative"
+    if motion_type == "global_brightness_change":
+        return "negative"
+    if brightness_delta is not None and brightness_delta >= 35 and (changed_area_ratio or 0) < 0.01:
+        return "negative"
+    if motion_score is None and changed_area_ratio is None:
+        return "unclear"
+    score = max(motion_score or 0.0, changed_area_ratio or 0.0)
+    if score < 0.001:
+        return "negative"
+    if score >= 0.01 and not wind_like:
+        if largest_blob_ratio is not None and largest_blob_ratio >= 0.35:
+            return "unclear"
+        if small_blob_count is None or small_blob_count >= 1:
+            return "positive"
+    if 0.003 <= score < 0.01 and not wind_like:
+        return "unclear"
+    return "unclear"
+
+
+def add_event_categories(row: dict[str, str]) -> dict[str, str]:
+    manual_label = row.get("manual_label", "").strip()
+    auto_category = auto_event_category(row)
+    manual_map = {"insect": "positive", "non_insect": "negative", "unclear": "unclear"}
+    final_category = manual_map.get(manual_label, auto_category)
+    category_source = "manual" if manual_label else "auto"
+    row["auto_category"] = auto_category
+    row["final_category"] = final_category
+    row["category_source"] = category_source
+    row["review_status"] = "reviewed" if manual_label else "auto_grouped"
+    row["final_label"] = final_category
+    return row
 
 
 def write_event_rows(rows: list[dict[str, str]]) -> None:
@@ -2129,7 +2202,12 @@ def write_event_rows(rows: list[dict[str, str]]) -> None:
     extra_columns: list[str] = []
     for row in rows:
         for key in row:
-            if key not in EVENT_LOG_COLUMNS and key != "image_url" and key not in extra_columns:
+            if (
+                key not in EVENT_LOG_COLUMNS
+                and key != "image_url"
+                and key not in DERIVED_EVENT_COLUMNS
+                and key not in extra_columns
+            ):
                 extra_columns.append(key)
     fieldnames = EVENT_LOG_COLUMNS + extra_columns
     with EVENT_LOG_PATH.open("w", newline="", encoding="utf-8") as csv_file:
@@ -2144,6 +2222,7 @@ def write_event_rows(rows: list[dict[str, str]]) -> None:
 def list_events(
     limit: int = Query(default=50, ge=1, le=500),
     label: Optional[str] = Query(default=None),
+    category: Optional[str] = Query(default=None),
     site_id: Optional[str] = Query(default=None),
     flower_id: Optional[str] = Query(default=None),
     comparison_session_id: Optional[str] = Query(default=None),
@@ -2151,6 +2230,11 @@ def list_events(
     rows = read_event_rows()
     if label is not None:
         rows = [row for row in rows if row.get("manual_label") == label]
+    if category is not None:
+        if category not in {"positive", "negative", "unclear", "all"}:
+            raise HTTPException(status_code=400, detail="category must be positive, negative, unclear, or all.")
+        if category != "all":
+            rows = [row for row in rows if row.get("final_category") == category]
     if site_id is not None:
         rows = [row for row in rows if row.get("site_id") == site_id]
     if flower_id is not None:
@@ -2203,7 +2287,8 @@ def export_event_labels() -> Response:
     output = io.StringIO()
     fieldnames = [
         "event_id", "timestamp", "image_filename",
-        "manual_label", "manual_taxon", "false_positive_reason", "manual_notes",
+        "auto_category", "manual_label", "final_label", "final_category", "category_source", "review_status",
+        "manual_taxon", "false_positive_reason", "manual_notes",
         "device_id", "device_name", "camera_label", "camera_model", "camera_profile",
         "site_id", "flower_id", "plant_species", "observer", "comparison_session_id", "camera_role", "method_mode",
         "motion_score", "changed_area_ratio", "brightness_delta", "motion_type",
@@ -2392,18 +2477,30 @@ def list_images(
         reverse=True,
     )
     label_index = controller._label_index()
-    images = [
-        ImageInfo(
-            filename=path.name,
-            captured_at=datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat(timespec="seconds"),
-            size_bytes=path.stat().st_size,
-            url=f"/images/{path.name}?collection={collection}",
-            label=label_index.get(path.name, {}).get("label") or (collection if collection in {"positive", "negative"} else None),
-            label_source=label_index.get(path.name, {}).get("source"),
-            review_status=controller._review_status(label_index.get(path.name, {}).get("source")),
+    images = []
+    for path in image_paths[:limit]:
+        label_data = label_index.get(path.name, {})
+        label = label_data.get("label") or (collection if collection in {"positive", "negative"} else None)
+        label_source = label_data.get("source")
+        review_status = controller._review_status(label_source)
+        auto_category = label if label in {"positive", "negative"} and review_status == "auto" else "unclear"
+        if collection in {"positive", "negative"} and not label:
+            auto_category = collection
+        final_category = label if label in {"positive", "negative"} else auto_category
+        images.append(
+            ImageInfo(
+                filename=path.name,
+                captured_at=datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat(timespec="seconds"),
+                size_bytes=path.stat().st_size,
+                url=f"/images/{path.name}?collection={collection}",
+                label=label,
+                label_source=label_source,
+                review_status=review_status,
+                auto_category=auto_category,
+                final_category=final_category,
+                category_source="manual" if review_status == "reviewed" else "auto",
+            )
         )
-        for path in image_paths[:limit]
-    ]
     return ImageListResponse(
         image_dir=str(image_dir),
         collection=collection,

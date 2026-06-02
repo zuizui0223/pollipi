@@ -286,10 +286,11 @@ PolliPi は、直接観察・通常タイムラプス・イベントベースタ
 候補相互作用イベントです。各イベントには、対象花、植物種、観察者、カメラプロファイル、ROI、
 背景差分の指標、後日の手動レビュー結果をまとめて残します。
 
-PWA の `EVENT REVIEW` では、候補イベントを iPad で確認し、`insect`、`non_insect`、`unclear` を
-ラベルできます。風、影、花の揺れ、カメラ揺れ、非昆虫物体、照明変化などの false positive reason も
-記録できます。レビュー済みイベントは `/events/export_labels.csv` からCSVとして出力でき、将来の
-軽量な insect / non-insect フィルタ更新に使う教師データになります。この版では、昆虫の種同定、
+PWA の `EVENT REVIEW` では、候補イベントがまず `Positive`、`Negative`、`Unclear` に自動で
+仮グループ化されます。人は全件を確認するのではなく、間違っているカードだけ `Positive`、
+`Negative`、`Unclear` ボタンで修正します。風、影、花の揺れ、カメラ揺れ、非昆虫物体、照明変化などの
+false positive reason も記録できます。レビュー済みイベントは `/events/export_labels.csv` からCSVとして
+出力でき、将来の軽量な insect / non-insect フィルタ更新に使う教師データになります。この版では、昆虫の種同定、
 ニューラルネットワーク学習、動画記録、クラウド同期は行いません。
 
 例1: Module 3 vs AI Camera comparison
@@ -419,13 +420,18 @@ ROI内、指定がない場合は低解像度フレーム全体で、変化し�
 
 ## Human-in-the-loop event review
 
-`event_log.csv` に保存された動き候補は、PWA の `EVENT REVIEW` で確認できます。各イベントについて、
-画像、時刻、`site_id`、`flower_id`、`camera_profile`、`motion_score` を見ながら
-`insect`、`non_insect`、`unclear` の手動ラベルを付けられます。必要に応じて `manual_taxon`、
+`event_log.csv` に保存された動き候補は、PWA の `EVENT REVIEW` で確認できます。未レビューのイベントは、
+既存の motion metrics、blob metrics、明るさ変化、wind-like 判定を使って、まず `Positive`、`Negative`、
+`Unclear` に自動で仮グループ化されます。人の修正済み `manual_label` がある場合は、必ず人のラベルが
+自動グループより優先されます。
+
+通常のレビュー作業では、すべてのイベントを「OK」と確認する必要はありません。iPad では
+`Positive`、`Negative`、`Unclear`、`All` のタブで候補を見て、間違っているカードだけ
+`Positive`、`Negative`、`Unclear` ボタンで直接修正します。必要に応じて `manual_taxon`、
 `manual_notes`、false positive の理由も記録します。
 
 false positive reason は `wind`、`shadow`、`flower_movement`、`camera_shake`、
-`non_insect_object`、`unclear`、`other` から選びます。
+`non_insect_object`、`lighting_change`、`unclear`、`other` から選びます。
 
 ```bash
 curl http://zuizui.local:8000/events
@@ -438,6 +444,8 @@ curl -OJ http://zuizui.local:8000/events/export_labels.csv
 ```
 
 `events/export_labels.csv` は、将来の insect / non-insect 分類器を作るための教師データとして使う想定です。
+CSV には `auto_category`、`manual_label`、`final_label`、`category_source` も含まれるため、
+自動判定と人手修正の差をあとで評価できます。
 現時点ではニューラルネットワークやモデル更新は実装していません。調査当日の夕方などに人がイベントを確認し、
 ラベル付きCSVを作っておけば、将来版ではその日のうちに軽量モデルを更新する流れへつなげられます。
 
@@ -445,7 +453,7 @@ PWA の画面には、この設計が対応する研究ギャップを表示し�
 を必ず残し、まず自動判定による学習データ用の仮ラベルとして `images/positive/` と
 `images/negative/` にも登録されます。iPad ではすべてを1枚ずつ分類する必要はなく、
 基本は自動振り分けのまま使い、間違いを見つけた時だけ `positiveに修正` または
-`negativeに修正` を押します。重要な画像だけ `この分類でOK` として確認済みにできます。
+`negativeに修正` を押します。確認だけの操作は通常ワークフローから外しています。
 可能なファイルシステムでは原画像へのハードリンクを
 作成するため余分な容量消費を抑え、対応しない USB 保存装置ではコピーへ切り替わります。
 自動ラベルは昆虫または訪花の確定記録ではないため、重要な解析では誤分類だけ重点的に確認してください。
@@ -581,7 +589,7 @@ curl -X POST http://zuizui.local:8000/images/event_20260527_130821_230183.jpg/la
 
 curl -X POST http://zuizui.local:8000/images/event_20260527_130821_230183.jpg/label \
   -H "Content-Type: application/json" \
-  -d '{"label": "confirmed"}'
+  -d '{"label": "negative"}'
 
 curl http://zuizui.local:8000/training/status
 curl -X POST http://zuizui.local:8000/training/start
@@ -730,3 +738,25 @@ $env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
 
 The script syncs only source files (`pollipi_api_server.py`, `README.md`, `imx500_detect_test.py`, and `web/`) and
 then restarts `pollipi.service`. It does not copy captured images, logs, CSV event data, or runtime caches.
+
+## Adding new PolliPi devices
+
+New Raspberry Pi observation units can be added with the same backend and PWA. Use
+`DEVICE_ONBOARDING.md` as the short checklist for camera profiles, deployment, and endpoint verification.
+
+For the fifth daylight Camera Module 3 Wide unit:
+
+```powershell
+$env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
+.\deploy_pollipi_pi.ps1 -HostName zuizui5.local -Preset module3-wide -DeviceId zuizui5 -InstallDependencies
+```
+
+Expected `zuizui5.local` camera metadata:
+
+```text
+POLLIPI_DEVICE_ID=zuizui5
+POLLIPI_CAMERA_PROFILE=module3_wide_daylight
+POLLIPI_IS_AI_CAMERA=false
+POLLIPI_IS_NOIR=false
+POLLIPI_IS_WIDE=true
+```

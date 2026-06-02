@@ -54,6 +54,12 @@ const eventCameraLabel = document.querySelector("#event-camera-label");
 const eventCount = document.querySelector("#event-count");
 const eventGrid = document.querySelector("#event-grid");
 const downloadEventLabelsLink = document.querySelector("#download-event-labels");
+const eventTabs = {
+  all: document.querySelector("#events-all-tab"),
+  positive: document.querySelector("#events-positive-tab"),
+  negative: document.querySelector("#events-negative-tab"),
+  unclear: document.querySelector("#events-unclear-tab"),
+};
 const positiveCount = document.querySelector("#positive-count");
 const negativeCount = document.querySelector("#negative-count");
 const trainingModel = document.querySelector("#training-model");
@@ -64,6 +70,7 @@ const trainingResetButton = document.querySelector("#training-reset");
 let cameras = loadCameras();
 let selectedGalleryCamera = null;
 let selectedCollection = "all";
+let selectedEventCategory = "all";
 
 function loadCameras() {
   try {
@@ -74,7 +81,9 @@ function loadCameras() {
 }
 
 function saveCameras() {
-  const persistent = cameras.map((camera) => ({
+  const persistent = cameras.map((camera) => {
+    syncWorkflowAliases(camera);
+    return ({
     address: camera.address,
     baseUrl: camera.baseUrl,
     device_id: camera.device_id,
@@ -92,7 +101,8 @@ function saveCameras() {
     roi_tracking: Boolean(camera.roi_tracking),
     roi_search_margin: camera.roi_search_margin || 30,
     roi_tracking_min_score: camera.roi_tracking_min_score || 0.45,
-  }));
+    });
+  });
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persistent));
 }
 
@@ -113,6 +123,17 @@ function resolveBaseUrl(value) {
 
 function field(camera, name) {
   return camera.card.querySelector(`[data-field="${name}"]`);
+}
+
+function syncWorkflowAliases(camera) {
+  const confirmedROI = normalizeRoi(camera.roi);
+  const editingROI = normalizeRoi(camera.editing_roi);
+  camera.angleConfirmed = Boolean(camera.angle_confirmed);
+  camera.confirmedROI = confirmedROI;
+  camera.editingROI = editingROI;
+  camera.roiStale = Boolean(camera.roi_stale);
+  camera.roiConfirmed = Boolean(confirmedROI && !camera.roiStale);
+  return camera;
 }
 
 function optionalValue(input) {
@@ -252,17 +273,22 @@ function getStartPayload(camera) {
   const interval = getInterval();
   const automaticSettings = getAutomaticSettings();
   if (interval === null || automaticSettings === null) return null;
+  syncWorkflowAliases(camera);
+  if (camera && !camera.angleConfirmed) {
+    window.alert("撮影前に画角を確認してください。");
+    return null;
+  }
   const metadata = getSessionMetadata();
   const drawnRoi = normalizeRoi(camera && camera.roi);
   const manualRoi = drawnRoi ? undefined : readRoiInputs({ quiet: true });
   if (manualRoi === null) return null;
   const roi = drawnRoi || manualRoi;
   const trackingChecked = Boolean(camera && field(camera, "roi-tracking") && field(camera, "roi-tracking").checked);
-  if (camera && camera.roi_stale && (drawnRoi || trackingChecked)) {
+  if (camera && camera.roiStale && (drawnRoi || trackingChecked)) {
     window.alert("画角を再調整したため、ROIをもう一度指定してください。");
     return null;
   }
-  if (drawnRoi && !camera.angle_confirmed) {
+  if (drawnRoi && !camera.angleConfirmed) {
     window.alert("画角を確認してからROIを指定してください。");
     return null;
   }
@@ -314,6 +340,7 @@ async function registerCamera(rawAddress, quiet = false) {
       roi_search_margin: old.roi_search_margin || 30,
       roi_tracking_min_score: old.roi_tracking_min_score || 0.45,
     });
+    syncWorkflowAliases(camera);
     if (existing >= 0) cameras[existing] = camera;
     else cameras.push(camera);
     saveCameras();
@@ -421,8 +448,9 @@ function setupFieldWorkflowLabels(camera) {
 }
 
 function renderFieldWorkflow(camera) {
-  const roi = normalizeRoi(camera.roi);
-  const editingRoi = normalizeRoi(camera.editing_roi);
+  syncWorkflowAliases(camera);
+  const roi = camera.confirmedROI;
+  const editingRoi = camera.editingROI;
   const editingOpen = field(camera, "roi-drawer") && !field(camera, "roi-drawer").hidden;
   const angleStatus = field(camera, "angle-status");
   const roiStatusDetail = field(camera, "roi-status-detail");
@@ -432,23 +460,22 @@ function renderFieldWorkflow(camera) {
   const angleButton = camera.card.querySelector(".angle-check-camera");
   const roiClearButton = camera.card.querySelector(".roi-clear-camera");
   const angleReadjustButton = camera.card.querySelector(".angle-readjust-camera");
-  if (angleStatus) angleStatus.textContent = `画角: ${camera.angle_confirmed ? "確認済み" : "未確認"}`;
+  if (angleStatus) angleStatus.textContent = `画角: ${camera.angleConfirmed ? "確認済み" : "未確認"}`;
   if (roiStatusDetail) {
-    roiStatusDetail.textContent = `ROI: ${editingOpen && editingRoi ? "編集中" : roi && !camera.roi_stale ? "設定済み" : roi && camera.roi_stale ? "再指定が必要" : "未設定"}`;
+    roiStatusDetail.textContent = `ROI: ${editingOpen && editingRoi ? "編集中" : camera.roiConfirmed ? "設定済み" : roi && camera.roiStale ? "再指定が必要" : "未設定"}`;
   }
-  const validRoi = Boolean(roi && !camera.roi_stale);
-  const needsRoi = Boolean(camera.angle_confirmed && (!roi || camera.roi_stale));
   if (angleButton) {
-    angleButton.textContent = validRoi || camera.angle_confirmed ? "画角を再調整" : "画角を確認";
-    angleButton.hidden = editingOpen || (camera.monitoring && !camera.aiMonitoring) || (needsRoi && !validRoi);
+    angleButton.textContent = camera.angleConfirmed ? "画角を再調整" : "画角を確認";
+    angleButton.hidden = editingOpen || (camera.monitoring && !camera.aiMonitoring);
   }
   if (angleOk) angleOk.hidden = editingOpen || !camera.monitoring || camera.aiMonitoring;
   if (monitorClose) monitorClose.hidden = true;
   if (roiButton) {
-    roiButton.hidden = editingOpen || !needsRoi;
-    roiButton.disabled = !camera.angle_confirmed;
+    roiButton.textContent = camera.roiConfirmed ? "ROIを再指定" : "ROIを指定";
+    roiButton.hidden = editingOpen || !camera.angleConfirmed || (camera.monitoring && !camera.aiMonitoring);
+    roiButton.disabled = !camera.angleConfirmed;
   }
-  if (roiClearButton) roiClearButton.hidden = editingOpen || !validRoi;
+  if (roiClearButton) roiClearButton.hidden = editingOpen || !camera.roiConfirmed;
   if (angleReadjustButton) angleReadjustButton.hidden = true;
   renderTrackingToggle(camera);
 }
@@ -468,6 +495,7 @@ function openAngleMonitor(camera) {
   if (drawer) drawer.hidden = true;
   camera.angle_confirmed = false;
   markRoiStaleForAngleChange(camera);
+  syncWorkflowAliases(camera);
   saveCameras();
   toggleMonitor(camera, false, { forceOpen: true });
   field(camera, "message").textContent = "画角確認中です。花が画面中央付近に入るようにカメラを調整してください。";
@@ -483,6 +511,7 @@ function closeAngleMonitor(camera) {
 async function confirmCameraAngle(camera) {
   setMonitor(camera, false);
   camera.angle_confirmed = true;
+  syncWorkflowAliases(camera);
   saveCameras();
   renderCameraRoi(camera);
   renderFieldWorkflow(camera);
@@ -569,6 +598,7 @@ function setEditingRoi(camera, roi) {
   const normalized = normalizeRoi(roi);
   if (!normalized) return false;
   camera.editing_roi = normalized;
+  syncWorkflowAliases(camera);
   renderRoiEditor(camera);
   renderFieldWorkflow(camera);
   return true;
@@ -582,6 +612,7 @@ function setCameraRoi(camera, roi, { fillInputs = true } = {}) {
   camera.roi_pending = false;
   camera.roi_stale = false;
   if (fillInputs) fillRoiInputs(normalized);
+  syncWorkflowAliases(camera);
   saveCameras();
   renderCameraRoi(camera);
   renderTrackingToggle(camera);
@@ -596,6 +627,7 @@ function clearCameraRoi(camera) {
   camera.roi_pending = false;
   fillRoiInputs(null);
   camera.roi_tracking = false;
+  syncWorkflowAliases(camera);
   const tracking = field(camera, "roi-tracking");
   if (tracking) tracking.checked = false;
   saveCameras();
@@ -956,6 +988,7 @@ function readjustCameraAngle(camera) {
   if (normalizeRoi(camera.roi)) camera.roi_stale = true;
   camera.angle_confirmed = false;
   camera.editing_roi = null;
+  syncWorkflowAliases(camera);
   saveCameras();
   field(camera, "roi-drawer").hidden = true;
   renderCameraRoi(camera);
@@ -1223,8 +1256,9 @@ function buildGalleryItem(camera, imageInfo) {
   detail.className = "gallery-detail";
   detail.innerHTML = `<span>${formatCaptureTime(imageInfo.captured_at)}</span><span>${formatBytes(imageInfo.size_bytes)}</span>`;
   const labelBadge = document.createElement("p");
-  labelBadge.className = `label-badge ${imageInfo.review_status || "unlabeled"}`;
-  labelBadge.textContent = `${imageInfo.label || "未分類"} / ${imageInfo.review_status || "unlabeled"}`;
+  const imageCategory = imageInfo.final_category || imageInfo.label || "unclear";
+  labelBadge.className = `label-badge ${imageInfo.review_status || "unlabeled"} category-${imageCategory}`;
+  labelBadge.textContent = `${imageCategory} / ${imageInfo.category_source || imageInfo.review_status || "auto"}`;
   const downloadLink = document.createElement("a");
   downloadLink.className = "download-image";
   downloadLink.href = `${camera.baseUrl}${imageInfo.url}${imageInfo.url.includes("?") ? "&" : "?"}download=true`;
@@ -1232,23 +1266,22 @@ function buildGalleryItem(camera, imageInfo) {
   downloadLink.textContent = "iPadに保存";
   const actions = document.createElement("div");
   actions.className = "review-actions";
-  const confirmButton = document.createElement("button");
-  confirmButton.className = "label-confirm";
-  confirmButton.type = "button";
-  confirmButton.textContent = "この分類でOK";
-  confirmButton.disabled = !imageInfo.label || imageInfo.review_status === "reviewed";
-  confirmButton.addEventListener("click", () => reviewLabel(camera, imageInfo.filename, "confirmed"));
   const positiveButton = document.createElement("button");
   positiveButton.className = "label-positive";
   positiveButton.type = "button";
-  positiveButton.textContent = "positiveに修正";
+  positiveButton.textContent = "Positive";
   positiveButton.addEventListener("click", () => reviewLabel(camera, imageInfo.filename, "positive"));
   const negativeButton = document.createElement("button");
   negativeButton.className = "label-negative";
   negativeButton.type = "button";
-  negativeButton.textContent = "negativeに修正";
+  negativeButton.textContent = "Negative";
   negativeButton.addEventListener("click", () => reviewLabel(camera, imageInfo.filename, "negative"));
-  actions.append(confirmButton, positiveButton, negativeButton);
+  const unclearButton = document.createElement("button");
+  unclearButton.className = "label-unclear";
+  unclearButton.type = "button";
+  unclearButton.textContent = "Unclear";
+  unclearButton.addEventListener("click", () => reviewLabel(camera, imageInfo.filename, "unlabeled"));
+  actions.append(positiveButton, negativeButton, unclearButton);
   const deleteButton = document.createElement("button");
   deleteButton.className = "delete-image";
   deleteButton.type = "button";
@@ -1285,6 +1318,9 @@ async function reviewLabel(camera, filename, label) {
 async function refreshEvents() {
   const camera = selectedGalleryCamera;
   eventGrid.replaceChildren();
+  Object.entries(eventTabs).forEach(([category, button]) => {
+    if (button) button.classList.toggle("selected", category === selectedEventCategory);
+  });
   if (!camera) {
     eventCameraLabel.textContent = "観察機未選択";
     eventCount.textContent = "events -";
@@ -1296,8 +1332,8 @@ async function refreshEvents() {
   downloadEventLabelsLink.classList.remove("disabled");
   downloadEventLabelsLink.href = `${camera.baseUrl}/events/export_labels.csv`;
   try {
-    const response = await apiRequest(camera, "/events?limit=50");
-    eventCount.textContent = `${response.event_count} events`;
+    const response = await apiRequest(camera, `/events?limit=80&category=${encodeURIComponent(selectedEventCategory)}`);
+    eventCount.textContent = `${response.event_count} ${selectedEventCategory} events`;
     if (!response.events.length) {
       eventGrid.innerHTML = `<p class="gallery-empty">イベント候補はまだありません。</p>`;
       return;
@@ -1310,30 +1346,26 @@ async function refreshEvents() {
 
 function buildEventItem(camera, eventInfo) {
   const item = document.createElement("article");
-  item.className = "event-item";
+  const category = eventInfo.final_category || "unclear";
+  item.className = `event-item category-${category}`;
   const image = document.createElement("img");
   image.src = eventInfo.image_url ? `${camera.baseUrl}${eventInfo.image_url}` : "";
   image.alt = eventInfo.image_filename || eventInfo.event_id;
   image.loading = "lazy";
   const meta = document.createElement("div");
   meta.className = "event-meta";
+  const source = eventInfo.category_source || "auto";
+  const reviewStatus = eventInfo.review_status || "auto_grouped";
   meta.innerHTML = `
     <strong>${eventInfo.timestamp || "-"}</strong>
+    <span class="category-badge ${category}">${category} / ${source} / ${reviewStatus}</span>
     <span>${eventInfo.device_name || camera.camera_label} / ${eventInfo.camera_profile || "-"}</span>
     <span>site ${eventInfo.site_id || "-"} / flower ${eventInfo.flower_id || "-"} / plant ${eventInfo.plant_species || "-"}</span>
-    <span>motion ${eventInfo.motion_score || "-"} / changed ${eventInfo.changed_area_ratio || "-"} / wind ${eventInfo.wind_like_motion || "-"}</span>
-    <span>label: ${eventInfo.manual_label || "unreviewed"}</span>
+    <span>motion ${eventInfo.motion_score || "-"} / changed ${eventInfo.changed_area_ratio || "-"} / blob ${eventInfo.largest_blob_ratio || "-"}</span>
+    <span>wind ${eventInfo.wind_like_motion || "-"} / type ${eventInfo.motion_type || "-"} / auto ${eventInfo.auto_category || "-"}</span>
   `;
   const form = document.createElement("div");
   form.className = "event-review-form";
-  const labelSelect = document.createElement("select");
-  ["", "insect", "non_insect", "unclear"].forEach((value) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = value || "manual label";
-    option.selected = value === (eventInfo.manual_label || "");
-    labelSelect.append(option);
-  });
   const taxon = document.createElement("input");
   taxon.placeholder = "manual taxon";
   taxon.value = eventInfo.manual_taxon || "";
@@ -1350,40 +1382,22 @@ function buildEventItem(camera, eventInfo) {
   notes.value = eventInfo.manual_notes || "";
   const actions = document.createElement("div");
   actions.className = "event-review-actions";
-  [["insect", "insect"], ["non_insect", "non insect"], ["unclear", "unclear"]].forEach(([value, text]) => {
+  [["insect", "Positive"], ["non_insect", "Negative"], ["unclear", "Unclear"]].forEach(([value, text]) => {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = text;
-    button.className = eventInfo.manual_label === value ? "selected-label" : "";
+    button.className = `quick-label ${eventInfo.manual_label === value ? "selected-label" : ""}`;
     button.addEventListener("click", () => {
-      labelSelect.value = value;
       saveEventReview(camera, eventInfo.event_id, {
         manual_label: value,
         manual_taxon: taxon.value,
-        false_positive_reason: reason.value,
+        false_positive_reason: value === "non_insect" ? reason.value : "",
         manual_notes: notes.value,
       });
     });
     actions.append(button);
   });
-  const saveButton = document.createElement("button");
-  saveButton.type = "button";
-  saveButton.className = "label-confirm";
-  saveButton.textContent = "Save label";
-  saveButton.addEventListener("click", () => {
-    if (!labelSelect.value) {
-      window.alert("manual_labelを選んでください。");
-      return;
-    }
-    saveEventReview(camera, eventInfo.event_id, {
-      manual_label: labelSelect.value,
-      manual_taxon: taxon.value,
-      false_positive_reason: reason.value,
-      manual_notes: notes.value,
-    });
-  });
-  actions.append(saveButton);
-  form.append(labelSelect, taxon, reason, notes, actions);
+  form.append(taxon, reason, notes, actions);
   item.append(image, meta, form);
   return item;
 }
@@ -1503,6 +1517,14 @@ reviewEventsButton.addEventListener("click", () => {
 allImagesTab.addEventListener("click", () => { selectedCollection = "all"; refreshGallery(); });
 positiveImagesTab.addEventListener("click", () => { selectedCollection = "positive"; refreshGallery(); });
 negativeImagesTab.addEventListener("click", () => { selectedCollection = "negative"; refreshGallery(); });
+Object.entries(eventTabs).forEach(([category, button]) => {
+  if (button) {
+    button.addEventListener("click", () => {
+      selectedEventCategory = category;
+      refreshEvents();
+    });
+  }
+});
 deleteAllImagesButton.addEventListener("click", deleteAllImages);
 trainingStartButton.addEventListener("click", startTraining);
 trainingResetButton.addEventListener("click", resetTrainingModel);

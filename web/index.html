@@ -10,7 +10,7 @@
     <title>PolliPi Field Observer</title>
     <link rel="manifest" href="/app/manifest.webmanifest">
     <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/app/app.css?v=20260602-roi-simple1">
+    <link rel="stylesheet" href="/app/app.css?v=20260602-review-auto1">
   </head>
   <body>
     <header class="hero">
@@ -118,13 +118,19 @@
           <div>
             <p class="section-title">EVENT REVIEW</p>
             <h2>候補イベントを確認</h2>
-            <p class="hint">候補を insect / non_insect / unclear として保存します。これは将来の学習データになります。</p>
+            <p class="hint">候補を自動で Positive / Negative / Unclear に分けます。間違っているものだけ修正してください。</p>
           </div>
           <a class="download-zip disabled" id="download-event-labels" href="#" download>Export labels CSV</a>
         </div>
         <div class="folder-summary">
           <span id="event-camera-label">観察機未選択</span>
           <span id="event-count">events -</span>
+        </div>
+        <div class="collection-switch" role="group" aria-label="event category filter">
+          <button class="collection-tab selected" id="events-all-tab" type="button">All</button>
+          <button class="collection-tab" id="events-positive-tab" type="button">Positive</button>
+          <button class="collection-tab" id="events-negative-tab" type="button">Negative</button>
+          <button class="collection-tab" id="events-unclear-tab" type="button">Unclear</button>
         </div>
         <div class="event-grid" id="event-grid"></div>
       </section>
@@ -225,6 +231,6 @@
         </div>
       </article>
     </template>
-    <script src="/app/app.js?v=20260602-roi-simple1"></script>
+    <script src="/app/app.js?v=20260602-review-auto1"></script>
   </body>
 </html>

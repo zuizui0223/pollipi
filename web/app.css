@@ -759,6 +759,31 @@ h3 {
   color: var(--ink);
 }
 
+.label-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0 10px 10px;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.label-badge.category-positive {
+  background: #d8efdf;
+  color: var(--leaf-dark);
+}
+
+.label-badge.category-negative {
+  background: #f0e9dc;
+  color: #745a28;
+}
+
+.label-badge.category-unclear {
+  background: #eef0f4;
+  color: #4c5668;
+}
+
 .review-actions,
 .label-confirm {
   display: grid;
@@ -787,6 +812,34 @@ h3 {
   color: #745a28;
 }
 
+.label-unclear {
+  background: #eef0f4;
+  color: #4c5668;
+}
+
+.category-badge {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  font-weight: 800;
+  padding: 5px 9px;
+}
+
+.category-badge.positive {
+  background: #d8efdf;
+  color: var(--leaf-dark);
+}
+
+.category-badge.negative {
+  background: #f0e9dc;
+  color: #745a28;
+}
+
+.category-badge.unclear {
+  background: #eef0f4;
+  color: #4c5668;
+}
+
 .download-image,
 .delete-image {
   min-height: 38px;
@@ -810,6 +863,24 @@ h3 {
 
 .event-review-actions {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.event-review-actions .quick-label:nth-child(1) {
+  background: #d8efdf;
+  color: var(--leaf-dark);
+}
+
+.event-review-actions .quick-label:nth-child(2) {
+  background: #f0e9dc;
+  color: #745a28;
+}
+
+.event-review-actions .quick-label:nth-child(3) {
+  background: #eef0f4;
+  color: #4c5668;
 }
 
 .training-metrics {

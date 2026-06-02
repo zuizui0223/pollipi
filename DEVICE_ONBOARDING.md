@@ -75,6 +75,30 @@ cd /home/zuizui0223/pollipi_timelapse
 git pull origin main
 ```
 
+### Windows deployment helper
+
+From the Windows workspace, the deployment helper can copy source files, set the camera profile, run syntax checks, install the service, and restart PolliPi.
+
+Standard daylight Module 3 Wide example for `zuizui5.local`:
+
+```powershell
+$env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
+.\deploy_pollipi_pi.ps1 -HostName zuizui5.local -Preset module3-wide -DeviceId zuizui5 -InstallDependencies
+```
+
+After the first deployment, `-InstallDependencies` can usually be omitted:
+
+```powershell
+$env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
+.\deploy_pollipi_pi.ps1 -HostName zuizui5.local -Preset module3-wide -DeviceId zuizui5
+```
+
+If `.local` name resolution is not working but the IP address is known, use the IP address for `-HostName` and keep `-DeviceId` as the intended stable device id:
+
+```powershell
+.\deploy_pollipi_pi.ps1 -HostName 192.168.11.25 -Preset module3-wide -DeviceId zuizui5
+```
+
 ## 5. Configure device profile
 
 Create or edit the systemd drop-in file:
@@ -88,28 +112,28 @@ sudo nano /etc/systemd/system/pollipi.service.d/camera-profile.conf
 
 ```ini
 [Service]
-Environment=DEVICE_ID=zuizui5
-Environment=DEVICE_NAME=Site Module 3 Wide 5
-Environment=CAMERA_LABEL=Module 3 Wide
-Environment=CAMERA_MODEL=imx708_wide
-Environment=CAMERA_PROFILE=module3_wide_daylight
-Environment=IS_AI_CAMERA=false
-Environment=IS_NOIR=false
-Environment=IS_WIDE=true
+Environment=POLLIPI_DEVICE_ID=zuizui5
+Environment="POLLIPI_DEVICE_NAME=Site Module 3 Wide 5"
+Environment="POLLIPI_CAMERA_LABEL=Module 3 Wide"
+Environment=POLLIPI_CAMERA_MODEL=imx708_wide
+Environment=POLLIPI_CAMERA_PROFILE=module3_wide_daylight
+Environment=POLLIPI_IS_AI_CAMERA=false
+Environment=POLLIPI_IS_NOIR=false
+Environment=POLLIPI_IS_WIDE=true
 ```
 
 ### AI Camera example: `zuizui2.local`
 
 ```ini
 [Service]
-Environment=DEVICE_ID=zuizui2
-Environment=DEVICE_NAME=AI Camera Unit
-Environment=CAMERA_LABEL=AI Camera
-Environment=CAMERA_MODEL=imx500
-Environment=CAMERA_PROFILE=ai_camera_daylight
-Environment=IS_AI_CAMERA=true
-Environment=IS_NOIR=false
-Environment=IS_WIDE=false
+Environment=POLLIPI_DEVICE_ID=zuizui2
+Environment="POLLIPI_DEVICE_NAME=AI Camera Unit"
+Environment="POLLIPI_CAMERA_LABEL=AI Camera"
+Environment=POLLIPI_CAMERA_MODEL=imx500
+Environment=POLLIPI_CAMERA_PROFILE=ai_camera_daylight
+Environment=POLLIPI_IS_AI_CAMERA=true
+Environment=POLLIPI_IS_NOIR=false
+Environment=POLLIPI_IS_WIDE=false
 ```
 
 Important:
@@ -121,14 +145,14 @@ Important:
 
 ```ini
 [Service]
-Environment=DEVICE_ID=zuizui3
-Environment=DEVICE_NAME=NoIR Wide Unit
-Environment=CAMERA_LABEL=Module 3 NoIR Wide
-Environment=CAMERA_MODEL=imx708_noir_wide
-Environment=CAMERA_PROFILE=module3_noir_wide_ir
-Environment=IS_AI_CAMERA=false
-Environment=IS_NOIR=true
-Environment=IS_WIDE=true
+Environment=POLLIPI_DEVICE_ID=zuizui3
+Environment="POLLIPI_DEVICE_NAME=NoIR Wide Unit"
+Environment="POLLIPI_CAMERA_LABEL=Module 3 NoIR Wide"
+Environment=POLLIPI_CAMERA_MODEL=imx708_noir_wide
+Environment=POLLIPI_CAMERA_PROFILE=module3_noir_wide_ir
+Environment=POLLIPI_IS_AI_CAMERA=false
+Environment=POLLIPI_IS_NOIR=true
+Environment=POLLIPI_IS_WIDE=true
 ```
 
 Important:
