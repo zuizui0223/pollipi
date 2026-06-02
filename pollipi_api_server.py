@@ -322,6 +322,8 @@ class TimelapseController:
         self._camera_lock = threading.Lock()
         self._monitor_stop_event: Optional[threading.Event] = None
         self._monitor_closed_event: Optional[threading.Event] = None
+        self._latest_preview_frame: Optional[bytes] = None
+        self._latest_preview_time: Optional[float] = None
         self.running = False
         self.interval_sec: Optional[float] = None
         self.capture_count = 0
@@ -626,10 +628,26 @@ class TimelapseController:
     def preview_frame(self) -> bytes:
         with self._lock:
             camera = self._camera
+            monitor_active = self._monitor_stop_event is not None
+            cached_frame = self._latest_preview_frame
         if camera is not None:
             with self._camera_lock:
-                camera.capture_file(str(PREVIEW_PATH))
-                return PREVIEW_PATH.read_bytes()
+                try:
+                    camera.capture_file(str(PREVIEW_PATH))
+                except Exception:
+                    camera.capture_file(str(PREVIEW_PATH), name="lores")
+                frame = PREVIEW_PATH.read_bytes()
+                self._cache_preview_frame(frame)
+                return frame
+
+        if cached_frame:
+            return cached_frame
+
+        if monitor_active:
+            frame = self._wait_for_cached_preview(timeout=2.0)
+            if frame:
+                return frame
+            raise RuntimeError("Monitor is starting; preview frame is not ready yet.")
 
         from picamera2 import Picamera2
 
@@ -642,10 +660,31 @@ class TimelapseController:
                 preview_camera.start()
                 time.sleep(1)
                 preview_camera.capture_file(str(PREVIEW_PATH))
-                return PREVIEW_PATH.read_bytes()
+                frame = PREVIEW_PATH.read_bytes()
+                self._cache_preview_frame(frame)
+                return frame
             finally:
-                preview_camera.stop()
-                preview_camera.close()
+                try:
+                    preview_camera.stop()
+                finally:
+                    preview_camera.close()
+
+    def _cache_preview_frame(self, frame: bytes) -> None:
+        if not frame:
+            return
+        with self._lock:
+            self._latest_preview_frame = frame
+            self._latest_preview_time = time.monotonic()
+
+    def _wait_for_cached_preview(self, timeout: float) -> Optional[bytes]:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self._lock:
+                frame = self._latest_preview_frame
+            if frame:
+                return frame
+            time.sleep(0.05)
+        return None
 
     def stop_monitor(self) -> None:
         with self._lock:
@@ -654,7 +693,7 @@ class TimelapseController:
             if stop_event is not None:
                 stop_event.set()
         if closed_event is not None:
-            closed_event.wait(timeout=3)
+            closed_event.wait(timeout=5)
 
     def monitor_frames(self, ai_detection: bool = False) -> Generator[bytes, None, None]:
         self.stop_monitor()
@@ -716,6 +755,7 @@ class TimelapseController:
                     else:
                         camera.capture_file(str(PREVIEW_PATH))
                         frame = PREVIEW_PATH.read_bytes()
+                self._cache_preview_frame(frame)
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n"
@@ -786,11 +826,12 @@ class TimelapseController:
             from picamera2 import Picamera2
 
             self.image_dir.mkdir(parents=True, exist_ok=True)
-            camera = Picamera2()
-            camera.configure(
-                camera.create_still_configuration(lores={"size": MONITOR_SIZE, "format": "YUV420"})
-            )
-            camera.start()
+            with self._camera_lock:
+                camera = Picamera2()
+                camera.configure(
+                    camera.create_still_configuration(lores={"size": MONITOR_SIZE, "format": "YUV420"})
+                )
+                camera.start()
             with self._lock:
                 self._camera = camera
             roi = self._roi_tuple(request)
@@ -2230,7 +2271,10 @@ def get_latest() -> FileResponse:
 @app.get("/preview")
 def get_preview() -> Response:
     ensure_camera_available()
-    frame = controller.preview_frame()
+    try:
+        frame = controller.preview_frame()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Preview capture failed: {exc}") from exc
     return Response(content=frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 

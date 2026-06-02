@@ -1,5 +1,15 @@
 # AI Change Log
 
+## 2026-06-02
+
+- Fixed a Picamera2 lifecycle conflict between `/preview`, `/mjpeg`, and `/start`.
+- Added an in-memory latest-preview JPEG cache. `/mjpeg` now updates the cache, and `/preview` returns the cached frame when a monitor stream is active or has just run.
+- Wrapped standalone preview capture and timelapse camera initialization with the shared camera lock.
+- `/start` continues to stop the MJPEG monitor before starting the capture loop, with a longer cleanup wait.
+- `/preview` now returns a JSON 503 error on capture failure instead of falling through to a plain internal server error.
+- Verified on `zuizui.local`: preview alone returns JPEG, MJPEG followed by preview returns JPEG, MJPEG during `/start` starts timelapse without camera acquire/init conflict logs.
+- Deployed the fix to `zuizui.local`, `zuizui2.local`, `zuizui3.local`, and `zuizui4.local`.
+
 ## 2026-06-01
 
 - Enabled optional lightweight flower/head ROI tracking from the iPad PWA.

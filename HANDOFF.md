@@ -23,13 +23,42 @@ timelapse to tracked ROI detection). Goal is MEE-oriented method validation.
 Core data unit:
   flower_id x timestamp x recording_mode x candidate event x camera metadata x ROI metadata x label
 
-## Current deployment state (roi-track1, 2026-06-01)
+## Current deployment state (camera-lifecycle1, 2026-06-02)
 
 All 4 Pis have been updated:
 - zuizui.local  (Module 3 Wide)
 - zuizui2.local (AI Camera / IMX500)
 - zuizui3.local (NoIR Wide)
 - zuizui4.local (Module 3 Wide)
+
+### What camera-lifecycle1 changed
+
+Fixed the Picamera2 lifecycle conflict between `/preview`, `/mjpeg`, and `/start`.
+
+Problem observed on zuizui.local:
+  - `/preview` alone returned a valid JPEG.
+  - `/mjpeg?detect=false` returned a multipart stream.
+  - After MJPEG, or while starting with a camera already running, `/preview` could fail.
+  - journalctl showed camera acquire/init conflict messages:
+    `Camera in Running state trying acquire() requiring state Available`
+    and `Camera __init__ sequence did not complete.`
+
+Fix:
+  - Added an in-memory latest-preview JPEG cache.
+  - `/mjpeg` writes each emitted JPEG frame into the cache.
+  - `/preview` returns the cached MJPEG frame when available, avoiding a new Picamera2 instance.
+  - If no cache exists and no monitor is active, `/preview` captures one frame under `_camera_lock`.
+  - Timelapse camera initialization now also happens under `_camera_lock`.
+  - `/start` still stops the monitor before starting capture, with a longer monitor cleanup wait.
+  - `/preview` now raises JSON 503 on capture failure instead of falling through to a plain internal server error.
+
+Tests run:
+  - Local: `python -m py_compile pollipi_api_server.py imx500_detect_test.py` passed.
+  - zuizui.local A: `/preview` alone produced JPEG image data.
+  - zuizui.local B: `timeout 3 curl /mjpeg`, then `/preview`, produced JPEG image data.
+  - zuizui.local C: MJPEG open while POST `/start` succeeded; `/status` remained valid; capture count advanced.
+  - zuizui.local logs since deployment show no `Camera in Running state trying acquire` and no `Camera __init__ sequence did not complete`.
+  - After deploying to all 4 Pis, `/status`, `/device`, `/events?limit=1`, and `/preview` responded on each device.
 
 ### What roi-track1 changed
 
@@ -73,6 +102,7 @@ Touch/pointer handling:
 
 ### Files changed in roi-track1
 
+- pollipi_api_server.py
 - web/index.html
 - web/app.js
 - web/app.css
@@ -142,12 +172,10 @@ After ROI drawing is confirmed:
 ## Known issues
 
 1. GitHub out of sync with Pi. Push required.
-2. /preview endpoint requires camera not locked by another process.
-   If timelapse is running, preview still works (uses timelapse camera).
-   If another process holds the camera, preview fails (onerror message shown).
-3. ROI tracking is implemented and deployed, but still needs a physical windy-flower field test.
+2. ROI tracking is implemented and deployed, but still needs a physical windy-flower field test.
+3. Current camera lifecycle fix avoids `/preview` and `/mjpeg` competing in normal use. If a third-party process outside PolliPi holds the camera, preview can still fail with JSON 503.
 
 ## Last updated
 
-2026-06-01 by Codex
-Task: Optional lightweight flower/head ROI tracking enabled and deployed to all 4 Pis.
+2026-06-02 by Codex
+Task: Camera lifecycle conflict fixed and deployed to all 4 Pis.
