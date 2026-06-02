@@ -2,9 +2,9 @@
 
 ## Needed now
 
-### Task 1: Fix camera/ROI workflow before field testing
+### Task 1: Fix and simplify camera/ROI workflow before field testing
 
-The monitor → angle confirmation → ROI selection → start workflow must be reliable.
+The monitor → angle confirmation → ROI selection → start workflow must be reliable and simple.
 
 Current critical issues:
 
@@ -12,6 +12,24 @@ Current critical issues:
 2. After `画角を再調整`, the user must be able to change the ROI.
 3. The ROI editor currently appears to snap the rectangle back to the old position after dragging; this must be fixed.
 4. User-facing wording should use `ROIを指定` rather than `花を囲む`.
+5. The ROI controls are too complicated. Normal field UI should avoid showing too many actions such as `ROIを指定`, `ROIを解除`, `やり直す`, and `キャンセル` all at once.
+
+Required simplified field workflow:
+
+1. `画角を確認`
+2. `この画角でOK`
+3. `ROIを指定`
+4. `このROIで決定`
+5. `撮影開始`
+
+Simplification rule:
+
+- Normal screen should show only the minimum controls needed for the current step.
+- Do not show `ROIを解除`, `やり直す`, and `キャンセル` together in the main field workflow.
+- `ROIを解除` should be hidden in Advanced or shown only after ROI has already been set.
+- `やり直す` should be replaced by a simple `リセット` inside the ROI editor if needed.
+- `キャンセル` should be inside the ROI editor only, not in the normal main workflow.
+- Prefer one primary button per step.
 
 Acceptance criteria:
 
@@ -23,10 +41,14 @@ Acceptance criteria:
 - `画角を再調整` marks the old ROI as stale or clears it
 - after re-adjusting the angle, the user can draw/move/resize a new ROI
 - dragging the ROI does not snap back to the old location
-- `やり直す` resets the editable ROI for the current still preview, not the previous confirmed ROI
-- `キャンセル` can return without overwriting the previous confirmed ROI
-- `このROIを使う` confirms the currently edited ROI
-- normal UI wording uses `ROIを指定`, `このROIを使う`, and `ROIを解除`
+- ROI editor has only three main actions:
+  - `このROIで決定`
+  - `リセット`
+  - `戻る`
+- `リセット` resets the editable ROI for the current still preview, not the previous confirmed ROI
+- `戻る` leaves the editor without overwriting the confirmed ROI
+- `このROIで決定` confirms the currently edited ROI
+- normal UI wording uses `ROIを指定`, `このROIで決定`, and `ROIを解除`
 - avoid user-facing wording `花を囲む` if it causes confusion
 
 ### Task 2: Simplify image/event review into automatic positive/negative/unclear correction workflow
