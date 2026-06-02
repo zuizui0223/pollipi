@@ -71,6 +71,7 @@ Rejected for now: deep neural network training on the Pi as the first method.
 
 - `zuizui2.local` = Raspberry Pi AI Camera
 - `zuizui3.local` = Camera Module 3 NoIR Wide / infrared-capable unit
+- `zuizui5.local` = Camera Module 3 Wide / standard daylight unit
 - other `zuizui*.local` units = ordinary Camera Module 3 / Module 3 Wide unless specified otherwise
 
 These roles should be reflected in camera profiles, README, and comparison logic.
@@ -80,6 +81,7 @@ These roles should be reflected in camera profiles, README, and comparison logic
 - Module 3 / Module 3 Wide is the primary daylight recording unit.
 - AI Camera can be used for simple detection experiments, but the default IMX500 model is not an insect classifier.
 - NoIR Wide can enable low-light or night trials only with appropriate IR illumination, and such data must be treated as a distinct condition.
+- `zuizui5.local` should use the same Module 3 Wide daylight behavior as other standard daylight units.
 
 ## Decision 11: Event log and labels are core outputs
 
