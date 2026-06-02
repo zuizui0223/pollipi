@@ -10,7 +10,7 @@
     <title>PolliPi Field Observer</title>
     <link rel="manifest" href="/app/manifest.webmanifest">
     <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/app/app.css?v=20260602-angle-roi1">
+    <link rel="stylesheet" href="/app/app.css?v=20260602-roi-edit2">
   </head>
   <body>
     <header class="hero">
@@ -31,7 +31,7 @@
             <input id="interval-input" type="number" min="1" max="3600" value="10" inputmode="decimal">
             <span>秒</span>
           </label>
-          <p class="hint">まず「画角を確認」でカメラを合わせ、「この画角でOK」後に「花を囲む」で観察したい花を指定します。</p>
+          <p class="hint">まず「画角を確認」でカメラを合わせ、「この画角でOK」後に「ROIを指定」で観察したい範囲を指定します。</p>
           <label class="auto-toggle"><input id="auto-mode" type="checkbox"><span>背景差分で撮影間隔を自動調整</span></label>
         </div>
         <div class="session-settings field-basic-grid">
@@ -179,7 +179,7 @@
             <button class="secondary angle-check-camera" type="button">画角を確認</button>
             <button class="secondary angle-accept-camera" type="button" hidden>この画角でOK</button>
             <button class="secondary monitor-close-camera" type="button" hidden>閉じる</button>
-            <button class="secondary roi-preview-camera" type="button">花を囲む</button>
+            <button class="secondary roi-preview-camera" type="button">ROIを指定</button>
             <button class="secondary roi-clear-camera" type="button">ROIを解除</button>
           </div>
           <p class="roi-status" data-field="roi-status">ROI: 未設定</p>
@@ -194,13 +194,13 @@
           </details>
           <p class="roi-status" data-field="roi-tracking-status">花の揺れに追従: OFF</p>
           <div class="roi-drawer" data-field="roi-drawer" hidden>
-            <p data-field="roi-editor-message">静止画像の上で観察したい花を囲んでください。</p>
+            <p data-field="roi-editor-message">静止画像の上でROIを指定してください。</p>
             <div class="roi-preview-wrap" data-field="roi-wrap">
               <img data-field="roi-preview" alt="ROI preview" draggable="false">
               <span class="roi-box" data-field="roi-box"></span>
             </div>
             <div class="roi-editor-actions">
-              <button class="primary roi-use-camera" type="button">この花を使う</button>
+              <button class="primary roi-use-camera" type="button">このROIを使う</button>
               <button class="secondary roi-redraw-camera" type="button">やり直す</button>
               <button class="secondary angle-readjust-camera" type="button">画角を再調整</button>
               <button class="secondary roi-cancel-camera" type="button">キャンセル</button>
@@ -225,6 +225,6 @@
         </div>
       </article>
     </template>
-    <script src="/app/app.js?v=20260602-angle-roi1"></script>
+    <script src="/app/app.js?v=20260602-roi-edit2"></script>
   </body>
 </html>

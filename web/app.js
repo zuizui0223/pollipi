@@ -88,7 +88,7 @@ function saveCameras() {
     roi: camera.roi || null,
     angle_confirmed: Boolean(camera.angle_confirmed),
     roi_stale: Boolean(camera.roi_stale),
-    roi_pending: Boolean(camera.roi_pending),
+    roi_pending: false,
     roi_tracking: Boolean(camera.roi_tracking),
     roi_search_margin: camera.roi_search_margin || 30,
     roi_tracking_min_score: camera.roi_tracking_min_score || 0.45,
@@ -257,8 +257,13 @@ function getStartPayload(camera) {
   const manualRoi = drawnRoi ? undefined : readRoiInputs({ quiet: true });
   if (manualRoi === null) return null;
   const roi = drawnRoi || manualRoi;
-  if (drawnRoi && (!camera.angle_confirmed || camera.roi_stale || camera.roi_pending)) {
-    window.alert("画角を変更した場合は、ROIをもう一度指定してください。静止画像で花を囲み、「この花を使う」を押してから開始してください。");
+  const trackingChecked = Boolean(camera && field(camera, "roi-tracking") && field(camera, "roi-tracking").checked);
+  if (camera && camera.roi_stale && (drawnRoi || trackingChecked)) {
+    window.alert("画角を再調整したため、ROIをもう一度指定してください。");
+    return null;
+  }
+  if (drawnRoi && !camera.angle_confirmed) {
+    window.alert("画角を確認してからROIを指定してください。");
     return null;
   }
   const payload = { interval_sec: interval, ...automaticSettings, ...metadata };
@@ -301,9 +306,10 @@ async function registerCamera(rawAddress, quiet = false) {
     const old = existing >= 0 ? cameras[existing] : {};
     Object.assign(camera, {
       roi: old.roi || null,
+      editing_roi: null,
       angle_confirmed: Boolean(old.angle_confirmed),
-      roi_stale: Boolean(old.roi_stale),
-      roi_pending: Boolean(old.roi_pending),
+      roi_stale: Boolean(old.roi_stale || old.roi_pending),
+      roi_pending: false,
       roi_tracking: Boolean(old.roi_tracking),
       roi_search_margin: old.roi_search_margin || 30,
       roi_tracking_min_score: old.roi_tracking_min_score || 0.45,
@@ -371,7 +377,7 @@ function restoreRoiControls(camera) {
   renderTrackingToggle(camera);
   tracking.addEventListener("change", () => {
     if (tracking.checked && !normalizeRoi(camera.roi)) {
-      window.alert("先に「花を囲む」で観察したい花や花序を囲んでください。");
+      window.alert("先に「ROIを指定」で観察したい範囲を指定してください。");
       tracking.checked = false;
     }
     camera.roi_tracking = tracking.checked;
@@ -404,14 +410,17 @@ function setupFieldWorkflowLabels(camera) {
   camera.card.querySelector(".angle-check-camera").textContent = "画角を確認";
   camera.card.querySelector(".angle-accept-camera").textContent = "この画角でOK";
   camera.card.querySelector(".monitor-close-camera").textContent = "閉じる";
-  camera.card.querySelector(".roi-preview-camera").textContent = "花を囲む";
+  camera.card.querySelector(".roi-preview-camera").textContent = "ROIを指定";
   camera.card.querySelector(".roi-clear-camera").textContent = "ROIを解除";
+  camera.card.querySelector(".roi-use-camera").textContent = "このROIを使う";
   const note = camera.card.querySelector(".roi-note");
   if (note) note.textContent = "画角を変更した場合は、ROIをもう一度指定してください。ROIは640 x 360の監視フレーム上で保存されます。";
 }
 
 function renderFieldWorkflow(camera) {
   const roi = normalizeRoi(camera.roi);
+  const editingRoi = normalizeRoi(camera.editing_roi);
+  const editingOpen = field(camera, "roi-drawer") && !field(camera, "roi-drawer").hidden;
   const angleStatus = field(camera, "angle-status");
   const roiStatusDetail = field(camera, "roi-status-detail");
   const angleOk = camera.card.querySelector(".angle-accept-camera");
@@ -419,7 +428,7 @@ function renderFieldWorkflow(camera) {
   const roiButton = camera.card.querySelector(".roi-preview-camera");
   if (angleStatus) angleStatus.textContent = `画角: ${camera.angle_confirmed ? "確認済み" : "未確認"}`;
   if (roiStatusDetail) {
-    roiStatusDetail.textContent = `ROI: ${roi && !camera.roi_stale && !camera.roi_pending ? "設定済み" : roi && camera.roi_pending ? "選択中" : roi && camera.roi_stale ? "再指定が必要" : "未設定"}`;
+    roiStatusDetail.textContent = `ROI: ${editingOpen && editingRoi ? "編集中" : roi && !camera.roi_stale ? "設定済み" : roi && camera.roi_stale ? "再指定が必要" : "未設定"}`;
   }
   if (angleOk) angleOk.hidden = !camera.monitoring || camera.aiMonitoring;
   if (monitorClose) monitorClose.hidden = !camera.monitoring || camera.aiMonitoring;
@@ -430,8 +439,8 @@ function renderFieldWorkflow(camera) {
 function markRoiStaleForAngleChange(camera) {
   if (normalizeRoi(camera.roi)) {
     camera.roi_stale = true;
-    camera.roi_pending = false;
     camera.angle_confirmed = false;
+    camera.editing_roi = null;
     saveCameras();
     field(camera, "message").textContent = "画角を変更した場合は、ROIをもう一度指定してください。";
   }
@@ -457,15 +466,11 @@ function closeAngleMonitor(camera) {
 async function confirmCameraAngle(camera) {
   setMonitor(camera, false);
   camera.angle_confirmed = true;
-  camera.roi = null;
-  camera.roi_stale = true;
-  camera.roi_pending = false;
-  fillRoiInputs(null);
   saveCameras();
   renderCameraRoi(camera);
   renderFieldWorkflow(camera);
   await openRoiPreview(camera, {
-    message: "画角を固定しました。静止画像の上で観察したい花を囲んでください。",
+    message: "画角を固定しました。静止画像の上でROIを指定してください。",
     forceReselect: true,
   });
 }
@@ -527,11 +532,37 @@ function removeCamera(camera) {
   refreshEvents();
 }
 
-function setCameraRoi(camera, roi, { fillInputs = true, pending = true } = {}) {
+function defaultCenteredRoi() {
+  const roi_w = 240;
+  const roi_h = 160;
+  return {
+    roi_x: Math.round((MONITOR_WIDTH - roi_w) / 2),
+    roi_y: Math.round((MONITOR_HEIGHT - roi_h) / 2),
+    roi_w,
+    roi_h,
+  };
+}
+
+function getEditorInitialRoi(camera, { forceDefault = false } = {}) {
+  if (forceDefault || camera.roi_stale) return defaultCenteredRoi();
+  return normalizeRoi(camera.roi) || defaultCenteredRoi();
+}
+
+function setEditingRoi(camera, roi) {
+  const normalized = normalizeRoi(roi);
+  if (!normalized) return false;
+  camera.editing_roi = normalized;
+  renderRoiEditor(camera);
+  renderFieldWorkflow(camera);
+  return true;
+}
+
+function setCameraRoi(camera, roi, { fillInputs = true } = {}) {
   const normalized = normalizeRoi(roi);
   if (!normalized) return false;
   camera.roi = normalized;
-  camera.roi_pending = Boolean(pending);
+  camera.editing_roi = null;
+  camera.roi_pending = false;
   camera.roi_stale = false;
   if (fillInputs) fillRoiInputs(normalized);
   saveCameras();
@@ -543,6 +574,7 @@ function setCameraRoi(camera, roi, { fillInputs = true, pending = true } = {}) {
 
 function clearCameraRoi(camera) {
   camera.roi = null;
+  camera.editing_roi = null;
   camera.roi_stale = false;
   camera.roi_pending = false;
   fillRoiInputs(null);
@@ -564,6 +596,9 @@ function renderCameraRoi(camera) {
   const status = field(camera, "roi-status");
   const previewBox = field(camera, "roi-box");
   const monitorBox = field(camera, "monitor-roi-box");
+  const drawer = field(camera, "roi-drawer");
+  const editorOpen = drawer && !drawer.hidden;
+  const editingRoi = normalizeRoi(camera.editing_roi);
   const statusInfo = camera.status || {};
   const trackedRoi = statusInfo.tracked_roi_w ? normalizeRoi({
     roi_x: statusInfo.tracked_roi_x,
@@ -571,10 +606,12 @@ function renderCameraRoi(camera) {
     roi_w: statusInfo.tracked_roi_w,
     roi_h: statusInfo.tracked_roi_h,
   }) : null;
-  const roi = statusInfo.roi_tracking && trackedRoi ? trackedRoi : normalizeRoi(camera.roi);
+  const confirmedRoi = normalizeRoi(camera.roi);
+  const roi = statusInfo.roi_tracking && trackedRoi ? trackedRoi : confirmedRoi;
   if (!roi) {
-    status.textContent = "ROI: 未設定";
-    previewBox.style.display = "";
+    status.textContent = editorOpen && editingRoi ? `ROI: 編集中 x=${editingRoi.roi_x}, y=${editingRoi.roi_y}, w=${editingRoi.roi_w}, h=${editingRoi.roi_h}` : "ROI: 未設定";
+    if (editorOpen && editingRoi) renderRoiEditor(camera);
+    else previewBox.style.display = "";
     monitorBox.style.display = "";
     renderTrackingStatus(camera);
     renderFieldWorkflow(camera);
@@ -582,10 +619,11 @@ function renderCameraRoi(camera) {
   }
   status.textContent = camera.roi_stale
     ? "ROI: 再指定が必要"
-    : camera.roi_pending
-      ? `ROI: 選択中 x=${roi.roi_x}, y=${roi.roi_y}, w=${roi.roi_w}, h=${roi.roi_h}`
+    : editorOpen && editingRoi
+      ? `ROI: 編集中 x=${editingRoi.roi_x}, y=${editingRoi.roi_y}, w=${editingRoi.roi_w}, h=${editingRoi.roi_h}`
       : `ROI: 設定済み x=${roi.roi_x}, y=${roi.roi_y}, w=${roi.roi_w}, h=${roi.roi_h}`;
-  renderRoiBoxOnImage(previewBox, field(camera, "roi-preview"), field(camera, "roi-wrap"), roi);
+  if (editorOpen && editingRoi) renderRoiEditor(camera);
+  else renderRoiBoxOnImage(previewBox, field(camera, "roi-preview"), field(camera, "roi-wrap"), roi);
   renderRoiBoxOnImage(monitorBox, field(camera, "image"), field(camera, "image-frame"), roi);
   renderTrackingStatus(camera);
   renderFieldWorkflow(camera);
@@ -601,6 +639,22 @@ function renderRoiBoxOnImage(box, image, wrap, roi) {
   box.style.top = `${imageRect.top - wrapRect.top + roi.roi_y / MONITOR_HEIGHT * imageRect.height}px`;
   box.style.width = `${roi.roi_w / MONITOR_WIDTH * imageRect.width}px`;
   box.style.height = `${roi.roi_h / MONITOR_HEIGHT * imageRect.height}px`;
+}
+
+function renderRoiEditor(camera) {
+  const drawer = field(camera, "roi-drawer");
+  const image = field(camera, "roi-preview");
+  const wrap = field(camera, "roi-wrap");
+  const box = field(camera, "roi-box");
+  const editingRoi = normalizeRoi(camera.editing_roi);
+  if (!drawer || drawer.hidden || !box) return;
+  if (!editingRoi) {
+    box.style.display = "";
+    renderFieldWorkflow(camera);
+    return;
+  }
+  renderRoiBoxOnImage(box, image, wrap, editingRoi);
+  renderFieldWorkflow(camera);
 }
 
 function renderTrackingStatus(camera) {
@@ -768,7 +822,7 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
     event.preventDefault();
     drawing = true;
     startPoint = point;
-    previousRoi = normalizeRoi(camera.roi);
+    previousRoi = normalizeRoi(camera.editing_roi);
     baseRect = roiToDisplayRect(previousRoi, image);
     dragMode = getRoiDragMode(point, baseRect);
     currentRect = dragMode.type === "draw" ? null : baseRect;
@@ -805,11 +859,11 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
       ? displayRectToRoi(origin, point)
       : displayRectToRoiRect(currentRect, point.width, point.height);
     if (roi) {
-      setCameraRoi(camera, roi, { pending: true });
-      field(camera, "message").textContent = "花を囲みました。よければ「この花を使う」を押してください。";
+      setEditingRoi(camera, roi);
+      field(camera, "message").textContent = "ROIを指定しました。よければ「このROIを使う」を押してください。";
     } else {
-      camera.roi = previousRoi;
-      renderCameraRoi(camera);
+      camera.editing_roi = previousRoi;
+      renderRoiEditor(camera);
       field(camera, "message").textContent = "ROI is too small. Please draw a larger rectangle.";
     }
   };
@@ -835,20 +889,15 @@ async function openRoiPreview(camera, options = {}) {
   setMonitor(camera, false);
   const drawer = field(camera, "roi-drawer");
   const image = field(camera, "roi-preview");
-  camera.roiBeforeEdit = normalizeRoi(camera.roi);
-  camera.roi_pending = Boolean(normalizeRoi(camera.roi));
-  if (options.forceReselect) {
-    camera.roiBeforeEdit = null;
-    camera.roi = null;
-    camera.roi_pending = false;
-    fillRoiInputs(null);
-  }
+  camera.editing_roi = getEditorInitialRoi(camera, { forceDefault: Boolean(options.forceReselect) });
+  camera.roi_pending = false;
   drawer.hidden = false;
   image.classList.remove("ready");
   image.onload = () => {
     image.classList.add("ready");
+    renderRoiEditor(camera);
     renderCameraRoi(camera);
-    const message = options.message || "静止画像の上で観察したい花を囲んでください。";
+    const message = options.message || "静止画像の上でROIを指定してください。";
     const editorMessage = field(camera, "roi-editor-message");
     if (editorMessage) editorMessage.textContent = message;
     field(camera, "message").textContent = message;
@@ -864,52 +913,45 @@ async function openRoiPreview(camera, options = {}) {
 }
 
 function acceptFlowerRoi(camera) {
-  const roi = normalizeRoi(camera.roi);
+  const roi = normalizeRoi(camera.editing_roi);
   if (!roi) {
-    window.alert("静止画像の上で観察したい花を囲んでください。");
+    window.alert("静止画像の上でROIを指定してください。");
     return;
   }
   camera.angle_confirmed = true;
-  camera.roi_pending = false;
-  camera.roi_stale = false;
-  delete camera.roiBeforeEdit;
+  setCameraRoi(camera, roi);
   field(camera, "roi-drawer").hidden = true;
-  saveCameras();
   renderCameraRoi(camera);
   renderFieldWorkflow(camera);
-  field(camera, "message").textContent = "この花をROIとして設定しました。";
+  field(camera, "message").textContent = "このROIを設定しました。";
 }
 
 function redrawFlowerRoi(camera) {
-  camera.roi = null;
+  camera.editing_roi = defaultCenteredRoi();
   camera.roi_pending = false;
-  camera.roi_stale = true;
-  fillRoiInputs(null);
-  saveCameras();
+  renderRoiEditor(camera);
   renderCameraRoi(camera);
   renderFieldWorkflow(camera);
-  field(camera, "message").textContent = "やり直し中です。静止画像の上で花をもう一度囲んでください。";
+  field(camera, "message").textContent = "やり直し中です。静止画像の上でROIをもう一度指定してください。";
 }
 
 function readjustCameraAngle(camera) {
-  clearCameraRoi(camera);
+  if (normalizeRoi(camera.roi)) camera.roi_stale = true;
   camera.angle_confirmed = false;
-  camera.roi_stale = false;
-  delete camera.roiBeforeEdit;
+  camera.editing_roi = null;
   saveCameras();
   field(camera, "roi-drawer").hidden = true;
+  renderCameraRoi(camera);
+  renderFieldWorkflow(camera);
   openAngleMonitor(camera);
   field(camera, "message").textContent = "画角を変更した場合は、ROIをもう一度指定してください。";
 }
 
 function cancelRoiEditing(camera) {
-  const previous = normalizeRoi(camera.roiBeforeEdit);
-  camera.roi = previous;
+  camera.editing_roi = null;
   camera.roi_pending = false;
-  camera.roi_stale = previous ? Boolean(camera.roi_stale) : false;
-  if (previous) fillRoiInputs(previous);
-  else fillRoiInputs(null);
-  delete camera.roiBeforeEdit;
+  const confirmed = normalizeRoi(camera.roi);
+  if (confirmed && !camera.roi_stale) fillRoiInputs(confirmed);
   field(camera, "roi-drawer").hidden = true;
   saveCameras();
   renderCameraRoi(camera);

@@ -3,10 +3,11 @@
 ## 2026-06-02
 
 - Simplified the iPad camera-angle and ROI workflow.
-- Added a clear sequence in the PWA: `画角を確認` -> `この画角でOK` -> frozen still frame -> draw flower ROI -> `この花を使う`.
+- Added a clear sequence in the PWA: `画角を確認` -> `この画角でOK` -> frozen still frame -> `ROIを指定` -> `このROIを使う`.
+- Split ROI editing state from confirmed recording ROI so re-editing after `画角を再調整` no longer snaps back to the old confirmed ROI.
 - The frozen ROI editor now supports redrawing, dragging inside the rectangle to move it, and dragging an edge/corner to resize it.
 - Added per-device UI state for angle confirmation, pending ROI, and stale ROI.
-- Starting capture is blocked when a previously selected ROI is stale or has not been confirmed with `この花を使う`.
+- Starting capture is blocked when a previously selected ROI is stale after camera-angle readjustment.
 - `画角を再調整` clears or invalidates the old ROI and returns the user to live camera-angle checking.
 - Kept backend camera lifecycle behavior, `/mjpeg`, `/preview`, `/start`, ROI drawing, ROI tracking, event review, autonomous mode, and training status intact.
 

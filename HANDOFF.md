@@ -41,15 +41,18 @@ New user sequence:
   3. Adjust the camera so the focal flower/head is near the center.
   4. Tap `この画角でOK`.
   5. Live monitor closes and a frozen `/preview` still frame opens.
-  6. Draw the flower/head ROI.
+  6. Use `ROIを指定` to draw the flower/head ROI.
   7. If needed, drag inside the rectangle to move it, drag an edge/corner to resize it, or tap `やり直す` to redraw it.
-  8. Tap `この花を使う`.
+  8. Tap `このROIを使う`.
   9. Main card shows `画角: 確認済み` and `ROI: 設定済み`.
 
 State rules:
   - Opening angle check after an ROI exists marks the old ROI stale.
   - `画角を再調整` clears/invalidates the old ROI and returns to live monitor.
-  - Capture start is blocked when ROI exists but is stale or still pending confirmation.
+  - `camera.roi` is the confirmed ROI used for recording.
+  - `camera.editing_roi` is the temporary ROI inside the frozen still editor.
+  - Dragging/resizing updates only `editing_roi`; it must not overwrite or snap back to the confirmed ROI until `このROIを使う` is tapped.
+  - Capture start is blocked when ROI exists but is stale after camera-angle readjustment.
   - `花の揺れに追従` remains optional and only starts with a confirmed current ROI.
 
 Preserved:
