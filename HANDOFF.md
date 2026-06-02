@@ -23,13 +23,41 @@ timelapse to tracked ROI detection). Goal is MEE-oriented method validation.
 Core data unit:
   flower_id x timestamp x recording_mode x candidate event x camera metadata x ROI metadata x label
 
-## Current deployment state (camera-lifecycle1, 2026-06-02)
+## Current deployment state (angle-roi1, 2026-06-02)
 
 All 4 Pis have been updated:
 - zuizui.local  (Module 3 Wide)
 - zuizui2.local (AI Camera / IMX500)
 - zuizui3.local (NoIR Wide)
 - zuizui4.local (Module 3 Wide)
+
+### What angle-roi1 changed
+
+Simplified the iPad field workflow for camera angle and ROI selection.
+
+New user sequence:
+  1. Tap `画角を確認`.
+  2. Live MJPEG monitor opens.
+  3. Adjust the camera so the focal flower/head is near the center.
+  4. Tap `この画角でOK`.
+  5. Live monitor closes and a frozen `/preview` still frame opens.
+  6. Draw the flower/head ROI.
+  7. Tap `この花を使う`.
+  8. Main card shows `画角: 確認済み` and `ROI: 設定済み`.
+
+State rules:
+  - Opening angle check after an ROI exists marks the old ROI stale.
+  - `画角を再調整` clears/invalidates the old ROI and returns to live monitor.
+  - Capture start is blocked when ROI exists but is stale or still pending confirmation.
+  - `花の揺れに追従` remains optional and only starts with a confirmed current ROI.
+
+Preserved:
+  - backend `/mjpeg`, `/preview`, `/start`
+  - camera lifecycle fix
+  - ROI drawing and ROI tracking
+  - event review
+  - autonomous mode
+  - training status
 
 ### What camera-lifecycle1 changed
 

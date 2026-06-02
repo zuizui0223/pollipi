@@ -2,6 +2,13 @@
 
 ## 2026-06-02
 
+- Simplified the iPad camera-angle and ROI workflow.
+- Added a clear sequence in the PWA: `画角を確認` -> `この画角でOK` -> frozen still frame -> draw flower ROI -> `この花を使う`.
+- Added per-device UI state for angle confirmation, pending ROI, and stale ROI.
+- Starting capture is blocked when a previously selected ROI is stale or has not been confirmed with `この花を使う`.
+- `画角を再調整` clears or invalidates the old ROI and returns the user to live camera-angle checking.
+- Kept backend camera lifecycle behavior, `/mjpeg`, `/preview`, `/start`, ROI drawing, ROI tracking, event review, autonomous mode, and training status intact.
+
 - Fixed a Picamera2 lifecycle conflict between `/preview`, `/mjpeg`, and `/start`.
 - Added an in-memory latest-preview JPEG cache. `/mjpeg` now updates the cache, and `/preview` returns the cached frame when a monitor stream is active or has just run.
 - Wrapped standalone preview capture and timelapse camera initialization with the shared camera lock.

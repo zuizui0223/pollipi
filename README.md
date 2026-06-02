@@ -181,7 +181,7 @@ iPad を Raspberry Pi と同じ Wi-Fi ネットワークに接続し、Safari �
 
 野外で迷わず開始できるよう、PWA の開始フォームは Field mode を標準表示にしています。
 通常表示されるのは `site_id`、`flower_id`、`plant_species`、`method_mode`、撮影間隔、
-背景差分の自動調整、各観察機カードの `ROIを指定`、必要な場合の `ROI追跡`、
+背景差分の自動調整、各観察機カードの `画角を確認`、`花を囲む`、必要な場合の `花の揺れに追従`、
 開始・停止だけです。ROI はプレビュー画像上で花や花序を囲むのが標準で、数値入力は不要です。
 
 `Advanced settings` には、`observer`、`notes`、`comparison_session_id`、`camera_role`、
@@ -666,22 +666,27 @@ curl -X POST http://zuizui2.local:8000/stop
 }
 ```
 
-## Setting ROI from the iPad preview
+## Setting camera angle and ROI from the iPad
 
-The iPad PWA can set a flower-specific ROI without typing coordinates.
+The iPad PWA separates camera-angle checking from ROI selection.
 
 1. Open the PWA for a device, for example `http://zuizui.local:8000/app/`.
-2. Use `画角モニター` only to check the live camera angle.
-3. Tap `ROIを指定`. The app fetches a still image from `/preview`.
-4. Draw a rectangle around the flower or flower head on the preview image. The rectangle remains visible so it can be checked before starting.
-5. The app converts the drawn rectangle to the 640 x 360 monitoring frame and fills `roi_x`, `roi_y`, `roi_w`, and `roi_h`.
-6. Start recording. The backend receives the ROI in the `/start` payload.
+2. Tap `画角を確認` to open the live low-power monitor.
+3. Adjust the camera so the focal flower/head is near the center of the image.
+4. Tap `この画角でOK`. PolliPi closes the live monitor and fetches a still frame from `/preview`.
+5. Draw a rectangle around the flower or flower head on the frozen still image.
+6. Tap `この花を使う` to save the ROI.
+7. Start recording. The backend receives the current valid ROI in the `/start` payload.
+
+The main card shows `画角: 確認済み` and `ROI: 設定済み` after this sequence. If the camera angle is changed later,
+tap `画角を再調整`; the old ROI is cleared or marked invalid, and the user must select the flower again from the new
+still frame. PolliPi blocks starting with a stale ROI so old coordinates are not silently reused after camera movement.
 
 Use `ROIを解除` to return to full-frame motion detection. When ROI is cleared, the `/start` request omits
-`roi_x`, `roi_y`, `roi_w`, and `roi_h`. Restricting motion detection to the flower area helps reduce false
-positives from moving leaves, background vegetation, and shadows.
+`roi_x`, `roi_y`, `roi_w`, and `roi_h`. Restricting motion detection to the flower area helps reduce false positives
+from moving leaves, background vegetation, and shadows.
 
-Optional lightweight ROI tracking can be enabled with `ROI追跡` after a fixed ROI has been drawn. Tracking targets
+Optional lightweight ROI tracking can be enabled with `花の揺れに追従` after a fixed ROI has been drawn. Tracking targets
 the selected flower/head, not insects. On the first low-resolution frame, PolliPi stores the ROI luminance patch as
 a template. During recording it searches near the previous ROI and, when the template match score is high enough,
 moves the ROI with the flower/head before motion detection. If matching fails, it keeps the previous ROI. The

@@ -546,7 +546,37 @@ h3 {
 }
 
 .roi-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 8px;
+}
+
+.workflow-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.workflow-status span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fffdf2;
+  color: var(--leaf);
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.roi-editor-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.roi-editor-actions button,
+.roi-actions button {
+  min-height: 48px;
 }
 
 .roi-status {

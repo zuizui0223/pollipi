@@ -86,6 +86,9 @@ function saveCameras() {
     is_noir: camera.is_noir,
     is_wide: camera.is_wide,
     roi: camera.roi || null,
+    angle_confirmed: Boolean(camera.angle_confirmed),
+    roi_stale: Boolean(camera.roi_stale),
+    roi_pending: Boolean(camera.roi_pending),
     roi_tracking: Boolean(camera.roi_tracking),
     roi_search_margin: camera.roi_search_margin || 30,
     roi_tracking_min_score: camera.roi_tracking_min_score || 0.45,
@@ -254,6 +257,10 @@ function getStartPayload(camera) {
   const manualRoi = drawnRoi ? undefined : readRoiInputs({ quiet: true });
   if (manualRoi === null) return null;
   const roi = drawnRoi || manualRoi;
+  if (drawnRoi && (!camera.angle_confirmed || camera.roi_stale || camera.roi_pending)) {
+    window.alert("画角を変更した場合は、ROIをもう一度指定してください。静止画像で花を囲み、「この花を使う」を押してから開始してください。");
+    return null;
+  }
   const payload = { interval_sec: interval, ...automaticSettings, ...metadata };
   if (roi) {
     const tracking = getRoiTrackingSettings(camera, true);
@@ -294,6 +301,9 @@ async function registerCamera(rawAddress, quiet = false) {
     const old = existing >= 0 ? cameras[existing] : {};
     Object.assign(camera, {
       roi: old.roi || null,
+      angle_confirmed: Boolean(old.angle_confirmed),
+      roi_stale: Boolean(old.roi_stale),
+      roi_pending: Boolean(old.roi_pending),
       roi_tracking: Boolean(old.roi_tracking),
       roi_search_margin: old.roi_search_margin || 30,
       roi_tracking_min_score: old.roi_tracking_min_score || 0.45,
@@ -323,11 +333,19 @@ function buildCameraCard(camera, index) {
   card.classList.toggle("noir-card", Boolean(camera.is_noir));
   updateCameraBadges(camera);
   restoreRoiControls(camera);
+  setupFieldWorkflowLabels(camera);
   card.querySelector(".start-camera").addEventListener("click", () => startCamera(camera));
   card.querySelector(".stop-camera").addEventListener("click", () => stopCamera(camera));
-  card.querySelector(".monitor-camera").addEventListener("click", () => toggleMonitor(camera));
+  card.querySelector(".monitor-camera").addEventListener("click", () => openAngleMonitor(camera));
+  card.querySelector(".angle-check-camera").addEventListener("click", () => openAngleMonitor(camera));
+  card.querySelector(".angle-accept-camera").addEventListener("click", () => confirmCameraAngle(camera));
+  card.querySelector(".monitor-close-camera").addEventListener("click", () => closeAngleMonitor(camera));
   card.querySelector(".roi-preview-camera").addEventListener("click", () => openRoiPreview(camera));
   card.querySelector(".roi-clear-camera").addEventListener("click", () => clearCameraRoi(camera));
+  card.querySelector(".roi-use-camera").addEventListener("click", () => acceptFlowerRoi(camera));
+  card.querySelector(".roi-redraw-camera").addEventListener("click", () => redrawFlowerRoi(camera));
+  card.querySelector(".angle-readjust-camera").addEventListener("click", () => readjustCameraAngle(camera));
+  card.querySelector(".roi-cancel-camera").addEventListener("click", () => cancelRoiEditing(camera));
   const aiButton = card.querySelector(".ai-monitor-camera");
   if (camera.is_ai_camera || (camera.camera_model || "").toLowerCase() === "imx500") {
     aiButton.hidden = false;
@@ -336,6 +354,7 @@ function buildCameraCard(camera, index) {
   card.querySelector(".remove-camera").addEventListener("click", () => removeCamera(camera));
   setupRoiDrawing(camera);
   renderCameraRoi(camera);
+  renderFieldWorkflow(camera);
   return card;
 }
 
@@ -344,7 +363,7 @@ function restoreRoiControls(camera) {
   const tracking = field(camera, "roi-tracking");
   const margin = field(camera, "roi-search-margin");
   const score = field(camera, "roi-tracking-min-score");
-  tracking.checked = Boolean(camera.roi_tracking && camera.roi);
+  tracking.checked = Boolean(camera.roi_tracking && camera.roi && !camera.roi_stale && !camera.roi_pending);
   tracking.disabled = false;
   camera.roi_tracking = tracking.checked;
   margin.value = camera.roi_search_margin || 30;
@@ -352,7 +371,7 @@ function restoreRoiControls(camera) {
   renderTrackingToggle(camera);
   tracking.addEventListener("change", () => {
     if (tracking.checked && !normalizeRoi(camera.roi)) {
-      window.alert("先に「ROIを指定」で花や花序を囲んでください。");
+      window.alert("先に「花を囲む」で観察したい花や花序を囲んでください。");
       tracking.checked = false;
     }
     camera.roi_tracking = tracking.checked;
@@ -375,7 +394,80 @@ function renderTrackingToggle(camera) {
   if (!tracking) return;
   const label = tracking.closest("label");
   const text = label ? label.querySelector("span") : null;
-  if (text) text.textContent = `ROI追跡: ${tracking.checked ? "ON" : "OFF"}`;
+  if (text) text.textContent = `花の揺れに追従: ${tracking.checked ? "ON" : "OFF"}`;
+}
+
+function setupFieldWorkflowLabels(camera) {
+  camera.card.querySelector(".start-camera").textContent = "撮影開始";
+  camera.card.querySelector(".stop-camera").textContent = "停止";
+  camera.card.querySelector(".monitor-camera").hidden = true;
+  camera.card.querySelector(".angle-check-camera").textContent = "画角を確認";
+  camera.card.querySelector(".angle-accept-camera").textContent = "この画角でOK";
+  camera.card.querySelector(".monitor-close-camera").textContent = "閉じる";
+  camera.card.querySelector(".roi-preview-camera").textContent = "花を囲む";
+  camera.card.querySelector(".roi-clear-camera").textContent = "ROIを解除";
+  const note = camera.card.querySelector(".roi-note");
+  if (note) note.textContent = "画角を変更した場合は、ROIをもう一度指定してください。ROIは640 x 360の監視フレーム上で保存されます。";
+}
+
+function renderFieldWorkflow(camera) {
+  const roi = normalizeRoi(camera.roi);
+  const angleStatus = field(camera, "angle-status");
+  const roiStatusDetail = field(camera, "roi-status-detail");
+  const angleOk = camera.card.querySelector(".angle-accept-camera");
+  const monitorClose = camera.card.querySelector(".monitor-close-camera");
+  const roiButton = camera.card.querySelector(".roi-preview-camera");
+  if (angleStatus) angleStatus.textContent = `画角: ${camera.angle_confirmed ? "確認済み" : "未確認"}`;
+  if (roiStatusDetail) {
+    roiStatusDetail.textContent = `ROI: ${roi && !camera.roi_stale && !camera.roi_pending ? "設定済み" : roi && camera.roi_pending ? "選択中" : roi && camera.roi_stale ? "再指定が必要" : "未設定"}`;
+  }
+  if (angleOk) angleOk.hidden = !camera.monitoring || camera.aiMonitoring;
+  if (monitorClose) monitorClose.hidden = !camera.monitoring || camera.aiMonitoring;
+  if (roiButton) roiButton.disabled = !camera.angle_confirmed;
+  renderTrackingToggle(camera);
+}
+
+function markRoiStaleForAngleChange(camera) {
+  if (normalizeRoi(camera.roi)) {
+    camera.roi_stale = true;
+    camera.roi_pending = false;
+    camera.angle_confirmed = false;
+    saveCameras();
+    field(camera, "message").textContent = "画角を変更した場合は、ROIをもう一度指定してください。";
+  }
+}
+
+function openAngleMonitor(camera) {
+  const drawer = field(camera, "roi-drawer");
+  if (drawer) drawer.hidden = true;
+  camera.angle_confirmed = false;
+  markRoiStaleForAngleChange(camera);
+  saveCameras();
+  toggleMonitor(camera, false, { forceOpen: true });
+  field(camera, "message").textContent = "画角確認中です。花が画面中央付近に入るようにカメラを調整してください。";
+  renderFieldWorkflow(camera);
+}
+
+function closeAngleMonitor(camera) {
+  setMonitor(camera, false);
+  field(camera, "message").textContent = "画角確認を閉じました。調整した場合は、もう一度「画角を確認」から確認してください。";
+  renderFieldWorkflow(camera);
+}
+
+async function confirmCameraAngle(camera) {
+  setMonitor(camera, false);
+  camera.angle_confirmed = true;
+  camera.roi = null;
+  camera.roi_stale = true;
+  camera.roi_pending = false;
+  fillRoiInputs(null);
+  saveCameras();
+  renderCameraRoi(camera);
+  renderFieldWorkflow(camera);
+  await openRoiPreview(camera, {
+    message: "画角を固定しました。静止画像の上で観察したい花を囲んでください。",
+    forceReselect: true,
+  });
 }
 
 function renderCameras() {
@@ -435,19 +527,24 @@ function removeCamera(camera) {
   refreshEvents();
 }
 
-function setCameraRoi(camera, roi, { fillInputs = true } = {}) {
+function setCameraRoi(camera, roi, { fillInputs = true, pending = true } = {}) {
   const normalized = normalizeRoi(roi);
   if (!normalized) return false;
   camera.roi = normalized;
+  camera.roi_pending = Boolean(pending);
+  camera.roi_stale = false;
   if (fillInputs) fillRoiInputs(normalized);
   saveCameras();
   renderCameraRoi(camera);
   renderTrackingToggle(camera);
+  renderFieldWorkflow(camera);
   return true;
 }
 
 function clearCameraRoi(camera) {
   camera.roi = null;
+  camera.roi_stale = false;
+  camera.roi_pending = false;
   fillRoiInputs(null);
   camera.roi_tracking = false;
   const tracking = field(camera, "roi-tracking");
@@ -455,6 +552,7 @@ function clearCameraRoi(camera) {
   saveCameras();
   renderCameraRoi(camera);
   renderTrackingToggle(camera);
+  renderFieldWorkflow(camera);
   field(camera, "message").textContent = "ROIを解除しました。動き検出は全画面で行います。";
 }
 
@@ -475,16 +573,22 @@ function renderCameraRoi(camera) {
   }) : null;
   const roi = statusInfo.roi_tracking && trackedRoi ? trackedRoi : normalizeRoi(camera.roi);
   if (!roi) {
-    status.textContent = "ROI: full frame";
+    status.textContent = "ROI: 未設定";
     previewBox.style.display = "";
     monitorBox.style.display = "";
     renderTrackingStatus(camera);
+    renderFieldWorkflow(camera);
     return;
   }
-  status.textContent = `ROI: x=${roi.roi_x}, y=${roi.roi_y}, w=${roi.roi_w}, h=${roi.roi_h}`;
+  status.textContent = camera.roi_stale
+    ? "ROI: 再指定が必要"
+    : camera.roi_pending
+      ? `ROI: 選択中 x=${roi.roi_x}, y=${roi.roi_y}, w=${roi.roi_w}, h=${roi.roi_h}`
+      : `ROI: 設定済み x=${roi.roi_x}, y=${roi.roi_y}, w=${roi.roi_w}, h=${roi.roi_h}`;
   renderRoiBoxOnImage(previewBox, field(camera, "roi-preview"), field(camera, "roi-wrap"), roi);
   renderRoiBoxOnImage(monitorBox, field(camera, "image"), field(camera, "image-frame"), roi);
   renderTrackingStatus(camera);
+  renderFieldWorkflow(camera);
 }
 
 function renderRoiBoxOnImage(box, image, wrap, roi) {
@@ -505,15 +609,15 @@ function renderTrackingStatus(camera) {
   const status = camera.status || {};
   const roi = normalizeRoi(camera.roi);
   if (!roi && !status.tracked_roi_w) {
-    node.textContent = "ROI: 全画面";
+    node.textContent = "花の揺れに追従: OFF";
   } else if (!status.roi_tracking && !field(camera, "roi-tracking").checked) {
-    node.textContent = "ROI: 固定";
+    node.textContent = "花の揺れに追従: OFF";
   } else {
     const score = status.roi_tracking_score == null ? "-" : Number(status.roi_tracking_score).toFixed(2);
     const ok = status.roi_tracking_success ? "追跡中" : "前回ROIを保持";
     const sx = status.roi_shift_x == null ? "-" : status.roi_shift_x;
     const sy = status.roi_shift_y == null ? "-" : status.roi_shift_y;
-    node.textContent = `ROI追跡: ON / score ${score} / ${ok} / shift x=${sx}, y=${sy}`;
+    node.textContent = `花の揺れに追従: ON / score ${score} / ${ok} / shift x=${sx}, y=${sy}`;
   }
 }
 
@@ -597,8 +701,8 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
     event.preventDefault();
     const roi = displayRectToRoi(origin, point);
     if (roi) {
-      setCameraRoi(camera, roi);
-      field(camera, "message").textContent = "ROIを指定しました。開始するとこの範囲で動き検出します。";
+      setCameraRoi(camera, roi, { pending: true });
+      field(camera, "message").textContent = "花を囲みました。よければ「この花を使う」を押してください。";
     } else {
       camera.roi = previousRoi;
       renderCameraRoi(camera);
@@ -619,23 +723,94 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
   wrap.addEventListener("mouseup", end);
 }
 
-async function openRoiPreview(camera) {
+async function openRoiPreview(camera, options = {}) {
+  if (!camera.angle_confirmed && !options.forceReselect) {
+    window.alert("先に「画角を確認」して、「この画角でOK」を押してください。");
+    return;
+  }
   setMonitor(camera, false);
   const drawer = field(camera, "roi-drawer");
   const image = field(camera, "roi-preview");
+  camera.roiBeforeEdit = normalizeRoi(camera.roi);
+  camera.roi_pending = Boolean(normalizeRoi(camera.roi));
+  if (options.forceReselect) {
+    camera.roiBeforeEdit = null;
+    camera.roi = null;
+    camera.roi_pending = false;
+    fillRoiInputs(null);
+  }
   drawer.hidden = false;
   image.classList.remove("ready");
   image.onload = () => {
     image.classList.add("ready");
     renderCameraRoi(camera);
-    field(camera, "message").textContent = "静止プレビュー上で花を囲んでROIを指定してください。";
+    const message = options.message || "静止画像の上で観察したい花を囲んでください。";
+    const editorMessage = field(camera, "roi-editor-message");
+    if (editorMessage) editorMessage.textContent = message;
+    field(camera, "message").textContent = message;
   };
   image.onerror = () => {
     image.classList.remove("ready");
     field(camera, "message").textContent = "プレビューを取得できません。カメラ接続を確認してください。";
   };
   image.src = `${camera.baseUrl}/preview?t=${Date.now()}`;
-  field(camera, "message").textContent = "プレビューを読み込み中...";
+  field(camera, "message").textContent = "静止画像を読み込み中...";
+  saveCameras();
+  renderFieldWorkflow(camera);
+}
+
+function acceptFlowerRoi(camera) {
+  const roi = normalizeRoi(camera.roi);
+  if (!roi) {
+    window.alert("静止画像の上で観察したい花を囲んでください。");
+    return;
+  }
+  camera.angle_confirmed = true;
+  camera.roi_pending = false;
+  camera.roi_stale = false;
+  delete camera.roiBeforeEdit;
+  field(camera, "roi-drawer").hidden = true;
+  saveCameras();
+  renderCameraRoi(camera);
+  renderFieldWorkflow(camera);
+  field(camera, "message").textContent = "この花をROIとして設定しました。";
+}
+
+function redrawFlowerRoi(camera) {
+  camera.roi = null;
+  camera.roi_pending = false;
+  camera.roi_stale = true;
+  fillRoiInputs(null);
+  saveCameras();
+  renderCameraRoi(camera);
+  renderFieldWorkflow(camera);
+  field(camera, "message").textContent = "やり直し中です。静止画像の上で花をもう一度囲んでください。";
+}
+
+function readjustCameraAngle(camera) {
+  clearCameraRoi(camera);
+  camera.angle_confirmed = false;
+  camera.roi_stale = false;
+  delete camera.roiBeforeEdit;
+  saveCameras();
+  field(camera, "roi-drawer").hidden = true;
+  openAngleMonitor(camera);
+  field(camera, "message").textContent = "画角を変更した場合は、ROIをもう一度指定してください。";
+}
+
+function cancelRoiEditing(camera) {
+  const previous = normalizeRoi(camera.roiBeforeEdit);
+  camera.roi = previous;
+  camera.roi_pending = false;
+  camera.roi_stale = previous ? Boolean(camera.roi_stale) : false;
+  if (previous) fillRoiInputs(previous);
+  else fillRoiInputs(null);
+  delete camera.roiBeforeEdit;
+  field(camera, "roi-drawer").hidden = true;
+  saveCameras();
+  renderCameraRoi(camera);
+  renderFieldWorkflow(camera);
+  field(camera, "message").textContent = "ROI指定をキャンセルしました。";
 }
 
 function setBusy(camera, busy) {
@@ -780,7 +955,7 @@ function setMonitor(camera, monitoring, aiDetection = false) {
   camera.aiMonitoring = monitoring && aiDetection;
   button.classList.toggle("active", monitoring && !aiDetection);
   aiButton.classList.toggle("active", camera.aiMonitoring);
-  button.textContent = monitoring && !aiDetection ? "モニター停止" : "画角モニター";
+  button.textContent = monitoring && !aiDetection ? "閉じる" : "画角を確認";
   aiButton.textContent = camera.aiMonitoring ? "AIモニター停止" : "AI検出モニター";
   if (!monitoring) {
     if (camera.status && camera.status.last_image) {
@@ -791,10 +966,11 @@ function setMonitor(camera, monitoring, aiDetection = false) {
       field(camera, "empty").hidden = false;
     }
   }
+  renderFieldWorkflow(camera);
 }
 
-function toggleMonitor(camera, aiDetection = false) {
-  if (camera.monitoring && camera.aiMonitoring === aiDetection) {
+function toggleMonitor(camera, aiDetection = false, options = {}) {
+  if (camera.monitoring && camera.aiMonitoring === aiDetection && !options.forceOpen) {
     setMonitor(camera, false);
     field(camera, "message").textContent = aiDetection ? "AI検出モニターを停止しました。" : "画角モニターを停止しました。";
     return;
@@ -818,7 +994,8 @@ function toggleMonitor(camera, aiDetection = false) {
   camera.manualPreview = true;
   field(camera, "message").textContent = aiDetection
     ? "AI検出モニター表示中（保存されません）。"
-    : "画角モニター表示中。ROI指定は『ROIを指定』から行ってください。";
+    : "画角確認中です。花が画面中央付近に入るようにカメラを調整してください。";
+  renderFieldWorkflow(camera);
 }
 
 async function startAll() {
