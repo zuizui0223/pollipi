@@ -76,11 +76,18 @@ PolliPi should allow the user to compare the following methods:
 
 - `zuizui2.local` is the Raspberry Pi AI Camera unit.
 - `zuizui3.local` is the Camera Module 3 NoIR Wide / infrared-capable unit.
+- `zuizui5.local` is a Camera Module 3 Wide unit and should be treated as a standard daylight PolliPi unit.
 - Other `zuizui*.local` units are ordinary Camera Module 3 / Module 3 Wide units unless specified otherwise.
 
 ### Camera Module 3 / Module 3 Wide
 
 Primary daylight field unit. Use for ordinary timelapse, motion-triggered, hybrid, adaptive, and ROI-based daytime recording.
+
+Known Module 3 / Module 3 Wide units:
+
+- `zuizui.local`
+- `zuizui4.local`
+- `zuizui5.local`
 
 ### AI Camera (`zuizui2.local`)
 
