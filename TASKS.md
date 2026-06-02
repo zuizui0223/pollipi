@@ -2,22 +2,34 @@
 
 ## Needed now
 
-### Task 1: Fix iPad preview-based ROI drawing
+### Task 1: Fix camera lifecycle conflict between monitor, preview, and start
 
-The user must be able to draw a ROI directly on a still camera preview image from `/preview`.
+`/mjpeg`, `/preview`, and `/start` must not conflict over Picamera2.
 
 Acceptance criteria:
 
-- Works on iPad Safari
-- Works with mouse on desktop if possible
-- Rectangle overlay is visible and aligned with the preview image
-- ROI converts to 640 × 360 monitor coordinates
-- `roi_x`, `roi_y`, `roi_w`, and `roi_h` fields are auto-filled
-- `/start` includes ROI only when valid
-- Clear ROI and Use full frame work
-- Review events still works
+- `/preview` alone returns JPEG
+- `/mjpeg?detect=false` returns MJPEG stream
+- `/preview` still returns JPEG after MJPEG has been opened
+- `/start` does not trigger `Camera in Running state trying acquire()`
+- no `Camera __init__ sequence did not complete` error in normal monitor → ROI → start workflow
 
-### Task 2: Preserve autonomous field operation
+### Task 2: Simplify image/event review into automatic positive/negative/unclear correction workflow
+
+The current review workflow is too confirmation-heavy. The user wants automatic pre-classification first, then manual correction only.
+
+Acceptance criteria:
+
+- images/events are initially grouped as `positive`, `negative`, or `unclear`
+- unreviewed images are not shown only as “unclassified” if motion/anomaly information is available
+- initial grouping can use simple image-difference / motion metrics first
+- user can quickly change a label to positive / negative / unclear
+- no “この分類でOK” / “this classification is OK” confirmation is required
+- iPad “保存” tab is removed or hidden if it is only for saving/confirming classifications
+- label export still works
+- corrected labels override automatic labels
+
+### Task 3: Preserve autonomous field operation
 
 Recording must continue after iPad, phone tethering, or Wi-Fi disconnects.
 
@@ -28,7 +40,7 @@ Acceptance criteria:
 - recording loop continues without browser connection
 - README clearly states field operation behavior
 
-### Task 3: Clarify recording modes in UI and logs
+### Task 4: Clarify recording modes in UI and logs
 
 PolliPi should explicitly support and log the method being compared:
 
@@ -37,7 +49,7 @@ PolliPi should explicitly support and log the method being compared:
 - hybrid timelapse + motion-triggered recording
 - adaptive timelapse
 - ROI-based motion detection
-- tracked ROI detection later
+- tracked ROI detection
 
 Acceptance criteria:
 
@@ -47,37 +59,25 @@ Acceptance criteria:
 
 ## Useful next
 
-### Task 4: Add optional lightweight flower/head ROI tracking
+### Task 5: Improve low-power ROI-local motion detection
 
-Use template matching to keep ROI on the focal flower/head when it moves slightly in wind.
-
-Acceptance criteria:
-
-- `roi_tracking=true` works
-- tracking score appears in `/status`
-- `event_log.csv` records tracked ROI
-- fixed ROI mode still works
-- full frame mode still works
-- tracking follows flower/head, not insects
-
-### Task 5: Improve image/event review into positive/negative/unclear correction workflow
-
-The system may automatically pre-sort images or candidate events, but the user should only correct wrong labels. Remove repeated “this classification is OK” style workflow from normal use.
+Use low-resolution ROI-local image difference rather than whole-frame or high-power inference when ROI is available.
 
 Acceptance criteria:
 
-- positive / negative / unclear categories are visible
-- user can quickly mark positive, negative, or unclear
-- false positive reason can be selected for negative events
-- label export still works
-- no unnecessary confirmation step is required
+- ROI-local motion score is logged
+- changed area / largest blob-like metric is logged if available
+- consecutive-frame confirmation is used before event creation
+- cooldown avoids duplicate event bursts
+- no continuous YOLO or video-first workflow is introduced
 
-### Task 6: Camera-specific profiles and behavior
+### Task 6: Add camera-specific profiles and behavior
 
 Make camera roles explicit:
 
 - `zuizui2.local` = AI Camera
 - `zuizui3.local` = NoIR Wide
+- `zuizui5.local` = Module 3 Wide
 - other `zuizui*.local` = Module 3 / Module 3 Wide unless configured otherwise
 
 Acceptance criteria:
@@ -85,6 +85,7 @@ Acceptance criteria:
 - camera profile is visible in UI
 - AI Camera is treated as a comparison/detection-test unit, not an insect classifier by default
 - NoIR is treated as low-light/night-capable only with illumination notes
+- `zuizui5.local` works as a standard daylight Module 3 Wide unit
 
 ### Task 7: Add analysis scripts for method validation
 
