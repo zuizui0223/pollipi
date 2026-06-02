@@ -2,9 +2,16 @@
 
 ## Needed now
 
-### Task 1: Fix camera lifecycle conflict between monitor, preview, and start
+### Task 1: Fix camera/ROI workflow before field testing
 
-`/mjpeg`, `/preview`, and `/start` must not conflict over Picamera2.
+The monitor → angle confirmation → ROI selection → start workflow must be reliable.
+
+Current critical issues:
+
+1. `/mjpeg`, `/preview`, and `/start` must not conflict over Picamera2.
+2. After `画角を再調整`, the user must be able to change the ROI.
+3. The ROI editor currently appears to snap the rectangle back to the old position after dragging; this must be fixed.
+4. User-facing wording should use `ROIを指定` rather than `花を囲む`.
 
 Acceptance criteria:
 
@@ -13,6 +20,14 @@ Acceptance criteria:
 - `/preview` still returns JPEG after MJPEG has been opened
 - `/start` does not trigger `Camera in Running state trying acquire()`
 - no `Camera __init__ sequence did not complete` error in normal monitor → ROI → start workflow
+- `画角を再調整` marks the old ROI as stale or clears it
+- after re-adjusting the angle, the user can draw/move/resize a new ROI
+- dragging the ROI does not snap back to the old location
+- `やり直す` resets the editable ROI for the current still preview, not the previous confirmed ROI
+- `キャンセル` can return without overwriting the previous confirmed ROI
+- `このROIを使う` confirms the currently edited ROI
+- normal UI wording uses `ROIを指定`, `このROIを使う`, and `ROIを解除`
+- avoid user-facing wording `花を囲む` if it causes confusion
 
 ### Task 2: Simplify image/event review into automatic positive/negative/unclear correction workflow
 
