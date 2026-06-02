@@ -412,7 +412,10 @@ function setupFieldWorkflowLabels(camera) {
   camera.card.querySelector(".monitor-close-camera").textContent = "閉じる";
   camera.card.querySelector(".roi-preview-camera").textContent = "ROIを指定";
   camera.card.querySelector(".roi-clear-camera").textContent = "ROIを解除";
-  camera.card.querySelector(".roi-use-camera").textContent = "このROIを使う";
+  camera.card.querySelector(".roi-use-camera").textContent = "このROIで決定";
+  camera.card.querySelector(".roi-redraw-camera").textContent = "リセット";
+  camera.card.querySelector(".roi-cancel-camera").textContent = "戻る";
+  camera.card.querySelector(".angle-readjust-camera").hidden = true;
   const note = camera.card.querySelector(".roi-note");
   if (note) note.textContent = "画角を変更した場合は、ROIをもう一度指定してください。ROIは640 x 360の監視フレーム上で保存されます。";
 }
@@ -426,13 +429,27 @@ function renderFieldWorkflow(camera) {
   const angleOk = camera.card.querySelector(".angle-accept-camera");
   const monitorClose = camera.card.querySelector(".monitor-close-camera");
   const roiButton = camera.card.querySelector(".roi-preview-camera");
+  const angleButton = camera.card.querySelector(".angle-check-camera");
+  const roiClearButton = camera.card.querySelector(".roi-clear-camera");
+  const angleReadjustButton = camera.card.querySelector(".angle-readjust-camera");
   if (angleStatus) angleStatus.textContent = `画角: ${camera.angle_confirmed ? "確認済み" : "未確認"}`;
   if (roiStatusDetail) {
     roiStatusDetail.textContent = `ROI: ${editingOpen && editingRoi ? "編集中" : roi && !camera.roi_stale ? "設定済み" : roi && camera.roi_stale ? "再指定が必要" : "未設定"}`;
   }
-  if (angleOk) angleOk.hidden = !camera.monitoring || camera.aiMonitoring;
-  if (monitorClose) monitorClose.hidden = !camera.monitoring || camera.aiMonitoring;
-  if (roiButton) roiButton.disabled = !camera.angle_confirmed;
+  const validRoi = Boolean(roi && !camera.roi_stale);
+  const needsRoi = Boolean(camera.angle_confirmed && (!roi || camera.roi_stale));
+  if (angleButton) {
+    angleButton.textContent = validRoi || camera.angle_confirmed ? "画角を再調整" : "画角を確認";
+    angleButton.hidden = editingOpen || (camera.monitoring && !camera.aiMonitoring) || (needsRoi && !validRoi);
+  }
+  if (angleOk) angleOk.hidden = editingOpen || !camera.monitoring || camera.aiMonitoring;
+  if (monitorClose) monitorClose.hidden = true;
+  if (roiButton) {
+    roiButton.hidden = editingOpen || !needsRoi;
+    roiButton.disabled = !camera.angle_confirmed;
+  }
+  if (roiClearButton) roiClearButton.hidden = editingOpen || !validRoi;
+  if (angleReadjustButton) angleReadjustButton.hidden = true;
   renderTrackingToggle(camera);
 }
 
@@ -860,7 +877,7 @@ function setupRoiDrawingTarget(camera, wrap, image, box, sourceName) {
       : displayRectToRoiRect(currentRect, point.width, point.height);
     if (roi) {
       setEditingRoi(camera, roi);
-      field(camera, "message").textContent = "ROIを指定しました。よければ「このROIを使う」を押してください。";
+      field(camera, "message").textContent = "ROIを指定しました。よければ「このROIで決定」を押してください。";
     } else {
       camera.editing_roi = previousRoi;
       renderRoiEditor(camera);
@@ -932,7 +949,7 @@ function redrawFlowerRoi(camera) {
   renderRoiEditor(camera);
   renderCameraRoi(camera);
   renderFieldWorkflow(camera);
-  field(camera, "message").textContent = "やり直し中です。静止画像の上でROIをもう一度指定してください。";
+  field(camera, "message").textContent = "ROIをリセットしました。静止画像の上でROIをもう一度指定してください。";
 }
 
 function readjustCameraAngle(camera) {
@@ -956,7 +973,7 @@ function cancelRoiEditing(camera) {
   saveCameras();
   renderCameraRoi(camera);
   renderFieldWorkflow(camera);
-  field(camera, "message").textContent = "ROI指定をキャンセルしました。";
+  field(camera, "message").textContent = "ROI指定から戻りました。";
 }
 
 function setBusy(camera, busy) {

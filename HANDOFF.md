@@ -42,8 +42,8 @@ New user sequence:
   4. Tap `この画角でOK`.
   5. Live monitor closes and a frozen `/preview` still frame opens.
   6. Use `ROIを指定` to draw the flower/head ROI.
-  7. If needed, drag inside the rectangle to move it, drag an edge/corner to resize it, or tap `やり直す` to redraw it.
-  8. Tap `このROIを使う`.
+  7. If needed, drag inside the rectangle to move it, drag an edge/corner to resize it, or tap `リセット` to redraw it.
+  8. Tap `このROIで決定`.
   9. Main card shows `画角: 確認済み` and `ROI: 設定済み`.
 
 State rules:
@@ -51,7 +51,9 @@ State rules:
   - `画角を再調整` clears/invalidates the old ROI and returns to live monitor.
   - `camera.roi` is the confirmed ROI used for recording.
   - `camera.editing_roi` is the temporary ROI inside the frozen still editor.
-  - Dragging/resizing updates only `editing_roi`; it must not overwrite or snap back to the confirmed ROI until `このROIを使う` is tapped.
+  - Dragging/resizing updates only `editing_roi`; it must not overwrite or snap back to the confirmed ROI until `このROIで決定` is tapped.
+  - Normal main workflow is step-based: `画角を確認` -> `この画角でOK` -> `ROIを指定` -> `このROIで決定` -> `撮影開始`.
+  - Main ROI controls are hidden unless they are relevant to the current step. The frozen ROI editor shows only `このROIで決定`, `リセット`, and `戻る`.
   - Capture start is blocked when ROI exists but is stale after camera-angle readjustment.
   - `花の揺れに追従` remains optional and only starts with a confirmed current ROI.
 

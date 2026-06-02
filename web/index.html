@@ -10,7 +10,7 @@
     <title>PolliPi Field Observer</title>
     <link rel="manifest" href="/app/manifest.webmanifest">
     <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/app/app.css?v=20260602-roi-edit2">
+    <link rel="stylesheet" href="/app/app.css?v=20260602-roi-simple1">
   </head>
   <body>
     <header class="hero">
@@ -200,10 +200,10 @@
               <span class="roi-box" data-field="roi-box"></span>
             </div>
             <div class="roi-editor-actions">
-              <button class="primary roi-use-camera" type="button">このROIを使う</button>
-              <button class="secondary roi-redraw-camera" type="button">やり直す</button>
-              <button class="secondary angle-readjust-camera" type="button">画角を再調整</button>
-              <button class="secondary roi-cancel-camera" type="button">キャンセル</button>
+              <button class="primary roi-use-camera" type="button">このROIで決定</button>
+              <button class="secondary roi-redraw-camera" type="button">リセット</button>
+              <button class="secondary angle-readjust-camera" type="button" hidden>画角を再調整</button>
+              <button class="secondary roi-cancel-camera" type="button">戻る</button>
             </div>
           </div>
         </section>
@@ -225,6 +225,6 @@
         </div>
       </article>
     </template>
-    <script src="/app/app.js?v=20260602-roi-edit2"></script>
+    <script src="/app/app.js?v=20260602-roi-simple1"></script>
   </body>
 </html>
