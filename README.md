@@ -24,14 +24,24 @@ GitHub はソースコードと導入手順の配布場所として利用し、�
 1台の Pi を親ホットスポットにして他の Pi をそこへ接続する構成にします。撮影開始後は、
 ネットワークがなくなっても各 Pi の `自律運行` が単独で継続します。
 
-## 実機構成
+## クイックスタート
 
-2026-05-26 に `rpicam-hello --list-cameras` で確認した構成:
+`QUICKSTART.md` に、新規ユーザー向けの最短セットアップ手順をまとめています。
+`DEVICE_ONBOARDING.md` は台数を追加する際のチェックリストです。
+`TROUBLESHOOTING.md` はよくあるエラーと対処法をまとめています。
 
-| ホスト | 用途 | 認識されたセンサー | 最大解像度 |
+## カメラ構成例
+
+以下は汎用的なホスト名の例です（実際のホスト名はセットアップ時に決めます）:
+
+| ホスト例 | 用途 | センサー | 最大解像度 |
 | --- | --- | --- | --- |
-| `zuizui.local` | Camera Module 3 Wide | `imx708_wide` | 4608 x 2592 |
-| `zuizui2.local` | Raspberry Pi AI Camera | `imx500` | 4056 x 3040 |
+| `pollipi1.local` | Camera Module 3 Wide | `imx708_wide` | 4608 x 2592 |
+| `pollipi2.local` | Raspberry Pi AI Camera | `imx500` | 4056 x 3040 |
+| `pollipi3.local` | Camera Module 3 NoIR Wide | `imx708_noir_wide` | 4608 x 2592 |
+
+ホスト名・デバイス ID・カメラプロファイルはすべて環境変数で設定するため、
+Pi に同じ `pollipi_api_server.py` を置いて起動時の設定だけ変えることで何台でも運用できます。
 
 ## Raspberry Pi の準備
 
@@ -45,79 +55,80 @@ rpicam-hello
 OS のパッケージを利用するため、仮想環境には `--system-site-packages` を指定します。
 
 ```bash
+bash install.sh
+```
+
+`install.sh` が依存パッケージのインストール、ディレクトリ作成、仮想環境の構築をまとめて行います。
+手動で実行する場合:
+
+```bash
 sudo apt update
 sudo apt install -y python3-picamera2 python3-venv python3-fastapi python3-uvicorn
-mkdir -p /home/zuizui0223/pollipi_timelapse/images
-cd /home/zuizui0223/pollipi_timelapse
+mkdir -p ~/pollipi_timelapse/images
+cd ~/pollipi_timelapse
 python3 -m venv --system-site-packages .venv
 ```
 
-`pollipi_api_server.py` とこの `README.md` を
-`/home/zuizui0223/pollipi_timelapse/` に配置してください。
+`pollipi_api_server.py` を `~/pollipi_timelapse/` に配置してください。
 
 ## Raspberry Pi への配置
 
 同じ `pollipi_api_server.py` を Camera Module 3 と AI Camera の両方で利用できます。
 観察機を増やす場合も、各 Pi に同じファイルを配置し、起動時の環境変数で名称を設定します。
-Windows PC の PowerShell で、このフォルダから次を実行して転送します。
+
+**Windows から転送する場合** (`pi` と `pollipi1.local` は実際のユーザー名とホスト名に置き換えてください):
 
 ```powershell
-ssh zuizui0223@zuizui.local "mkdir -p /home/zuizui0223/pollipi_timelapse"
-scp .\pollipi_api_server.py .\README.md zuizui0223@zuizui.local:/home/zuizui0223/pollipi_timelapse/
-scp -r .\web zuizui0223@zuizui.local:/home/zuizui0223/pollipi_timelapse/
-
-ssh zuizui0223@zuizui2.local "mkdir -p /home/zuizui0223/pollipi_timelapse"
-scp .\pollipi_api_server.py .\README.md zuizui0223@zuizui2.local:/home/zuizui0223/pollipi_timelapse/
-scp -r .\web zuizui0223@zuizui2.local:/home/zuizui0223/pollipi_timelapse/
+$env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
+.\deploy_pollipi_pi.ps1 -HostName pollipi1.local -User pi -Preset module3-wide -DeviceId pollipi1 -InstallDependencies
 ```
 
-各 Raspberry Pi に SSH 接続し、依存パッケージをインストールします。
-
-Camera Module 3 を接続した `zuizui.local`:
+**手動で転送・インストールする場合**:
 
 ```bash
-ssh zuizui0223@zuizui.local
-sudo apt update
-sudo apt install -y python3-picamera2 python3-venv python3-fastapi python3-uvicorn
-mkdir -p /home/zuizui0223/pollipi_timelapse/images
-cd /home/zuizui0223/pollipi_timelapse
-python3 -m venv --system-site-packages .venv
+ssh pi@pollipi1.local "mkdir -p ~/pollipi_timelapse"
+scp pollipi_api_server.py install.sh setup_device.sh pi@pollipi1.local:~/pollipi_timelapse/
+scp -r web pi@pollipi1.local:~/pollipi_timelapse/
+ssh pi@pollipi1.local "bash ~/pollipi_timelapse/install.sh"
 ```
 
-AI Camera を接続した `zuizui2.local`:
+AI Camera を使う Pi は、インストール前に firmware を先に入れる必要があります:
 
 ```bash
-ssh zuizui0223@zuizui2.local
-sudo apt update
-sudo apt full-upgrade -y
-sudo apt install -y python3-picamera2 python3-venv python3-fastapi python3-uvicorn imx500-all
+ssh pi@pollipi2.local
+sudo apt update && sudo apt full-upgrade -y
+sudo apt install -y imx500-all
 sudo reboot
 ```
 
-再起動後、再度 `zuizui2.local` に SSH 接続して API の環境を作成します。
-
-```bash
-mkdir -p /home/zuizui0223/pollipi_timelapse/images
-cd /home/zuizui0223/pollipi_timelapse
-python3 -m venv --system-site-packages .venv
-```
+再起動後、通常どおり `install.sh` を実行します。
 
 ## 観察機名を設定して起動
 
-Camera Module 3 側:
+`setup_device.sh` を使うと対話的にカメラプロファイルを設定し、systemd サービスを自動で登録できます:
 
 ```bash
-ssh zuizui0223@zuizui.local "cd /home/zuizui0223/pollipi_timelapse && POLLIPI_DEVICE_NAME='Site 01' POLLIPI_CAMERA_LABEL='Module 3 Wide' POLLIPI_CAMERA_MODEL='imx708_wide' .venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000"
+bash ~/pollipi_timelapse/setup_device.sh pollipi1
+```
+
+手動で起動確認する場合（Camera Module 3 側）:
+
+```bash
+cd ~/pollipi_timelapse
+POLLIPI_DEVICE_NAME='Site 01' POLLIPI_CAMERA_LABEL='Module 3 Wide' POLLIPI_CAMERA_MODEL='imx708_wide' \
+  .venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000
 ```
 
 AI Camera 側:
 
 ```bash
-ssh zuizui0223@zuizui2.local "cd /home/zuizui0223/pollipi_timelapse && POLLIPI_DEVICE_NAME='Site 02' POLLIPI_CAMERA_LABEL='AI Camera' POLLIPI_CAMERA_MODEL='imx500' .venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000"
+cd ~/pollipi_timelapse
+POLLIPI_DEVICE_NAME='Site 02' POLLIPI_CAMERA_LABEL='AI Camera' POLLIPI_CAMERA_MODEL='imx500' \
+  .venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000
 ```
 
-各 API はそれぞれ `http://zuizui.local:8000` と
-`http://zuizui2.local:8000` でアクセスします。
+各 API はそれぞれ `http://pollipi1.local:8000` と
+`http://pollipi2.local:8000` でアクセスします。
 
 ## 自動起動と自律運行
 
@@ -125,18 +136,25 @@ ssh zuizui0223@zuizui2.local "cd /home/zuizui0223/pollipi_timelapse && POLLIPI_D
 `Environment=` の表示名は観察機ごとに変更してください。
 
 ```bash
+bash ~/pollipi_timelapse/setup_device.sh pollipi1
+```
+
+`setup_device.sh` がサービスファイルとカメラプロファイルを自動で書き込みます。
+手動で設定する場合は `DEVICE_ONBOARDING.md` の手順を参照してください。
+
+サービスファイルの例 (`pi` と `/home/pi/` は実際のユーザー名に合わせてください):
+
+```bash
 sudo tee /etc/systemd/system/pollipi.service >/dev/null <<'EOF'
 [Unit]
 Description=PolliPi Field Observer API
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-User=zuizui0223
-WorkingDirectory=/home/zuizui0223/pollipi_timelapse
-Environment="POLLIPI_DEVICE_NAME=Site 01"
-Environment="POLLIPI_CAMERA_LABEL=Module 3 Wide"
-Environment=POLLIPI_CAMERA_MODEL=imx708_wide
-ExecStart=/home/zuizui0223/pollipi_timelapse/.venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
+User=pi
+WorkingDirectory=/home/pi/pollipi_timelapse
+ExecStart=/home/pi/pollipi_timelapse/.venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
 Restart=always
 RestartSec=3
 
@@ -145,6 +163,25 @@ WantedBy=multi-user.target
 EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now pollipi.service
+```
+
+カメラプロファイルは drop-in ファイルで設定します:
+
+```bash
+sudo mkdir -p /etc/systemd/system/pollipi.service.d
+sudo tee /etc/systemd/system/pollipi.service.d/camera-profile.conf >/dev/null <<'EOF'
+[Service]
+Environment=POLLIPI_DEVICE_ID=pollipi1
+Environment="POLLIPI_DEVICE_NAME=Site 01"
+Environment="POLLIPI_CAMERA_LABEL=Module 3 Wide"
+Environment=POLLIPI_CAMERA_MODEL=imx708_wide
+Environment=POLLIPI_CAMERA_PROFILE=module3_wide_daylight
+Environment=POLLIPI_IS_AI_CAMERA=false
+Environment=POLLIPI_IS_NOIR=false
+Environment=POLLIPI_IS_WIDE=true
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart pollipi.service
 ```
 
 `--timeout-graceful-shutdown 3` は、画角モニターなどの持続接続が残っていても、
@@ -174,8 +211,9 @@ iPad の Wi-Fi 設定で `PolliPi-site01` に接続した後、Pi のアドレ�
 
 iPad を Raspberry Pi と同じ Wi-Fi ネットワークに接続し、Safari でいずれかの
 観察機の URL を開きます。開いた Pi は自動的に登録され、`Raspberry Pi を追加` 欄へ
-`zuizui0223@zuizui2` のように SSH 接続で使う名前を入力すると、アプリが
-`http://zuizui2.local:8000` へ変換して接続します。登録は iPad 内に保存されます。
+`pi@pollipi2` のように SSH 接続で使う名前を入力すると、アプリが
+`http://pollipi2.local:8000` へ変換して接続します。IP アドレス直接入力も可能です。
+登録は iPad 内に保存されます。
 
 ### Field mode start form
 
@@ -191,8 +229,8 @@ iPad を Raspberry Pi と同じ Wi-Fi ネットワークに接続し、Safari �
 これらはデバッグや比較実験用で、通常の現地操作では開かなくて大丈夫です。
 
 ```text
-http://zuizui.local:8000/app/
-http://zuizui2.local:8000/app/
+http://pollipi1.local:8000/app/
+http://pollipi2.local:8000/app/
 ```
 
 画面でできること:
@@ -221,7 +259,7 @@ Pi 用プログラムを GitHub から配布できます。画面は 4 秒ごと
 
 ## AI Camera の簡易物体検出試験
 
-`zuizui2.local` の AI Camera (`imx500`) にはセンサー内でニューラルネット推論を
+AI Camera (`imx500`) にはセンサー内でニューラルネット推論を
 実行する機能があります。標準でインストールされる MobileNet SSD は一般物体の検出用で、
 標準ラベルに `insect` はありません。したがって昆虫の種類判別には専用の学習モデルが
 必要ですが、AI Camera と Module 3 の検出方式を分けて試す第一段階として利用できます。
@@ -231,9 +269,9 @@ JSON 結果を `~/pollipi_timelapse/imx500_detect_trials/` に保存します。
 プロセスだけで使用するため、試験中は AI Camera 側の API サービスを一時停止します。
 
 ```bash
-ssh zuizui0223@zuizui2.local
+ssh pi@pollipi2.local
 sudo systemctl stop pollipi.service
-cd /home/zuizui0223/pollipi_timelapse
+cd ~/pollipi_timelapse
 python3 imx500_detect_test.py --duration-sec 15 --threshold 0.55
 sudo systemctl start pollipi.service
 ```
@@ -246,7 +284,7 @@ AIモデルの読み込みには開始時に数秒かかります。この表示
 APIから枠付きモニターを確認する場合:
 
 ```bash
-curl "http://zuizui2.local:8000/mjpeg?detect=true" --output ai-monitor.mjpeg
+curl "http://pollipi2.local:8000/mjpeg?detect=true" --output ai-monitor.mjpeg
 ```
 
 この結果は AI Camera の標準モデルによる一般物体検出です。Module 3 側で動かしている
@@ -373,7 +411,7 @@ ROI を指定すると、低解像度モニターフレーム `640 x 360` のう
 ROI を指定しなければ従来通り全画面で判定します。
 
 ```bash
-curl -X POST http://zuizui.local:8000/start \
+curl -X POST http://pollipi1.local:8000/start \
   -H "Content-Type: application/json" \
   -d '{
     "interval_sec": 60,
@@ -434,13 +472,13 @@ false positive reason は `wind`、`shadow`、`flower_movement`、`camera_shake`
 `non_insect_object`、`lighting_change`、`unclear`、`other` から選びます。
 
 ```bash
-curl http://zuizui.local:8000/events
+curl http://pollipi1.local:8000/events
 
-curl -X POST http://zuizui.local:8000/events/evt_20260528_120000_000000_abcd1234/label \
+curl -X POST http://pollipi1.local:8000/events/evt_20260528_120000_000000_abcd1234/label \
   -H "Content-Type: application/json" \
   -d '{"manual_label": "non_insect", "false_positive_reason": "wind", "manual_notes": "flower moved in wind"}'
 
-curl -OJ http://zuizui.local:8000/events/export_labels.csv
+curl -OJ http://pollipi1.local:8000/events/export_labels.csv
 ```
 
 `events/export_labels.csv` は、将来の insect / non-insect 分類器を作るための教師データとして使う想定です。
@@ -504,7 +542,7 @@ PWA の各観察機カードには、画像保存先の空き容量と Raspberry
 USB メモリへ保存する場合は、マウントした保存先をサービス環境変数に指定します。
 
 ```ini
-Environment="POLLIPI_IMAGE_DIR=/media/zuizui0223/POLLIPI/images"
+Environment="POLLIPI_IMAGE_DIR=/media/your_user/POLLIPI/images"
 ```
 
 `電源状態` は Raspberry Pi の `vcgencmd get_throttled` を使って、現在または起動後に
@@ -514,7 +552,7 @@ UPS HAT または電源計測機器を追加する設計が必要です。Pi 5 �
 現地運用では、十分な5 V出力とケーブル品質も重要です。
 
 ```bash
-curl http://zuizui.local:8000/system
+curl http://pollipi1.local:8000/system
 ```
 
 公式資料:
@@ -527,11 +565,11 @@ curl http://zuizui.local:8000/system
 すでに撮影中の場合は停止してから、新しい間隔で撮影を再開します。
 
 ```bash
-curl -X POST http://zuizui.local:8000/start \
+curl -X POST http://pollipi1.local:8000/start \
   -H "Content-Type: application/json" \
   -d '{"interval_sec": 10}'
 
-curl -X POST http://zuizui2.local:8000/start \
+curl -X POST http://pollipi2.local:8000/start \
   -H "Content-Type: application/json" \
   -d '{"interval_sec": 10}'
 ```
@@ -539,81 +577,81 @@ curl -X POST http://zuizui2.local:8000/start \
 状態を取得します。
 
 ```bash
-curl http://zuizui.local:8000/status
-curl http://zuizui2.local:8000/status
+curl http://pollipi1.local:8000/status
+curl http://pollipi2.local:8000/status
 ```
 
 観察機の表示名とカメラ情報を取得します。PWA はこの情報を利用して台数可変のカードを表示します。
 
 ```bash
-curl http://zuizui.local:8000/device
+curl http://pollipi1.local:8000/device
 ```
 
 最新画像を取得します。
 
 ```bash
-curl http://zuizui.local:8000/latest --output latest-module3.jpg
-curl http://zuizui2.local:8000/latest --output latest-ai-camera.jpg
+curl http://pollipi1.local:8000/latest --output latest-module3.jpg
+curl http://pollipi2.local:8000/latest --output latest-ai-camera.jpg
 ```
 
 保存画像一覧を取得します。`limit` には最大 200 枚まで指定できます。
 
 ```bash
-curl "http://zuizui.local:8000/images?limit=40"
-curl "http://zuizui.local:8000/images?limit=40&collection=positive"
-curl "http://zuizui.local:8000/images?limit=40&collection=negative"
+curl "http://pollipi1.local:8000/images?limit=40"
+curl "http://pollipi1.local:8000/images?limit=40&collection=positive"
+curl "http://pollipi1.local:8000/images?limit=40&collection=negative"
 ```
 
 一覧にある画像を取得、または削除します。削除は元に戻せません。
 
 ```bash
-curl http://zuizui.local:8000/images/image_20260526_143010_123456.jpg --output selected.jpg
-curl -X DELETE http://zuizui.local:8000/images/image_20260526_143010_123456.jpg
+curl http://pollipi1.local:8000/images/image_20260526_143010_123456.jpg --output selected.jpg
+curl -X DELETE http://pollipi1.local:8000/images/image_20260526_143010_123456.jpg
 ```
 
 画像単体または ZIP を iPad/PC にダウンロードします。
 
 ```bash
-curl -OJ "http://zuizui.local:8000/images/image_20260526_143010_123456.jpg?download=true"
-curl -OJ "http://zuizui.local:8000/exports/images.zip?collection=all"
-curl -OJ "http://zuizui.local:8000/exports/images.zip?collection=positive"
-curl -OJ "http://zuizui.local:8000/exports/images.zip?collection=negative"
+curl -OJ "http://pollipi1.local:8000/images/image_20260526_143010_123456.jpg?download=true"
+curl -OJ "http://pollipi1.local:8000/exports/images.zip?collection=all"
+curl -OJ "http://pollipi1.local:8000/exports/images.zip?collection=positive"
+curl -OJ "http://pollipi1.local:8000/exports/images.zip?collection=negative"
 ```
 
 画像ラベルを iPad または API から必要な分だけ修正し、帰宅後に学習を開始します。
 
 ```bash
-curl -X POST http://zuizui.local:8000/images/event_20260527_130821_230183.jpg/label \
+curl -X POST http://pollipi1.local:8000/images/event_20260527_130821_230183.jpg/label \
   -H "Content-Type: application/json" \
   -d '{"label": "positive"}'
 
-curl -X POST http://zuizui.local:8000/images/event_20260527_130821_230183.jpg/label \
+curl -X POST http://pollipi1.local:8000/images/event_20260527_130821_230183.jpg/label \
   -H "Content-Type: application/json" \
   -d '{"label": "negative"}'
 
-curl http://zuizui.local:8000/training/status
-curl -X POST http://zuizui.local:8000/training/start
-curl -X DELETE http://zuizui.local:8000/training/model
+curl http://pollipi1.local:8000/training/status
+curl -X POST http://pollipi1.local:8000/training/start
+curl -X DELETE http://pollipi1.local:8000/training/model
 ```
 
 現在の画角確認用 JPEG を1枚取得します。撮影開始前にも利用でき、この画像は
 保存フォルダや撮影枚数には追加されません。
 
 ```bash
-curl http://zuizui.local:8000/preview --output preview.jpg
+curl http://pollipi1.local:8000/preview --output preview.jpg
 ```
 
 画角の低負荷 MJPEG モニターを取得します。ブラウザの `画角モニター` ボタンが利用する
 ストリームで、保存画像には追加されません。撮影開始・停止時にはモニターが自動終了します。
 
 ```bash
-curl http://zuizui.local:8000/mjpeg --output monitor.mjpeg
+curl http://pollipi1.local:8000/mjpeg --output monitor.mjpeg
 ```
 
 保存画像をすべて削除します。撮影停止中のみ実行でき、削除は元に戻せません。
 
 ```bash
-curl -X DELETE http://zuizui.local:8000/images \
+curl -X DELETE http://pollipi1.local:8000/images \
   -H "Content-Type: application/json" \
   -d '{"confirm": "DELETE_ALL"}'
 ```
@@ -623,7 +661,7 @@ curl -X DELETE http://zuizui.local:8000/images \
 風で揺れる葉や影の変化も候補として記録される場合があります。
 
 ```bash
-curl -X POST http://zuizui.local:8000/start \
+curl -X POST http://pollipi1.local:8000/start \
   -H "Content-Type: application/json" \
   -d '{"interval_sec": 60, "auto_mode": true, "autonomous_mode": true, "idle_interval_sec": 60, "detection_interval_sec": 3}'
 ```
@@ -635,7 +673,7 @@ curl -X POST http://zuizui.local:8000/start \
 動き候補があると追加画像を保存します。`detection_interval_sec` は追加候補を確認する間隔です。
 
 ```bash
-curl -X POST http://zuizui.local:8000/start \
+curl -X POST http://pollipi1.local:8000/start \
   -H "Content-Type: application/json" \
   -d '{"interval_sec": 60, "hybrid_mode": true, "ml_assist_mode": true, "autonomous_mode": true, "detection_interval_sec": 3}'
 ```
@@ -649,7 +687,7 @@ PWA の `動いた時だけ撮影（画像差分）` を有効にするか、API
 `motion_*.jpg` が保存されます。虫の確定判定ではないため、葉や影の動きも保存候補になります。
 
 ```bash
-curl -X POST http://zuizui.local:8000/start \
+curl -X POST http://pollipi1.local:8000/start \
   -H "Content-Type: application/json" \
   -d '{"interval_sec": 60, "motion_trigger_mode": true, "autonomous_mode": true, "detection_interval_sec": 3}'
 ```
@@ -657,8 +695,8 @@ curl -X POST http://zuizui.local:8000/start \
 タイムラプスを停止します。
 
 ```bash
-curl -X POST http://zuizui.local:8000/stop
-curl -X POST http://zuizui2.local:8000/stop
+curl -X POST http://pollipi1.local:8000/stop
+curl -X POST http://pollipi2.local:8000/stop
 ```
 
 `/status` は次の項目を JSON で返します。
@@ -669,7 +707,7 @@ curl -X POST http://zuizui2.local:8000/stop
   "interval_sec": 10.0,
   "capture_count": 3,
   "last_capture_time": "2026-05-26T14:30:10+09:00",
-  "last_image": "/home/zuizui0223/pollipi_timelapse/images/image_20260526_143010_123456.jpg",
+  "last_image": "/home/pi/pollipi_timelapse/images/image_20260526_143010_123456.jpg",
   "message": "Timelapse running."
 }
 ```
@@ -678,7 +716,7 @@ curl -X POST http://zuizui2.local:8000/stop
 
 The iPad PWA separates camera-angle checking from ROI selection.
 
-1. Open the PWA for a device, for example `http://zuizui.local:8000/app/`.
+1. Open the PWA for a device, for example `http://pollipi1.local:8000/app/`.
 2. Tap `画角を確認` to open the live low-power monitor.
 3. Adjust the camera so the focal flower/head is near the center of the image.
 4. Tap `この画角でOK`. PolliPi closes the live monitor and fetches a still frame from `/preview`.
@@ -733,7 +771,7 @@ files and set the NoIR service profile:
 
 ```powershell
 $env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
-.\deploy_pollipi_pi.ps1 -HostName zuizui3.local -Preset module3-noir-wide
+.\deploy_pollipi_pi.ps1 -HostName pollipi3.local -User pi -Preset module3-noir-wide -DeviceId pollipi3
 ```
 
 The script syncs only source files (`pollipi_api_server.py`, `README.md`, `imx500_detect_test.py`, and `web/`) and
@@ -744,17 +782,17 @@ then restarts `pollipi.service`. It does not copy captured images, logs, CSV eve
 New Raspberry Pi observation units can be added with the same backend and PWA. Use
 `DEVICE_ONBOARDING.md` as the short checklist for camera profiles, deployment, and endpoint verification.
 
-For the fifth daylight Camera Module 3 Wide unit:
+Example — adding a new daylight Camera Module 3 Wide unit as `pollipi4.local`:
 
 ```powershell
 $env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
-.\deploy_pollipi_pi.ps1 -HostName zuizui5.local -Preset module3-wide -DeviceId zuizui5 -InstallDependencies
+.\deploy_pollipi_pi.ps1 -HostName pollipi4.local -User pi -Preset module3-wide -DeviceId pollipi4 -InstallDependencies
 ```
 
-Expected `zuizui5.local` camera metadata:
+Expected camera metadata after setup:
 
 ```text
-POLLIPI_DEVICE_ID=zuizui5
+POLLIPI_DEVICE_ID=pollipi4
 POLLIPI_CAMERA_PROFILE=module3_wide_daylight
 POLLIPI_IS_AI_CAMERA=false
 POLLIPI_IS_NOIR=false

@@ -2,21 +2,21 @@
 
 This document describes how to add a new Raspberry Pi camera unit to the PolliPi field observer system.
 
-Use this when adding a new hostname such as `zuizui5.local`, `zuizui6.local`, etc.
+Use this when adding any new Pi — for example `pollipi2.local`, `pollipi3.local`, or any hostname you assign.
 
 ## 1. Decide the device role
 
-Before setup, decide the hostname and camera type.
+Before setup, decide the hostname, device ID, and camera type.
 
-Current known roles:
+Generic example fleet:
 
 | Hostname | Camera | Role |
 |---|---|---|
-| `zuizui.local` | Camera Module 3 Wide | standard daylight unit |
-| `zuizui2.local` | Raspberry Pi AI Camera | AI Camera comparison / detection-test unit |
-| `zuizui3.local` | Camera Module 3 NoIR Wide | NoIR / low-light / IR-capable unit |
-| `zuizui4.local` | Camera Module 3 / Module 3 Wide | standard daylight unit |
-| `zuizui5.local` | Camera Module 3 Wide | standard daylight unit |
+| `pollipi1.local` | Camera Module 3 Wide | standard daylight unit |
+| `pollipi2.local` | Raspberry Pi AI Camera | AI Camera comparison / detection-test unit |
+| `pollipi3.local` | Camera Module 3 NoIR Wide | NoIR / low-light / IR-capable unit |
+
+You can use any hostname that is unique on your network. The device ID (used in filenames and logs) defaults to the hostname without `.local`.
 
 Default rule:
 
@@ -26,13 +26,11 @@ Default rule:
 
 ## 2. Confirm SSH access
 
-From Windows PowerShell:
+From Windows PowerShell (replace `pi` with your username and `pollipi2.local` with the new hostname):
 
 ```powershell
-ssh zuizui0223@zuizui5.local
+ssh pi@pollipi2.local
 ```
-
-Replace `zuizui5.local` with the new hostname.
 
 If SSH does not work, first confirm:
 
@@ -60,60 +58,64 @@ Do not continue PolliPi setup until `rpicam-hello --timeout 3000` works.
 
 ## 4. Install or update PolliPi code
 
-### If this is a fresh Pi
+### Option A: install.sh on the Pi directly
+
+Copy files to the Pi and run:
 
 ```bash
-cd /home/zuizui0223
-git clone https://github.com/zuizui0223/raspberry-pi-camera-project.git pollipi_timelapse
-cd pollipi_timelapse
+scp pollipi_api_server.py install.sh setup_device.sh pi@pollipi2.local:~/pollipi_timelapse/
+ssh pi@pollipi2.local "bash ~/pollipi_timelapse/install.sh"
 ```
 
-### If the repository already exists
+### Option B: git clone on the Pi
 
 ```bash
-cd /home/zuizui0223/pollipi_timelapse
-git pull origin main
+ssh pi@pollipi2.local
+git clone https://github.com/YOUR_FORK/pollipi.git ~/pollipi_timelapse
+bash ~/pollipi_timelapse/install.sh
 ```
 
-### Windows deployment helper
+### Option C: Windows deployment helper
 
-From the Windows workspace, the deployment helper can copy source files, set the camera profile, run syntax checks, install the service, and restart PolliPi.
+From a Windows PC, the deployment helper copies source files, sets the camera profile, runs syntax checks, installs the service, and restarts PolliPi.
 
-Standard daylight Module 3 Wide example for `zuizui5.local`:
+Standard daylight Module 3 Wide example for `pollipi2.local`:
 
 ```powershell
 $env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
-.\deploy_pollipi_pi.ps1 -HostName zuizui5.local -Preset module3-wide -DeviceId zuizui5 -InstallDependencies
+.\deploy_pollipi_pi.ps1 -HostName pollipi2.local -User pi -Preset module3-wide -DeviceId pollipi2 -InstallDependencies
 ```
 
 After the first deployment, `-InstallDependencies` can usually be omitted:
 
 ```powershell
 $env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
-.\deploy_pollipi_pi.ps1 -HostName zuizui5.local -Preset module3-wide -DeviceId zuizui5
+.\deploy_pollipi_pi.ps1 -HostName pollipi2.local -User pi -Preset module3-wide -DeviceId pollipi2
 ```
 
-If `.local` name resolution is not working but the IP address is known, use the IP address for `-HostName` and keep `-DeviceId` as the intended stable device id:
+If `.local` name resolution is not working but the IP address is known:
 
 ```powershell
-.\deploy_pollipi_pi.ps1 -HostName 192.168.11.25 -Preset module3-wide -DeviceId zuizui5
+.\deploy_pollipi_pi.ps1 -HostName 192.168.1.25 -User pi -Preset module3-wide -DeviceId pollipi2
 ```
 
 ## 5. Configure device profile
 
-Create or edit the systemd drop-in file:
+The easiest way is to run `setup_device.sh` on the Pi — it writes the service and drop-in interactively.
+
+To configure manually, create or edit the systemd drop-in file:
 
 ```bash
 sudo mkdir -p /etc/systemd/system/pollipi.service.d
 sudo nano /etc/systemd/system/pollipi.service.d/camera-profile.conf
 ```
 
-### Module 3 Wide example: `zuizui5.local`
+### Module 3 Wide example: `pollipi2.local`
 
 ```ini
 [Service]
-Environment=POLLIPI_DEVICE_ID=zuizui5
-Environment="POLLIPI_DEVICE_NAME=Site Module 3 Wide 5"
+Environment=POLLIPI_DEVICE_ID=pollipi2
+Environment="POLLIPI_DEVICE_NAME=Site 2 Module 3 Wide"
 Environment="POLLIPI_CAMERA_LABEL=Module 3 Wide"
 Environment=POLLIPI_CAMERA_MODEL=imx708_wide
 Environment=POLLIPI_CAMERA_PROFILE=module3_wide_daylight
@@ -122,11 +124,11 @@ Environment=POLLIPI_IS_NOIR=false
 Environment=POLLIPI_IS_WIDE=true
 ```
 
-### AI Camera example: `zuizui2.local`
+### AI Camera example: `pollipi-ai.local`
 
 ```ini
 [Service]
-Environment=POLLIPI_DEVICE_ID=zuizui2
+Environment=POLLIPI_DEVICE_ID=pollipi-ai
 Environment="POLLIPI_DEVICE_NAME=AI Camera Unit"
 Environment="POLLIPI_CAMERA_LABEL=AI Camera"
 Environment=POLLIPI_CAMERA_MODEL=imx500
@@ -141,11 +143,11 @@ Important:
 - The default AI Camera model is not an insect classifier.
 - Treat AI Camera output as comparison / detection-test metadata unless a validated insect model is used.
 
-### NoIR Wide example: `zuizui3.local`
+### NoIR Wide example: `pollipi-noir.local`
 
 ```ini
 [Service]
-Environment=POLLIPI_DEVICE_ID=zuizui3
+Environment=POLLIPI_DEVICE_ID=pollipi-noir
 Environment="POLLIPI_DEVICE_NAME=NoIR Wide Unit"
 Environment="POLLIPI_CAMERA_LABEL=Module 3 NoIR Wide"
 Environment=POLLIPI_CAMERA_MODEL=imx708_noir_wide
@@ -169,7 +171,7 @@ If `pollipi.service` is not installed yet, create it:
 sudo nano /etc/systemd/system/pollipi.service
 ```
 
-Recommended service:
+Recommended service (replace `pi` with your username):
 
 ```ini
 [Unit]
@@ -178,9 +180,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=zuizui0223
-WorkingDirectory=/home/zuizui0223/pollipi_timelapse
-ExecStart=/usr/bin/python3 -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
+User=pi
+WorkingDirectory=/home/pi/pollipi_timelapse
+ExecStart=/home/pi/pollipi_timelapse/.venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
 Restart=always
 RestartSec=3
 
@@ -214,10 +216,10 @@ Expected:
 - `/status` returns JSON.
 - `/preview` returns JPEG image data.
 
-For Module 3 Wide `zuizui5.local`, expected metadata includes:
+For Module 3 Wide `pollipi2.local` with device ID `pollipi2`, expected metadata includes:
 
 ```json
-"device_id": "zuizui5",
+"device_id": "pollipi2",
 "camera_label": "Module 3 Wide",
 "camera_profile": "module3_wide_daylight",
 "is_ai_camera": false,
@@ -245,10 +247,10 @@ If `/preview_after_mjpeg.jpg` is ASCII text or says `Internal Server Error`, the
 
 ## 9. Check PWA from iPad
 
-Open:
+Open (replace `pollipi2.local` with your device hostname):
 
 ```text
-http://zuizui5.local:8000/app/
+http://pollipi2.local:8000/app/
 ```
 
 Field usability test:
@@ -294,11 +296,11 @@ Add a note like this to `HANDOFF.md`:
 Codex / Claude / ChatGPT / User
 
 ### Task
-Added new PolliPi device `zuizui5.local`.
+Added new PolliPi device `pollipi2.local`.
 
 ### What changed
 - Configured as Module 3 Wide daylight unit.
-- Set `DEVICE_ID=zuizui5`.
+- Set `DEVICE_ID=pollipi2`.
 - Set `CAMERA_PROFILE=module3_wide_daylight`.
 
 ### Tests run

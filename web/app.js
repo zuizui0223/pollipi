@@ -320,7 +320,7 @@ async function registerCamera(rawAddress, quiet = false) {
   try {
     baseUrl = resolveBaseUrl(rawAddress);
   } catch (_) {
-    if (!quiet) window.alert("観察機名を確認してください。例: zuizui0223@zuizui2");
+    if (!quiet) window.alert("観察機名を確認してください。例: pi@pollipi1");
     return null;
   }
   try {

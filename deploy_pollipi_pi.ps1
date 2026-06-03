@@ -2,12 +2,12 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$HostName,
 
-  [string]$User = "zuizui0223",
+  [string]$User = "pi",
 
   [ValidateSet("module3-wide", "module3-noir-wide", "ai-camera")]
-  [string]$Preset = "module3-noir-wide",
+  [string]$Preset = "module3-wide",
 
-  [string]$RemoteDir = "/home/zuizui0223/pollipi_timelapse",
+  [string]$RemoteDir = "",
 
   [string]$DeviceId = "",
 
@@ -15,6 +15,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $RemoteDir) {
+  $RemoteDir = "/home/$User/pollipi_timelapse"
+}
 
 $profiles = @{
   "module3-wide" = @{
@@ -59,7 +63,11 @@ $target = "$User@$HostName"
 $sourceFiles = @(
   ".\pollipi_api_server.py",
   ".\README.md",
+  ".\QUICKSTART.md",
   ".\DEVICE_ONBOARDING.md",
+  ".\TROUBLESHOOTING.md",
+  ".\install.sh",
+  ".\setup_device.sh",
   ".\imx500_detect_test.py",
   ".\web"
 )
