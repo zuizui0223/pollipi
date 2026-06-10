@@ -46,6 +46,9 @@ const galleryCount = document.querySelector("#gallery-count");
 const gallerySize = document.querySelector("#gallery-size");
 const galleryFolderPath = document.querySelector("#gallery-folder-path");
 const deleteAllImagesButton = document.querySelector("#delete-all-images");
+const gallerySelectToggle = document.querySelector("#gallery-select-toggle");
+const galleryBulkDeleteButton = document.querySelector("#gallery-bulk-delete");
+const gallerySelectedCount = document.querySelector("#gallery-selected-count");
 const downloadZipLink = document.querySelector("#download-zip");
 const allImagesTab = document.querySelector("#all-images-tab");
 const positiveImagesTab = document.querySelector("#positive-images-tab");
@@ -54,6 +57,9 @@ const eventCameraLabel = document.querySelector("#event-camera-label");
 const eventCount = document.querySelector("#event-count");
 const eventGrid = document.querySelector("#event-grid");
 const downloadEventLabelsLink = document.querySelector("#download-event-labels");
+const eventSelectToggle = document.querySelector("#event-select-toggle");
+const eventBulkDeleteButton = document.querySelector("#event-bulk-delete");
+const eventSelectedCount = document.querySelector("#event-selected-count");
 const eventTabs = {
   all: document.querySelector("#events-all-tab"),
   positive: document.querySelector("#events-positive-tab"),
@@ -67,10 +73,19 @@ const trainingMessage = document.querySelector("#training-message");
 const trainingStartButton = document.querySelector("#training-start");
 const trainingResetButton = document.querySelector("#training-reset");
 
+const adaptiveTLInput = document.querySelector("#adaptive-timelapse-mode");
+const adaptiveSettings = document.querySelector("#adaptive-settings");
+const adaptiveMinIntervalInput = document.querySelector("#adaptive-min-interval");
+const adaptiveWindowInput = document.querySelector("#adaptive-window");
+
 let cameras = loadCameras();
 let selectedGalleryCamera = null;
 let selectedCollection = "all";
 let selectedEventCategory = "all";
+let gallerySelectMode = false;
+let gallerySelectedFilenames = new Set();
+let eventSelectMode = false;
+let eventSelectedIds = new Set();
 
 function loadCameras() {
   try {
@@ -227,16 +242,21 @@ function getAutomaticSettings() {
     window.alert("motion_ratio は 0.0001 以上 1 以下で入力してください。");
     return null;
   }
+  const adaptiveMin = Number(adaptiveMinIntervalInput && adaptiveMinIntervalInput.value || 15);
+  const adaptiveWindow = Number(adaptiveWindowInput && adaptiveWindowInput.value || 300);
   return {
     auto_mode: autoModeInput.checked,
     motion_trigger_mode: motionTriggerInput.checked,
     hybrid_mode: hybridModeInput.checked,
     ml_assist_mode: mlAssistModeInput.checked,
     autonomous_mode: autonomousModeInput.checked,
+    adaptive_timelapse_mode: Boolean(adaptiveTLInput && adaptiveTLInput.checked),
     idle_interval_sec: idle,
     detection_interval_sec: detection,
     pixel_difference: Math.round(pixelDifference),
     motion_ratio: motionRatio,
+    adaptive_min_interval_sec: adaptiveMin,
+    adaptive_window_sec: adaptiveWindow,
   };
 }
 
@@ -1248,6 +1268,22 @@ async function refreshGallery() {
 function buildGalleryItem(camera, imageInfo) {
   const item = document.createElement("article");
   item.className = "gallery-item";
+  item.dataset.filename = imageInfo.filename;
+
+  // Issue #2: selection checkbox
+  if (gallerySelectMode) {
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "gallery-select-cb";
+    cb.checked = gallerySelectedFilenames.has(imageInfo.filename);
+    cb.addEventListener("change", () => {
+      if (cb.checked) gallerySelectedFilenames.add(imageInfo.filename);
+      else gallerySelectedFilenames.delete(imageInfo.filename);
+      updateGalleryBulkUI();
+    });
+    item.append(cb);
+  }
+
   const image = document.createElement("img");
   image.src = `${camera.baseUrl}${imageInfo.url}`;
   image.alt = imageInfo.filename;
@@ -1347,23 +1383,69 @@ async function refreshEvents() {
 function buildEventItem(camera, eventInfo) {
   const item = document.createElement("article");
   const category = eventInfo.final_category || "unclear";
+  const reviewStatus = eventInfo.review_status || "motion_candidate";
   item.className = `event-item category-${category}`;
-  const image = document.createElement("img");
-  image.src = eventInfo.image_url ? `${camera.baseUrl}${eventInfo.image_url}` : "";
-  image.alt = eventInfo.image_filename || eventInfo.event_id;
-  image.loading = "lazy";
+  item.dataset.eventId = eventInfo.event_id || "";
+
+  // Issue #3: handle missing image gracefully
+  const imageWrap = document.createElement("div");
+  imageWrap.className = "event-image-wrap";
+  if (eventInfo.image_url) {
+    const image = document.createElement("img");
+    image.src = `${camera.baseUrl}${eventInfo.image_url}`;
+    image.alt = eventInfo.image_filename || eventInfo.event_id || "image";
+    image.loading = "lazy";
+    image.onerror = () => {
+      image.style.display = "none";
+      const placeholder = document.createElement("p");
+      placeholder.className = "event-image-missing";
+      placeholder.textContent = "画像なし";
+      imageWrap.append(placeholder);
+    };
+    imageWrap.append(image);
+  } else {
+    const placeholder = document.createElement("p");
+    placeholder.className = "event-image-missing";
+    placeholder.textContent = "画像なし";
+    imageWrap.append(placeholder);
+  }
+
+  // Issue #3: warn when event_id is missing
+  if (!eventInfo.event_id) {
+    const warn = document.createElement("p");
+    warn.className = "event-id-warning";
+    warn.textContent = "⚠ event_id が見つかりません（fallbackを使用）";
+    item.append(warn);
+  }
+
   const meta = document.createElement("div");
   meta.className = "event-meta";
   const source = eventInfo.category_source || "auto";
-  const reviewStatus = eventInfo.review_status || "auto_grouped";
+  // Issue #1: show "motion_candidate" for unreviewed, "reviewed" for reviewed
+  const displayStatus = reviewStatus === "motion_candidate" ? "motion_candidate (未レビュー)" : reviewStatus;
   meta.innerHTML = `
     <strong>${eventInfo.timestamp || "-"}</strong>
-    <span class="category-badge ${category}">${category} / ${source} / ${reviewStatus}</span>
+    <span class="category-badge ${category} ${reviewStatus}">${category} / ${source} / ${displayStatus}</span>
     <span>${eventInfo.device_name || camera.camera_label} / ${eventInfo.camera_profile || "-"}</span>
     <span>site ${eventInfo.site_id || "-"} / flower ${eventInfo.flower_id || "-"} / plant ${eventInfo.plant_species || "-"}</span>
     <span>motion ${eventInfo.motion_score || "-"} / changed ${eventInfo.changed_area_ratio || "-"} / blob ${eventInfo.largest_blob_ratio || "-"}</span>
     <span>wind ${eventInfo.wind_like_motion || "-"} / type ${eventInfo.motion_type || "-"} / auto ${eventInfo.auto_category || "-"}</span>
   `;
+
+  // Issue #2: selection checkbox
+  if (eventSelectMode) {
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "event-select-cb";
+    cb.checked = eventSelectedIds.has(eventInfo.event_id);
+    cb.addEventListener("change", () => {
+      if (cb.checked) eventSelectedIds.add(eventInfo.event_id);
+      else eventSelectedIds.delete(eventInfo.event_id);
+      updateEventBulkUI();
+    });
+    item.append(cb);
+  }
+
   const form = document.createElement("div");
   form.className = "event-review-form";
   const taxon = document.createElement("input");
@@ -1382,10 +1464,12 @@ function buildEventItem(camera, eventInfo) {
   notes.value = eventInfo.manual_notes || "";
   const actions = document.createElement("div");
   actions.className = "event-review-actions";
+  const hasId = Boolean(eventInfo.event_id);
   [["insect", "Positive"], ["non_insect", "Negative"], ["unclear", "Unclear"]].forEach(([value, text]) => {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = text;
+    button.disabled = !hasId;
     button.className = `quick-label ${eventInfo.manual_label === value ? "selected-label" : ""}`;
     button.addEventListener("click", () => {
       saveEventReview(camera, eventInfo.event_id, {
@@ -1398,7 +1482,7 @@ function buildEventItem(camera, eventInfo) {
     actions.append(button);
   });
   form.append(taxon, reason, notes, actions);
-  item.append(image, meta, form);
+  item.append(imageWrap, meta, form);
   return item;
 }
 
@@ -1479,6 +1563,68 @@ async function deleteAllImages() {
   }
 }
 
+function updateGalleryBulkUI() {
+  const count = gallerySelectedFilenames.size;
+  if (gallerySelectedCount) gallerySelectedCount.textContent = count;
+  if (galleryBulkDeleteButton) galleryBulkDeleteButton.style.display = count > 0 ? "" : "none";
+}
+
+function updateEventBulkUI() {
+  const count = eventSelectedIds.size;
+  if (eventSelectedCount) eventSelectedCount.textContent = count;
+  if (eventBulkDeleteButton) eventBulkDeleteButton.style.display = count > 0 ? "" : "none";
+}
+
+async function galleryBulkDelete() {
+  const camera = selectedGalleryCamera;
+  if (!camera || gallerySelectedFilenames.size === 0) return;
+  if (!window.confirm(`選択した ${gallerySelectedFilenames.size} 枚の画像を削除しますか？`)) return;
+  galleryBulkDeleteButton.disabled = true;
+  try {
+    const result = await apiRequest(camera, "/images/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filenames: [...gallerySelectedFilenames] }),
+    });
+    gallerySelectedFilenames.clear();
+    window.alert(`${result.deleted_count} 枚を削除しました。`);
+    await Promise.all([refreshCamera(camera), refreshGallery()]);
+  } catch (error) {
+    window.alert(`削除できませんでした: ${error.message}`);
+  } finally {
+    galleryBulkDeleteButton.disabled = false;
+    updateGalleryBulkUI();
+  }
+}
+
+async function eventBulkDelete() {
+  const camera = selectedGalleryCamera;
+  if (!camera || eventSelectedIds.size === 0) return;
+  const scope = window.prompt(
+    "削除スコープを選択してください:\n1: event_only（イベント行のみ）\n2: event_and_images（イベント+画像）\n3: event_images_labels（イベント+画像+ラベル）\n\n1, 2, または 3 を入力:",
+    "1"
+  );
+  const scopeMap = { "1": "event_only", "2": "event_and_images", "3": "event_images_labels" };
+  const resolvedScope = scopeMap[scope] || "event_only";
+  if (!window.confirm(`選択した ${eventSelectedIds.size} 件のイベントを削除しますか？（スコープ: ${resolvedScope}）`)) return;
+  eventBulkDeleteButton.disabled = true;
+  try {
+    const result = await apiRequest(camera, "/events/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_ids: [...eventSelectedIds], scope: resolvedScope }),
+    });
+    eventSelectedIds.clear();
+    window.alert(`${result.deleted_count} 件のイベントを削除しました。`);
+    await refreshEvents();
+  } catch (error) {
+    window.alert(`削除できませんでした: ${error.message}`);
+  } finally {
+    eventBulkDeleteButton.disabled = false;
+    updateEventBulkUI();
+  }
+}
+
 function selectExclusiveMode(selectedInput) {
   if (selectedInput.checked) {
     [autoModeInput, motionTriggerInput, hybridModeInput].forEach((input) => {
@@ -1498,6 +1644,9 @@ function updateAutomaticControls() {
     : motionTriggerInput.checked
     ? "低解像度で動きを見て、候補が出た時だけ保存します。"
     : "背景差分で候補がない時は間隔を長くし、候補があれば短くします。";
+  if (adaptiveSettings) {
+    adaptiveSettings.style.display = (adaptiveTLInput && adaptiveTLInput.checked) ? "" : "none";
+  }
 }
 
 deviceForm.addEventListener("submit", async (event) => {
@@ -1528,6 +1677,27 @@ Object.entries(eventTabs).forEach(([category, button]) => {
 deleteAllImagesButton.addEventListener("click", deleteAllImages);
 trainingStartButton.addEventListener("click", startTraining);
 trainingResetButton.addEventListener("click", resetTrainingModel);
+if (adaptiveTLInput) adaptiveTLInput.addEventListener("change", updateAutomaticControls);
+if (gallerySelectToggle) {
+  gallerySelectToggle.addEventListener("click", () => {
+    gallerySelectMode = !gallerySelectMode;
+    gallerySelectedFilenames.clear();
+    gallerySelectToggle.textContent = gallerySelectMode ? "選択モード解除" : "選択モード";
+    if (galleryBulkDeleteButton) galleryBulkDeleteButton.style.display = "none";
+    refreshGallery();
+  });
+}
+if (galleryBulkDeleteButton) galleryBulkDeleteButton.addEventListener("click", galleryBulkDelete);
+if (eventSelectToggle) {
+  eventSelectToggle.addEventListener("click", () => {
+    eventSelectMode = !eventSelectMode;
+    eventSelectedIds.clear();
+    eventSelectToggle.textContent = eventSelectMode ? "選択モード解除" : "選択モード";
+    if (eventBulkDeleteButton) eventBulkDeleteButton.style.display = "none";
+    refreshEvents();
+  });
+}
+if (eventBulkDeleteButton) eventBulkDeleteButton.addEventListener("click", eventBulkDelete);
 
 async function initialize() {
   updateAutomaticControls();
