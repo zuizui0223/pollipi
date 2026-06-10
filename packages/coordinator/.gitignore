@@ -1,0 +1,8 @@
+wwwroot
+config.yaml
+*.db
+*.sqlite
+root_pwd.txt
+__pycache__/
+*.pyc
+.pytest_cache/

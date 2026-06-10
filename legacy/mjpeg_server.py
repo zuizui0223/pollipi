@@ -1,6 +1,11 @@
+"""
+Usage: 
+
+
 mkdir -p ~/camera_stream
 cd ~/camera_stream
 nano mjpeg_server.py
+"""
 
 #!/usr/bin/python3
 import io
