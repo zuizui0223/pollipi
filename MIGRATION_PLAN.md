@@ -21,6 +21,26 @@
 - 部署脚本和文档仍以根目录 `pollipi_api_server.py`、`web/`、`uvicorn pollipi_api_server:app` 为中心。
 - GitHub Actions 目前只有通用 Python syntax check 和模板 PyPI publish workflow。
 
+## 2026-06-10 审计状态
+
+已完成或已补齐：
+
+- `packages/server/src/visit_monitor_server` 已拆出 app factory、config、API router、schema、routes、services、adapters，原占位端点不再挂到新 app。
+- 旧 API surface 的主要路径已在新 router 中恢复：`/start`、`/stop`、`/status`、`/device`、`/system`、`/latest`、`/preview`、`/mjpeg`、`/roi/suggest`、`/images`、`/exports/images.zip`、`/events`、`/training/*`。
+- 已新增 fake-camera HTTP smoke test，覆盖 `/device`、`/status`、`/start`、`/images`、`/latest`、`/training/status`、`/stop`。
+- 已新增 `visit_monitor_server.distribution.bundle_single_file`，可生成 `dist/pollipi_api_server.py`，产物暴露 `app` 并支持直接运行。
+- `.github/workflows/server-ci.yml` 已覆盖 Python compile、pytest fake-camera smoke、单文件构建、单文件 compile、单文件 fake-camera smoke、artifact 上传、Pi self-hosted smoke。
+- `packages/web` 的 Preact 组件/state/API client 已接到 `app.tsx`，不再停留在 scaffold 首屏；gallery、event review、training 的异步加载已改为 effect 驱动。
+- `pnpm check:web`、`pnpm build:web`、`pytest packages/server`、单文件 bundle smoke 在本地通过。
+
+仍未完成：
+
+- 根目录 `pollipi_api_server.py` 仍是旧手写迁移来源，尚未替换为构建产物或兼容 shim。
+- 根目录 `web/` 仍是旧前端来源，尚未删除、归档或改为 `packages/web/dist` 的发布产物。
+- `install.sh`、`setup_device.sh`、`deploy_pollipi_pi.ps1`、`README.md`、`QUICKSTART.md`、`DEVICE_ONBOARDING.md` 尚未全面切换到 artifact/install flow。
+- CI/CD 的 CD job 仍主要发布后端单文件，尚未同时构建并上传 web build。
+- Raspberry Pi 真实 Picamera2/IMX500 路径仍需要 self-hosted Pi runner 或实机验证。
+
 ## 迁移原则
 
 - 先保留行为，再换结构。旧单文件作为对照物，迁移后用 smoke/API 测试确认关键路径。

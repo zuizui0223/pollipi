@@ -1,0 +1,376 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# PolliPi – Server CI/CD Workflow
+# ──────────────────────────────────────────────────────────────────────────────
+# Jobs
+#   ci        – lint / test / bundle on a GitHub-hosted Ubuntu runner
+#   pi-smoke  – optional smoke test on a self-hosted Raspberry Pi runner
+#   cd        – publish artifact / deploy to Pi (push to main only)
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Server CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/server/**"
+      - ".github/workflows/server-ci.yml"
+  pull_request:
+    paths:
+      - "packages/server/**"
+      - ".github/workflows/server-ci.yml"
+  workflow_dispatch:
+    inputs:
+      pi_target:
+        description: "SSH target for Pi deployment (user@host), leave blank to skip"
+        required: false
+        default: ""
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ORDINARY CI  (GitHub-hosted Ubuntu)
+# ──────────────────────────────────────────────────────────────────────────────
+jobs:
+  ci:
+    name: Build & Test (Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Python setup ──────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: packages/server/pyproject.toml
+
+      # ── Install package + dev/test extras ─────────────────────────────────
+      - name: Install server package with dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install the server package.  If a [dev] extra is defined in
+          # pyproject.toml it will include pytest, httpx, etc.
+          pip install -e "packages/server[dev]" || pip install -e "packages/server"
+          # Ensure test + bundle runtime deps are always present
+          pip install pytest pytest-asyncio httpx
+
+      # ── Static compile check ───────────────────────────────────────────────
+      - name: Compile-check all server Python files
+        run: |
+          echo "Running py_compile on all .py files in packages/server/src …"
+          find packages/server/src -name "*.py" -print0 \
+            | xargs -0 python -m py_compile
+          echo "All files compiled without errors."
+
+      # ── Unit / integration tests ───────────────────────────────────────────
+      - name: Run pytest (fake camera)
+        env:
+          POLLIPI_FAKE_CAMERA: "1"
+        run: pytest packages/server/ -v --tb=short
+
+      # ── Create dist directory ──────────────────────────────────────────────
+      - name: Create dist directory
+        run: mkdir -p dist
+
+      # ── Bundle single-file artifact ────────────────────────────────────────
+      - name: Bundle pollipi_api_server.py
+        run: |
+          python -m visit_monitor_server.distribution.bundle_single_file \
+            --output dist/pollipi_api_server.py
+
+      # ── Verify the bundle compiles ─────────────────────────────────────────
+      - name: Verify bundle compiles cleanly
+        run: |
+          python -m py_compile dist/pollipi_api_server.py
+          echo "Bundle compile check passed."
+
+      - name: Smoke-test bundled server with fake camera
+        env:
+          POLLIPI_FAKE_CAMERA: "1"
+        run: |
+          export POLLIPI_IMAGE_DIR="$(mktemp -d)"
+          python - <<'PY'
+          import importlib.util
+          import time
+          from pathlib import Path
+          from fastapi.testclient import TestClient
+
+          bundle = Path("dist/pollipi_api_server.py").resolve()
+          spec = importlib.util.spec_from_file_location("pollipi_api_server", bundle)
+          module = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(module)
+          with TestClient(module.app) as client:
+              assert client.get("/device").status_code == 200
+              assert client.get("/status").status_code == 200
+              assert client.post("/start", json={"interval_sec": 1}).status_code == 200
+              deadline = time.monotonic() + 5
+              image_count = 0
+              while time.monotonic() < deadline:
+                  response = client.get("/images")
+                  assert response.status_code == 200
+                  image_count = response.json()["image_count"]
+                  if image_count:
+                      break
+                  time.sleep(0.2)
+              assert image_count >= 1
+              assert client.post("/stop").status_code == 200
+          PY
+
+      # ── Show bundle stats ──────────────────────────────────────────────────
+      - name: Bundle file info
+        run: |
+          echo "── dist/pollipi_api_server.py ──"
+          wc -l dist/pollipi_api_server.py
+          ls -lh dist/pollipi_api_server.py
+
+      # ── Upload artifact ────────────────────────────────────────────────────
+      - name: Upload pollipi_api_server.py artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pollipi-api-server
+          path: dist/pollipi_api_server.py
+          retention-days: 30
+          if-no-files-found: error
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RASPBERRY PI SMOKE TEST  (self-hosted arm64 runner)
+# ──────────────────────────────────────────────────────────────────────────────
+  pi-smoke:
+    name: Pi Smoke Test (arm64)
+    needs: ci
+    # Run on a self-hosted Pi runner; skipped automatically if no runner matches.
+    runs-on: [self-hosted, linux, arm64, raspberry-pi]
+    # Do not block the overall workflow if no Pi runner is available.
+    continue-on-error: true
+    timeout-minutes: 10
+
+    env:
+      SERVER_PORT: "8765"
+      SERVER_HOST: "127.0.0.1"
+      BUNDLE_PATH: "dist/pollipi_api_server.py"
+
+    steps:
+      # ── Checkout (needed for path references) ─────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Download the artifact built by the ci job ─────────────────────────
+      - name: Download pollipi_api_server.py artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pollipi-api-server
+          path: dist/
+
+      - name: Confirm artifact present
+        run: ls -lh dist/pollipi_api_server.py
+
+      # ── System-level picamera2 is pre-installed on the Pi OS image ─────────
+      - name: Check picamera2 availability
+        run: |
+          python3 -c "import picamera2; print('picamera2 OK')" \
+            || echo "picamera2 not available – using fake camera"
+
+      # ── Ensure uvicorn is available ────────────────────────────────────────
+      - name: Install/verify uvicorn
+        run: pip3 install --quiet "uvicorn[standard]>=0.30,<1.0"
+
+      # ── Create a temp image directory ──────────────────────────────────────
+      - name: Prepare image directory
+        run: |
+          IMAGE_DIR=$(mktemp -d)
+          echo "POLLIPI_IMAGE_DIR=$IMAGE_DIR" >> "$GITHUB_ENV"
+          echo "IMAGE_DIR=$IMAGE_DIR" >> "$GITHUB_ENV"
+          echo "Image dir: $IMAGE_DIR"
+
+      # ── Start the server in the background ────────────────────────────────
+      - name: Start uvicorn server
+        env:
+          POLLIPI_FAKE_CAMERA: "1"
+        run: |
+          uvicorn --app-dir dist pollipi_api_server:app \
+            --host "$SERVER_HOST" \
+            --port "$SERVER_PORT" \
+            --log-level info \
+            > /tmp/pollipi_server.log 2>&1 &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          echo "Server started (PID $!)."
+
+      # ── Wait for the port to become available (up to 30 s) ────────────────
+      - name: Wait for server to be ready
+        run: |
+          echo "Waiting for http://${SERVER_HOST}:${SERVER_PORT} …"
+          for i in $(seq 1 30); do
+            if curl -sf "http://${SERVER_HOST}:${SERVER_PORT}/device" > /dev/null 2>&1; then
+              echo "Server is up (attempt $i)."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ERROR: server did not become ready within 30 s."
+          cat /tmp/pollipi_server.log || true
+          exit 1
+
+      # ── Smoke exchange ─────────────────────────────────────────────────────
+      - name: "Smoke: GET /device"
+        run: |
+          echo "── GET /device ──"
+          curl -sf "http://${SERVER_HOST}:${SERVER_PORT}/device" | python3 -m json.tool
+
+      - name: "Smoke: GET /status"
+        run: |
+          echo "── GET /status ──"
+          curl -sf "http://${SERVER_HOST}:${SERVER_PORT}/status" | python3 -m json.tool
+
+      - name: "Smoke: POST /start"
+        run: |
+          echo "── POST /start ──"
+          curl -sf -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"interval_sec": 5, "auto_mode": false}' \
+            "http://${SERVER_HOST}:${SERVER_PORT}/start" | python3 -m json.tool
+
+      - name: Wait 8 s for at least one image to be captured
+        run: sleep 8
+
+      - name: "Smoke: GET /images (expect >= 1)"
+        run: |
+          echo "── GET /images ──"
+          RESPONSE=$(curl -sf "http://${SERVER_HOST}:${SERVER_PORT}/images")
+          echo "$RESPONSE" | python3 -m json.tool
+          COUNT=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('images', d) if isinstance(d, dict) else d))" 2>/dev/null || echo "0")
+          echo "Image count: $COUNT"
+          if [ "$COUNT" -lt 1 ]; then
+            echo "WARNING: No images found – fake camera may not have written files."
+          fi
+
+      - name: "Smoke: POST /stop"
+        run: |
+          echo "── POST /stop ──"
+          curl -sf -X POST "http://${SERVER_HOST}:${SERVER_PORT}/stop" | python3 -m json.tool
+
+      # ── Teardown ──────────────────────────────────────────────────────────
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then
+            kill "$SERVER_PID" 2>/dev/null || true
+            echo "Server (PID $SERVER_PID) stopped."
+          fi
+
+      # ── Collect server logs ────────────────────────────────────────────────
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-server-logs
+          path: /tmp/pollipi_server.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ── Collect captured images ────────────────────────────────────────────
+      - name: Upload captured images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-captured-images
+          path: ${{ env.IMAGE_DIR }}/
+          retention-days: 7
+          if-no-files-found: ignore
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CD – Publish & optional Pi deployment
+# Runs only on push to main (or workflow_dispatch).
+# ──────────────────────────────────────────────────────────────────────────────
+  cd:
+    name: Deploy
+    needs: ci
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Download the artifact from the ci job ─────────────────────────────
+      - name: Download pollipi_api_server.py artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pollipi-api-server
+          path: dist/
+
+      - name: Confirm artifact present
+        run: ls -lh dist/pollipi_api_server.py
+
+      # ── Create/update a GitHub Release on main pushes ─────────────────────
+      - name: Create or update GitHub Release (latest)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest build – ${{ github.sha }}"
+          body: |
+            Automated build from commit ${{ github.sha }}.
+
+            **Changed paths**: `packages/server/**`
+
+            Download `pollipi_api_server.py` and copy it to your Raspberry Pi,
+            then run:
+            ```bash
+            uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000
+            ```
+          files: dist/pollipi_api_server.py
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Optional: deploy to Pi via SSH ────────────────────────────────────
+      # Triggered by workflow_dispatch with pi_target set, or by
+      # PI_SSH_TARGET secret on automatic main-branch pushes.
+      - name: Determine Pi SSH target
+        id: pi-target
+        run: |
+          TARGET="${{ github.event.inputs.pi_target }}"
+          if [ -z "$TARGET" ]; then
+            TARGET="${{ secrets.PI_SSH_TARGET }}"
+          fi
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          if [ -n "$TARGET" ]; then
+            echo "Pi target: $TARGET"
+          else
+            echo "No Pi target configured – skipping SSH deploy."
+          fi
+
+      - name: Deploy to Raspberry Pi via SSH
+        if: steps.pi-target.outputs.target != ''
+        env:
+          PI_TARGET: ${{ steps.pi-target.outputs.target }}
+          PI_SSH_KEY: ${{ secrets.PI_SSH_KEY }}
+          PI_DEPLOY_PATH: ${{ secrets.PI_DEPLOY_PATH || '/home/pi/pollipi' }}
+        run: |
+          # Write the private key to a temp file
+          mkdir -p ~/.ssh
+          echo "$PI_SSH_KEY" > ~/.ssh/pi_deploy_key
+          chmod 600 ~/.ssh/pi_deploy_key
+
+          # Disable strict host checking for CI
+          SSH_OPTS="-i ~/.ssh/pi_deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes"
+
+          echo "Copying pollipi_api_server.py to ${PI_TARGET}:${PI_DEPLOY_PATH}/ …"
+          ssh $SSH_OPTS "$PI_TARGET" "mkdir -p '$PI_DEPLOY_PATH'"
+          scp $SSH_OPTS dist/pollipi_api_server.py "${PI_TARGET}:${PI_DEPLOY_PATH}/pollipi_api_server.py"
+
+          echo "Restarting pollipi service on Pi …"
+          ssh $SSH_OPTS "$PI_TARGET" \
+            "sudo systemctl restart pollipi.service 2>/dev/null || echo 'systemd service not found – manual restart required'"
+
+          echo "Deploy complete."

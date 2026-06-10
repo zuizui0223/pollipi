@@ -1,27 +1,31 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+"""CLI entry point for the PolliPi visit-monitor server.
 
-from visit_monitor_server import __version__
-from visit_monitor_server.api import router
+This module creates the FastAPI ``app`` at module level so that uvicorn
+can be pointed at it directly:
 
+    uvicorn visit_monitor_server.main:app --host 0.0.0.0 --port 8000
 
-def create_app() -> FastAPI:
-    app = FastAPI(
-        title="Visit Monitor Server",
-        version=__version__,
-        description="Device backend for field monitoring of insect visitation.",
-    )
+It also exposes a ``main()`` function for use as a console-scripts entry point.
+"""
+from __future__ import annotations
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+import uvicorn  # type: ignore
 
-    app.include_router(router)
-    return app
+from visit_monitor_server.app import create_app
 
-
+# Module-level app instance (required for uvicorn's import syntax)
 app = create_app()
+
+
+def main() -> None:
+    """Start the server via the console-scripts entry point."""
+    uvicorn.run(
+        "visit_monitor_server.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+    )
+
+
+if __name__ == "__main__":
+    main()

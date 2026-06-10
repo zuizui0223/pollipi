@@ -1,0 +1,34 @@
+import { h } from 'preact';
+import { cameras } from '../state/devices';
+import { selectedGalleryCamera } from '../state/gallery';
+import { DeviceCard } from './DeviceCard';
+import * as s from '../styles/components.css';
+
+interface Props {
+  onRefresh: () => Promise<void>;
+}
+
+export function DeviceGrid({ onRefresh }: Props) {
+  const cameraList = cameras.value;
+
+  if (cameraList.length === 0) {
+    return (
+      <section class={s.cameraGrid} aria-label="観察機の状態">
+        <p class={s.cameraEmpty}>観察機を追加してください。</p>
+      </section>
+    );
+  }
+
+  return (
+    <section class={s.cameraGrid} aria-label="観察機の状態">
+      {cameraList.map((camera, index) => (
+        <DeviceCard
+          key={camera.baseUrl}
+          camera={camera}
+          index={index}
+          onUpdated={onRefresh}
+        />
+      ))}
+    </section>
+  );
+}
