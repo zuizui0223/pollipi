@@ -62,6 +62,11 @@
               <label class="auto-toggle"><input id="hybrid-mode" type="checkbox"><span>研究用: 定間隔 + 動いた時に追加撮影</span></label>
               <label class="auto-toggle"><input id="autonomous-mode" type="checkbox"><span>自律運行（通信が切れても継続）</span></label>
               <label class="auto-toggle"><input id="ml-assist-mode" type="checkbox"><span>保存写真を positive / negative に仮分類</span></label>
+              <label class="auto-toggle"><input id="adaptive-timelapse-mode" type="checkbox"><span>適応型タイムラプス（候補が多い時に間隔を短縮）</span></label>
+              <div id="adaptive-settings" style="display:none">
+                <label>最小間隔 <input id="adaptive-min-interval" type="number" min="1" max="3600" value="15" inputmode="numeric"> 秒</label>
+                <label>適応ウィンドウ <input id="adaptive-window" type="number" min="60" max="3600" value="300" inputmode="numeric"> 秒</label>
+              </div>
             </div>
           </details>
         </div>
@@ -97,6 +102,8 @@
           </div>
           <div class="gallery-switch" id="gallery-switch" role="group" aria-label="観察機選択"></div>
           <a class="download-zip disabled" id="download-zip" href="#" download>ZIP保存</a>
+          <button class="secondary" id="gallery-select-toggle" type="button">選択モード</button>
+          <button class="danger" id="gallery-bulk-delete" type="button" style="display:none">選択を削除 (<span id="gallery-selected-count">0</span>)</button>
           <button class="danger delete-all" id="delete-all-images" type="button">全画像を削除</button>
         </div>
         <div class="collection-switch" role="group" aria-label="表示フォルダ">
@@ -121,6 +128,8 @@
             <p class="hint">候補を自動で Positive / Negative / Unclear に分けます。間違っているものだけ修正してください。</p>
           </div>
           <a class="download-zip disabled" id="download-event-labels" href="#" download>Export labels CSV</a>
+          <button class="secondary" id="event-select-toggle" type="button">選択モード</button>
+          <button class="danger" id="event-bulk-delete" type="button" style="display:none">選択を削除 (<span id="event-selected-count">0</span>)</button>
         </div>
         <div class="folder-summary">
           <span id="event-camera-label">観察機未選択</span>

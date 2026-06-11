@@ -138,6 +138,9 @@ class StartRequest(BaseModel):
     detection_interval_sec: float = Field(default=3, ge=1, le=3600)
     pixel_difference: int = Field(default=30, ge=1, le=255)
     motion_ratio: float = Field(default=0.01, ge=0.0001, le=1)
+    adaptive_timelapse_mode: bool = False
+    adaptive_min_interval_sec: float = Field(default=15, ge=1, le=3600)
+    adaptive_window_sec: float = Field(default=300, ge=60, le=3600)
 
 
 class StatusResponse(BaseModel):
@@ -263,6 +266,15 @@ class DeleteAllRequest(BaseModel):
 class DeleteAllResponse(BaseModel):
     deleted_count: int
     message: str
+
+
+class BulkDeleteImagesRequest(BaseModel):
+    filenames: list[str]
+
+
+class BulkDeleteEventsRequest(BaseModel):
+    event_ids: list[str]
+    scope: str = "event_only"
 
 
 class LabelRequest(BaseModel):
@@ -832,6 +844,7 @@ class TimelapseController:
     def _capture_loop(self, stop_event: threading.Event, request: StartRequest) -> None:
         camera = None
         background = None
+        _adaptive_candidates: list[float] = []
         try:
             from picamera2 import Picamera2
 
@@ -857,6 +870,59 @@ class TimelapseController:
             next_scheduled_time = time.monotonic()
             while not stop_event.is_set():
                 captured_at = datetime.now().astimezone()
+                if request.adaptive_timelapse_mode:
+                    with self._camera_lock:
+                        frame = camera.capture_array("lores")
+                    metrics, insect_candidate, background = self._detect_motion_with_tracking(
+                        frame,
+                        background,
+                        request.pixel_difference,
+                        request.motion_ratio,
+                        roi,
+                        roi_tracker,
+                        request,
+                    )
+                    score = metrics["motion_score"]
+                    filename = captured_at.strftime("adaptive_%Y%m%d_%H%M%S_%f.jpg")
+                    image_path = self.image_dir / filename
+                    with self._camera_lock:
+                        camera.capture_file(str(image_path))
+                    if insect_candidate:
+                        _adaptive_candidates.append(time.monotonic())
+                        self._write_event_log(captured_at, image_path, metrics, request)
+                        interval_reason = "Motion candidate detected; adaptive interval shortened."
+                    else:
+                        interval_reason = "No candidate; adaptive timelapse continuing."
+                    now = time.monotonic()
+                    _adaptive_candidates[:] = [t for t in _adaptive_candidates if now - t <= request.adaptive_window_sec]
+                    if _adaptive_candidates:
+                        next_interval = request.adaptive_min_interval_sec
+                    else:
+                        next_interval = request.interval_sec
+                    self._write_metric(
+                        captured_at, image_path, next_interval, score, metrics,
+                        insect_candidate, interval_reason, request,
+                    )
+                    self._label_captured_image(
+                        image_path, "positive" if insect_candidate else "negative", request.ml_assist_mode,
+                    )
+                    with self._lock:
+                        self.capture_count += 1
+                        self.interval_sec = next_interval
+                        self.last_capture_time = captured_at.isoformat(timespec="seconds")
+                        self.last_image = str(image_path)
+                        self.message = "Adaptive timelapse running."
+                        self.motion_score = score
+                        self._update_motion_metrics_unlocked(metrics)
+                        self.insect_candidate = insect_candidate
+                        self.interval_reason = interval_reason
+                        if insect_candidate:
+                            self.detection_count += 1
+                            self.event_count += 1
+                    if stop_event.wait(next_interval):
+                        break
+                    continue
+
                 if request.hybrid_mode:
                     with self._camera_lock:
                         frame = camera.capture_array("lores")
@@ -2126,9 +2192,13 @@ def read_event_rows() -> list[dict[str, str]]:
         return []
     with EVENT_LOG_PATH.open("r", newline="", encoding="utf-8") as csv_file:
         rows = [dict(row) for row in csv.DictReader(csv_file)]
-    for row in rows:
+    for i, row in enumerate(rows):
         for column in EVENT_LOG_COLUMNS:
             row.setdefault(column, "")
+        if not row.get("event_id"):
+            ts = row.get("timestamp", "").replace(":", "").replace(" ", "_")
+            fname = row.get("image_filename", "")
+            row["event_id"] = f"fallback-{ts}-{fname}-{i}" if (ts or fname) else f"fallback-{i}"
         filename = row.get("image_filename", "")
         row["image_url"] = f"/images/{filename}" if filename else ""
         add_event_categories(row)
@@ -2192,7 +2262,7 @@ def add_event_categories(row: dict[str, str]) -> dict[str, str]:
     row["auto_category"] = auto_category
     row["final_category"] = final_category
     row["category_source"] = category_source
-    row["review_status"] = "reviewed" if manual_label else "auto_grouped"
+    row["review_status"] = "reviewed" if manual_label else "motion_candidate"
     row["final_label"] = final_category
     return row
 
@@ -2630,3 +2700,44 @@ def delete_all_images(request: DeleteAllRequest) -> DeleteAllResponse:
                     path.unlink()
     controller.clear_latest_if_deleted()
     return DeleteAllResponse(deleted_count=len(image_paths), message="All images deleted.")
+
+
+@app.post("/images/bulk-delete", response_model=DeleteAllResponse)
+def bulk_delete_images(request: BulkDeleteImagesRequest) -> DeleteAllResponse:
+    if not request.filenames:
+        raise HTTPException(status_code=400, detail="No filenames specified.")
+    deleted = 0
+    for filename in request.filenames:
+        try:
+            path = image_file(filename, "all")
+            controller._remove_label(path.name)
+            path.unlink()
+            controller.clear_latest_if_deleted(path)
+            deleted += 1
+        except HTTPException:
+            pass
+    return DeleteAllResponse(deleted_count=deleted, message=f"{deleted} image(s) deleted.")
+
+
+@app.post("/events/bulk-delete", response_model=DeleteAllResponse)
+def bulk_delete_events(request: BulkDeleteEventsRequest) -> DeleteAllResponse:
+    if request.scope not in {"event_only", "event_and_images", "event_images_labels"}:
+        raise HTTPException(status_code=400, detail="scope must be event_only, event_and_images, or event_images_labels.")
+    if not request.event_ids:
+        raise HTTPException(status_code=400, detail="No event_ids specified.")
+    rows = read_event_rows()
+    id_set = set(request.event_ids)
+    to_delete = [row for row in rows if row.get("event_id") in id_set]
+    remaining = [row for row in rows if row.get("event_id") not in id_set]
+    if request.scope in {"event_and_images", "event_images_labels"}:
+        for row in to_delete:
+            filename = row.get("image_filename", "")
+            if filename:
+                path = IMAGE_DIR / filename
+                if path.is_file():
+                    if request.scope == "event_images_labels":
+                        controller._remove_label(filename)
+                    path.unlink(missing_ok=True)
+                    controller.clear_latest_if_deleted(path)
+    write_event_rows(remaining)
+    return DeleteAllResponse(deleted_count=len(to_delete), message=f"{len(to_delete)} event(s) deleted.")
