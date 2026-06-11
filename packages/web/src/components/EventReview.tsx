@@ -5,7 +5,7 @@ import { selectedGalleryCamera } from '../state/gallery';
 import { selectedEventCategory } from '../state/events';
 import type { EventCategory } from '../state/events';
 import { cameras } from '../state/devices';
-import { fetchEvents, saveEventReview } from '../api/client';
+import { deviceUrl, fetchEvents, saveEventReview } from '../api/client';
 import type { EventInfo } from '../api/types';
 import * as s from '../styles/components.css';
 
@@ -25,7 +25,7 @@ export function EventReview() {
       return;
     }
     try {
-      const resp = await fetchEvents(camera.baseUrl, category);
+      const resp = await fetchEvents(camera, category);
       events.value = resp.events;
       eventCount.value = resp.event_count;
       loadError.value = '';
@@ -47,7 +47,7 @@ export function EventReview() {
   ) {
     if (!camera) return;
     try {
-      await saveEventReview(camera.baseUrl, eventId, {
+      await saveEventReview(camera, eventId, {
         manual_label: manualLabel,
         manual_taxon: taxon,
         false_positive_reason: manualLabel === 'non_insect' ? reason : '',
@@ -59,7 +59,7 @@ export function EventReview() {
     }
   }
 
-  const exportHref = camera ? `${camera.baseUrl}/events/export_labels.csv` : undefined;
+  const exportHref = camera ? deviceUrl(camera, '/events/export_labels.csv') : undefined;
 
   return (
     <section class={s.eventReviewPanel} aria-label="event review">
@@ -147,7 +147,7 @@ function EventItem({ camera, event: ev, onLabel }: EventItemProps) {
       ? s.categoryNegative
       : s.categoryUnclear;
 
-  const imgSrc = ev.image_url ? `${camera.baseUrl}${ev.image_url}` : '';
+  const imgSrc = ev.image_url ? deviceUrl(camera, ev.image_url) : '';
 
   return (
     <article class={`${s.eventItem}`}>

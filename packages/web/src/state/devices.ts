@@ -18,6 +18,9 @@ function initCamera(raw: Partial<Camera>): Camera {
   const camera: Camera = {
     address: raw.address || '',
     baseUrl: raw.baseUrl || '',
+    apiPathPrefix: raw.apiPathPrefix,
+    coordinator_device_id: raw.coordinator_device_id,
+    managed_by_coordinator: Boolean(raw.managed_by_coordinator),
     device_id: raw.device_id || '',
     device_name: raw.device_name || '',
     camera_label: raw.camera_label || 'PolliPi Camera',
@@ -85,7 +88,10 @@ export function updateCameraRef(camera: Camera): void {
 export function addOrReplaceCamera(camera: Camera): void {
   const list = [..._cameras.value];
   const existing = list.findIndex(
-    (item) => item.baseUrl === camera.baseUrl || item.device_id === camera.device_id,
+    (item) =>
+      (camera.coordinator_device_id && item.coordinator_device_id === camera.coordinator_device_id) ||
+      item.baseUrl === camera.baseUrl ||
+      item.device_id === camera.device_id,
   );
   syncWorkflowAliases(camera);
   if (existing >= 0) list[existing] = camera;
@@ -94,8 +100,14 @@ export function addOrReplaceCamera(camera: Camera): void {
   saveCameras(list);
 }
 
-export function removeCamera(baseUrl: string): void {
-  const list = _cameras.value.filter((c) => c.baseUrl !== baseUrl);
+export function removeCamera(cameraOrBaseUrl: Camera | string): void {
+  const list = _cameras.value.filter((c) => {
+    if (typeof cameraOrBaseUrl === 'string') return c.baseUrl !== cameraOrBaseUrl;
+    if (cameraOrBaseUrl.coordinator_device_id) {
+      return c.coordinator_device_id !== cameraOrBaseUrl.coordinator_device_id;
+    }
+    return c.baseUrl !== cameraOrBaseUrl.baseUrl;
+  });
   _cameras.value = list;
   saveCameras(list);
 }

@@ -1,8 +1,10 @@
 from typing import Union, Optional
 
 import asyncio
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from constants import Codes, getDescription
 
@@ -22,7 +24,24 @@ class TokenResponseModel(BaseResponseModel):
 
 # app
 
-app = FastAPI()
+startup_tasks = []
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    for task in startup_tasks:
+        await task()
+    yield
+
+
+app = FastAPI(title="PolliPi Coordinator API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/api", response_model_exclude_none=True)

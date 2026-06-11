@@ -12,6 +12,41 @@ export interface DeviceInfo {
   is_wide: boolean;
 }
 
+export interface CoordinatorUser {
+  email: string;
+  username: string;
+  group: string;
+}
+
+export interface CoordinatorAuthResponse {
+  access_token?: string;
+  tokens?: Record<string, string>;
+  user?: CoordinatorUser;
+}
+
+export interface CoordinatorDevice {
+  id: number;
+  address: string;
+  base_url: string;
+  api_path_prefix: string;
+  device_id: string;
+  device_name: string;
+  display_name: string;
+  camera_label: string;
+  camera_model: string;
+  camera_profile: string;
+  is_ai_camera: boolean;
+  is_noir: boolean;
+  is_wide: boolean;
+  last_status?: StatusResponse | null;
+  last_error?: string | null;
+  last_seen_at?: string | null;
+}
+
+export interface CoordinatorDeviceList {
+  devices: CoordinatorDevice[];
+}
+
 /** Status returned by GET /status, POST /start, POST /stop */
 export interface StatusResponse {
   device_id: string;
@@ -125,6 +160,9 @@ export interface DeleteImagesResponse {
 export interface Camera {
   address: string;
   baseUrl: string;
+  apiPathPrefix?: string;
+  coordinator_device_id?: number;
+  managed_by_coordinator?: boolean;
   device_id: string;
   device_name: string;
   camera_label: string;

@@ -127,6 +127,8 @@ async def get_current_user(
     token_type: Optional[str] = None,
     hard: bool = True,
 ) -> Optional[User]:
+    if not token:
+        token = request.query_params.get("access_token") or request.cookies.get("pollipi_access_token") or ""
     user, is_authorized = await verify_and_authorize_token(token, token_type)
 
     guest_flag = token_type is not None and hasAccess(UserGroup.Guest, token_type)

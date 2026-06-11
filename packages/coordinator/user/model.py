@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta
 
@@ -17,7 +16,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     pw_hash: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -80,37 +79,27 @@ guest_user = User(
 )
 
 
-def initialize_db():
-    async def _init():
-        from utils.db import engine
-
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(select(User).where(User.email == "__root__"))
-            if result.scalar_one_or_none() is None:
-                root_pw = str(uuid.uuid1())
-                session.add(
-                    User(
-                        email="__root__",
-                        username="root",
-                        pw_hash=f.encode_password(root_pw),
-                        updated_at=datetime.now(tz=timezone.utc),
-                        tokens_valid_after=datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(seconds=5),
-                        group=UserGroup.Root,
-                    )
-                )
-                await session.commit()
-                import os
-                root_pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "root_pwd.txt")
-                with open(root_pwd_path, "w") as fp:
-                    fp.write(root_pw)
-
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(_init())
-    except RuntimeError:
-        asyncio.run(_init())
+async def ensure_root_user() -> None:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.email == "__root__"))
+        if result.scalar_one_or_none() is not None:
+            return
+        root_pw = str(uuid.uuid1())
+        session.add(
+            User(
+                email="__root__",
+                username="root",
+                pw_hash=f.encode_password(root_pw),
+                updated_at=datetime.now(tz=timezone.utc),
+                tokens_valid_after=datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(seconds=5),
+                group=UserGroup.Root,
+            )
+        )
+        await session.commit()
+        import os
+        root_pwd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "root_pwd.txt")
+        with open(root_pwd_path, "w", encoding="utf-8") as fp:
+            fp.write(root_pw)
 
 
 async def create_user(

@@ -1,7 +1,7 @@
 import os
 from fastapi.logger import logger
 from dotenv import load_dotenv
-from pydantic import BaseModel, field_serializer, Field, validator
+from pydantic import BaseModel, field_serializer, Field, field_validator
 from pydantic_yaml import parse_yaml_file_as, to_yaml_file
 from datetime import timedelta
 from typing import Dict, Union, List
@@ -31,9 +31,11 @@ class AppConfigModel(BaseModel):
     def serialize_timedelta(self, delta: timedelta):
         return create_timedelta_str(delta)
 
-    @validator("AccessTokenExpires", "RefreshTokenExpires", pre=True)
+    @field_validator("AccessTokenExpires", "RefreshTokenExpires", mode="before")
     @classmethod
     def validate_timedelta(cls, delta: str):
+        if isinstance(delta, timedelta):
+            return delta
         return parse_timedelta(delta)
 
 

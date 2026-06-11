@@ -7,6 +7,7 @@ import { postStart, postStop } from './api/client';
 import type { Camera, StartPayload } from './api/types';
 import { DeviceForm } from './components/DeviceForm';
 import { DeviceGrid } from './components/DeviceGrid';
+import { CoordinatorPanel } from './components/CoordinatorPanel';
 import { EventReview } from './components/EventReview';
 import { FieldControls } from './components/FieldControls';
 import { Gallery } from './components/Gallery';
@@ -86,7 +87,7 @@ export function App() {
     }
     syncLabel.value = '全機を開始しています...';
     const results = await Promise.allSettled(
-      cameras.map((camera) => postStart(camera.baseUrl, startPayloadFor(camera))),
+      cameras.map((camera) => postStart(camera, startPayloadFor(camera))),
     );
     const rejected = results.filter((result) => result.status === 'rejected');
     syncLabel.value = rejected.length
@@ -98,7 +99,7 @@ export function App() {
     const cameras = getCameras();
     if (cameras.length === 0) return;
     syncLabel.value = '全機を停止しています...';
-    const results = await Promise.allSettled(cameras.map((camera) => postStop(camera.baseUrl)));
+    const results = await Promise.allSettled(cameras.map((camera) => postStop(camera)));
     const rejected = results.filter((result) => result.status === 'rejected');
     syncLabel.value = rejected.length
       ? `${rejected.length} 台を停止できませんでした`
@@ -127,6 +128,7 @@ export function App() {
           onStopAll={stopAll}
           onReviewEvents={focusEventReview}
         />
+        <CoordinatorPanel />
         <DeviceForm onCameraAdded={refreshWorkspace} />
         <DeviceGrid onRefresh={refreshWorkspace} />
         <Gallery />
@@ -140,4 +142,3 @@ export function App() {
     </>
   );
 }
-

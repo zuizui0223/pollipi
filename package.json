@@ -9,6 +9,7 @@
     "build:server": "pnpm --filter @visit-monitor/server build",
     "test:server": "pnpm --filter @visit-monitor/server test",
     "dev:coordinator": "pnpm --filter @visit-monitor/coordinator dev",
-    "start:coordinator": "pnpm --filter @visit-monitor/coordinator start"
+    "start:coordinator": "pnpm --filter @visit-monitor/coordinator start",
+    "test:coordinator": "cd packages/coordinator && pytest -q"
   }
 }

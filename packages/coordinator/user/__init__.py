@@ -1,14 +1,11 @@
-import asyncio
-
 from fastapi import Depends, HTTPException
 from fastapi.responses import Response
-from fastapi.security import OAuth2PasswordRequestForm
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from constants import Codes, getDescription, getDescriptionHttp
 from config import AppConfig
-from user.model import User, create_user, authenticate_user, initialize_db
+from user.model import User, create_user, authenticate_user
 from user.auth import create_jwt_token, CurrentUser
 
 from base import app, BaseResponseModel, TokenResponseModel
@@ -48,6 +45,7 @@ class UserProfileResponseModel(BaseResponseModel):
 @app.post("/api/user/login", response_model_exclude_none=True)
 async def login(
     form_data: LoginForm,
+    response: Response,
 ) -> TokenResponseModel:
     email = form_data.username
     password = form_data.password
@@ -58,6 +56,20 @@ async def login(
         assert user is not None
         refresh_token = create_jwt_token(user, Token.Refresh, AppConfig.RefreshTokenExpires)
         access_token = create_jwt_token(user, Token.Access.General, AppConfig.AccessTokenExpires)
+        response.set_cookie(
+            "pollipi_access_token",
+            access_token,
+            max_age=int(AppConfig.AccessTokenExpires.total_seconds()),
+            httponly=False,
+            samesite="lax",
+        )
+        response.set_cookie(
+            "pollipi_refresh_token",
+            refresh_token,
+            max_age=int(AppConfig.RefreshTokenExpires.total_seconds()),
+            httponly=True,
+            samesite="lax",
+        )
         return TokenResponseModel(
             access_token=access_token,
             tokens={str(Token.Refresh): refresh_token}
@@ -70,9 +82,17 @@ async def login(
 
 @app.post("/api/user/refresh", response_model_exclude_none=True)
 async def refresh(
+    response: Response,
     user: User = Depends(CurrentUser(Token.Refresh)),
 ) -> TokenResponseModel:
     access_token = create_jwt_token(user, Token.Access.General, AppConfig.AccessTokenExpires)
+    response.set_cookie(
+        "pollipi_access_token",
+        access_token,
+        max_age=int(AppConfig.AccessTokenExpires.total_seconds()),
+        httponly=False,
+        samesite="lax",
+    )
     return TokenResponseModel(
         access_token=access_token,
     )
@@ -126,6 +146,3 @@ async def change_info(
 
     code_upd = await user.set_username(form_data.username, True)
     return BaseResponseModel(**getDescriptionHttp(code_upd))
-
-
-initialize_db()

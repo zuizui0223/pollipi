@@ -19,7 +19,7 @@ import {
   motionRatio,
   getSessionMetadata,
 } from '../state/session';
-import { postStart, postStop, fetchStatus, fetchSystem } from '../api/client';
+import { deviceUrl, postStart, postStop, fetchStatus, fetchSystem } from '../api/client';
 import { RoiEditor } from './RoiEditor';
 import * as s from '../styles/components.css';
 
@@ -171,7 +171,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     monitoring.value = false;
     busy.value = true;
     try {
-      const result = await postStart(camera.baseUrl, payload as any);
+      const result = await postStart(camera, payload as any);
       camera.previousImage = null;
       status.value = result;
       updateFromStatus(result);
@@ -186,7 +186,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     monitoring.value = false;
     busy.value = true;
     try {
-      const result = await postStop(camera.baseUrl);
+      const result = await postStop(camera);
       status.value = result;
       updateFromStatus(result);
     } catch (err: unknown) {
@@ -221,7 +221,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
           imgReady.value = true;
           hasImage.value = true;
         };
-        img.src = `${camera.baseUrl}/latest?capture=${encodeURIComponent(st.last_capture_time || String(Date.now()))}`;
+        img.src = deviceUrl(camera, `/latest?capture=${encodeURIComponent(st.last_capture_time || String(Date.now()))}`);
         camera.previousImage = st.last_image;
       }
     } else if (!st.last_image) {
@@ -237,11 +237,11 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
 
   async function refreshCamera() {
     try {
-      const st = await fetchStatus(camera.baseUrl) as StatusResponse;
+      const st = await fetchStatus(camera) as StatusResponse;
       updateFromStatus(st);
       // system info
       try {
-        const sys = await fetchSystem(camera.baseUrl);
+        const sys = await fetchSystem(camera);
         storage.value = `${formatBytes(sys.storage_free_bytes)} 空き`;
         power.value = sys.undervoltage_now ? '電圧低下中' : sys.undervoltage_occurred ? '電圧低下履歴' : '電圧OK';
       } catch (_) {
@@ -308,7 +308,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       monitoring.value = false;
       message.value = '画面を取得できません';
     };
-    img.src = `${camera.baseUrl}/mjpeg?detect=${ai ? 'true' : 'false'}&t=${Date.now()}`;
+    img.src = deviceUrl(camera, `/mjpeg?detect=${ai ? 'true' : 'false'}&t=${Date.now()}`);
   }
 
   function stopMonitor() {
@@ -318,7 +318,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     const img = imageRef.current;
     if (!img) return;
     if (st && st.last_image) {
-      img.src = `${camera.baseUrl}/latest?capture=${encodeURIComponent(st.last_capture_time || String(Date.now()))}`;
+      img.src = deviceUrl(camera, `/latest?capture=${encodeURIComponent(st.last_capture_time || String(Date.now()))}`);
     } else {
       imgReady.value = false;
       hasImage.value = false;
@@ -413,7 +413,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
 
   function handleRemove() {
     if (!confirm(`${camera.camera_label} の登録をこの iPad から削除しますか？\n撮影画像は Raspberry Pi に残ります。`)) return;
-    removeCamera(camera.baseUrl);
+    removeCamera(camera);
     onUpdated();
   }
 

@@ -20,7 +20,7 @@ export function TrainingPanel() {
   async function load() {
     if (!camera) return;
     try {
-      const status = await fetchTrainingStatus(camera.baseUrl);
+      const status = await fetchTrainingStatus(camera);
       trainingStatus.value = status;
       trainingMsg.value = status.message;
     } catch (err: unknown) {
@@ -37,7 +37,7 @@ export function TrainingPanel() {
     if (!confirm(`${camera.camera_label} の positive / negative を使って再学習しますか？`)) return;
     busy.value = true;
     try {
-      await apiStartTraining(camera.baseUrl);
+      await apiStartTraining(camera);
       await load();
     } catch (err: unknown) {
       alert(`再学習できませんでした: ${(err as Error).message}`);
@@ -51,7 +51,7 @@ export function TrainingPanel() {
     if (!confirm(`${camera.camera_label} の学習済みモデルを破棄しますか？`)) return;
     busy.value = true;
     try {
-      await apiResetTraining(camera.baseUrl);
+      await apiResetTraining(camera);
       await load();
     } catch (err: unknown) {
       alert(`モデルを破棄できませんでした: ${(err as Error).message}`);

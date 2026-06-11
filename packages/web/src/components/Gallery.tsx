@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import { selectedGalleryCamera, selectedCollection } from '../state/gallery';
 import { cameras } from '../state/devices';
-import { fetchImages, deleteImage, labelImage, deleteAllImages } from '../api/client';
+import { deviceUrl, fetchImages, deleteImage, labelImage, deleteAllImages } from '../api/client';
 import type { ImageInfo, ImagesResponse } from '../api/types';
 import { formatCaptureTime, formatBytes } from '../lib/formatting';
 import * as s from '../styles/components.css';
@@ -30,7 +30,7 @@ export function Gallery() {
       return;
     }
     try {
-      const resp = await fetchImages(camera.baseUrl, collection);
+      const resp = await fetchImages(camera, collection);
       images.value = resp.images;
       imageCount.value = resp.image_count;
       totalSize.value = resp.total_size_bytes;
@@ -49,7 +49,7 @@ export function Gallery() {
   async function handleLabel(filename: string, label: string) {
     if (!camera) return;
     try {
-      await labelImage(camera.baseUrl, filename, label);
+      await labelImage(camera, filename, label);
       await load();
     } catch (err: unknown) {
       alert(`ラベルを保存できませんでした: ${(err as Error).message}`);
@@ -60,7 +60,7 @@ export function Gallery() {
     if (!camera) return;
     if (!confirm(`${camera.camera_label} のこの写真を削除しますか？\n${filename}`)) return;
     try {
-      await deleteImage(camera.baseUrl, filename);
+      await deleteImage(camera, filename);
       await load();
     } catch (err: unknown) {
       alert(`削除できませんでした: ${(err as Error).message}`);
@@ -77,7 +77,7 @@ export function Gallery() {
     if (!confirm(`${camera.camera_label} の${count}保存画像をすべて削除しますか？\n\n削除後は元に戻せません。`)) return;
     deletingAll.value = true;
     try {
-      const result = await deleteAllImages(camera.baseUrl);
+      const result = await deleteAllImages(camera);
       alert(`${result.deleted_count} 枚を削除しました。`);
       await load();
     } catch (err: unknown) {
@@ -88,7 +88,7 @@ export function Gallery() {
   }
 
   const zipHref = camera
-    ? `${camera.baseUrl}/exports/images.zip?collection=${collection}`
+    ? deviceUrl(camera, `/exports/images.zip?collection=${collection}`)
     : undefined;
   const zipLabel =
     collection === 'all' ? '全画像とログをZIP保存' : `${collection} をZIP保存`;
@@ -105,8 +105,16 @@ export function Gallery() {
         <div class={s.gallerySwitch} role="group" aria-label="観察機選択">
           {cameraList.map((cam) => (
             <button
-              key={cam.baseUrl}
-              class={`${s.galleryTab}${camera && camera.baseUrl === cam.baseUrl ? ' ' + s.galleryTabSelected : ''}`}
+              key={cam.coordinator_device_id ? `coordinator-${cam.coordinator_device_id}` : cam.baseUrl}
+              class={`${s.galleryTab}${
+                camera &&
+                (
+                  (cam.coordinator_device_id && camera.coordinator_device_id === cam.coordinator_device_id) ||
+                  (!cam.coordinator_device_id && camera.baseUrl === cam.baseUrl)
+                )
+                  ? ' ' + s.galleryTabSelected
+                  : ''
+              }`}
               type="button"
               onClick={() => {
                 selectedGalleryCamera.value = cam;
@@ -178,12 +186,15 @@ export function Gallery() {
                 : imageCategory === 'negative'
                 ? s.labelNegative
                 : s.labelUnclear;
-            const downloadUrl = `${camera.baseUrl}${img.url}${img.url.includes('?') ? '&' : '?'}download=true`;
+            const downloadUrl = deviceUrl(
+              camera,
+              `${img.url}${img.url.includes('?') ? '&' : '?'}download=true`,
+            );
             return (
               <article key={img.filename} class={s.galleryItem}>
                 <img
                   class={s.galleryItemImg}
-                  src={`${camera.baseUrl}${img.url}`}
+                  src={deviceUrl(camera, img.url)}
                   alt={img.filename}
                   loading="lazy"
                 />

@@ -23,7 +23,7 @@ export function DeviceGrid({ onRefresh }: Props) {
     <section class={s.cameraGrid} aria-label="観察機の状態">
       {cameraList.map((camera, index) => (
         <DeviceCard
-          key={camera.baseUrl}
+          key={camera.coordinator_device_id ? `coordinator-${camera.coordinator_device_id}` : camera.baseUrl}
           camera={camera}
           index={index}
           onUpdated={onRefresh}

@@ -14,6 +14,9 @@ export function saveCameras(cameras: Camera[]): void {
   const persistent = cameras.map((camera) => ({
     address: camera.address,
     baseUrl: camera.baseUrl,
+    apiPathPrefix: camera.apiPathPrefix,
+    coordinator_device_id: camera.coordinator_device_id,
+    managed_by_coordinator: Boolean(camera.managed_by_coordinator),
     device_id: camera.device_id,
     device_name: camera.device_name,
     camera_label: camera.camera_label,

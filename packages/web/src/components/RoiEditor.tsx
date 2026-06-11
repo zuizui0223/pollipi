@@ -2,6 +2,7 @@ import { h } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import type { Camera } from '../api/types';
+import { deviceUrl } from '../api/client';
 import type { RoiRect, DisplayRect, DragPoint, DragMode } from '../lib/roi';
 import {
   normalizeRoi,
@@ -59,7 +60,7 @@ export function RoiEditor({ camera, onRoiAccepted, onRedraw, onCancel, onReadjus
     if (!img) return;
     imgReady.value = false;
     loadError.value = false;
-    img.src = `${camera.baseUrl}/preview?t=${Date.now()}`;
+    img.src = deviceUrl(camera, `/preview?t=${Date.now()}`);
   }, [camera.baseUrl]);
 
   // When editingRoi changes, update the box position
