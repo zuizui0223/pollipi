@@ -779,3 +779,14 @@ export const trainingMetricsCell = style({
   background: '#f4f4ee',
   padding: '10px',
 });
+
+export const galleryItemSelected = style({
+  outline: '4px solid var(--leaf)',
+  outlineOffset: '-4px',
+});
+
+export const eventItemSelected = style({
+  outline: '4px solid var(--leaf)',
+  outlineOffset: '-4px',
+});
+

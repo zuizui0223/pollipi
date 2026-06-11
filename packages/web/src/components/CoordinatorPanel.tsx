@@ -1,4 +1,5 @@
 import { h } from 'preact';
+import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 
 import {
@@ -17,41 +18,29 @@ import {
   coordinatorOnline,
   coordinatorUser,
 } from '../state/coordinator';
-import { getCameras, initCamera, setCameras } from '../state/devices';
+import { getCameras, initCamera, setCameras, coordinatorDeviceToCamera, syncDevices } from '../state/devices';
 import { selectedGalleryCamera } from '../state/gallery';
 import * as s from '../styles/components.css';
 
-function coordinatorDeviceToCamera(baseUrl: string, device: CoordinatorDevice): Camera {
-  return initCamera({
-    address: device.address,
-    baseUrl,
-    apiPathPrefix: device.api_path_prefix,
-    coordinator_device_id: device.id,
-    managed_by_coordinator: true,
-    device_id: device.device_id,
-    device_name: device.device_name,
-    camera_label: device.display_name || device.camera_label,
-    camera_model: device.camera_model,
-    camera_profile: device.camera_profile,
-    is_ai_camera: device.is_ai_camera,
-    is_noir: device.is_noir,
-    is_wide: device.is_wide,
-  });
-}
-
-async function syncDevices(baseUrl: string): Promise<number> {
-  const devices = await fetchCoordinatorDevices(baseUrl);
-  const coordinatorCameras = devices.map((device) => coordinatorDeviceToCamera(baseUrl, device));
-  const localCameras = getCameras().filter((camera) => !camera.managed_by_coordinator);
-  setCameras([...localCameras, ...coordinatorCameras]);
-  if (!selectedGalleryCamera.value && coordinatorCameras[0]) {
-    selectedGalleryCamera.value = coordinatorCameras[0];
-  }
-  return coordinatorCameras.length;
-}
-
 export function CoordinatorPanel() {
   const busy = useSignal(false);
+
+  useEffect(() => {
+    async function autoSync() {
+      if (coordinatorOnline.value && coordinatorBaseUrl.value) {
+        try {
+          const baseUrl = coordinatorBaseUrl.value.replace(/\/+$/, '');
+          coordinatorUser.value = await coordinatorMe(baseUrl);
+          const count = await syncDevices(baseUrl);
+          coordinatorMessage.value = `Coordinator connected. Synced ${count} device${count === 1 ? '' : 's'}.`;
+        } catch (err: any) {
+          coordinatorOnline.value = false;
+          coordinatorMessage.value = `Coordinator sync failed: ${err.message}`;
+        }
+      }
+    }
+    void autoSync();
+  }, []);
   const email = useSignal('');
   const username = useSignal('');
   const password = useSignal('');
@@ -140,6 +129,8 @@ export function CoordinatorPanel() {
     coordinatorUser.value = null;
     coordinatorOnline.value = false;
     coordinatorMessage.value = 'Coordinator token cleared.';
+    const localCameras = getCameras().filter((camera) => !camera.managed_by_coordinator);
+    setCameras(localCameras);
   }
 
   return (

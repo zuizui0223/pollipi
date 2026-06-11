@@ -13,8 +13,12 @@ from visit_monitor_server.api.schemas.events import (
     EventLabelRequest,
     EventLabelResponse,
     EventListResponse,
+    BulkDeleteEventsRequest,
 )
-from visit_monitor_server.config import FALSE_POSITIVE_REASONS
+from visit_monitor_server.api.schemas.images import DeleteAllResponse
+from visit_monitor_server.config import FALSE_POSITIVE_REASONS, IMAGE_DIR
+from visit_monitor_server.services import get_controller
+from visit_monitor_server.services.image_store import remove_label
 from visit_monitor_server.services.event_log import read_event_rows, write_event_rows
 
 router = APIRouter(tags=["events"])
@@ -108,3 +112,27 @@ def export_event_labels() -> Response:
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=event_labels.csv"},
     )
+
+
+@router.post("/events/bulk-delete", response_model=DeleteAllResponse)
+def bulk_delete_events(request: BulkDeleteEventsRequest) -> DeleteAllResponse:
+    if request.scope not in {"event_only", "event_and_images", "event_images_labels"}:
+        raise HTTPException(status_code=400, detail="scope must be event_only, event_and_images, or event_images_labels.")
+    if not request.event_ids:
+        raise HTTPException(status_code=400, detail="No event_ids specified.")
+    rows = read_event_rows()
+    id_set = set(request.event_ids)
+    to_delete = [row for row in rows if row.get("event_id") in id_set]
+    remaining = [row for row in rows if row.get("event_id") not in id_set]
+    if request.scope in {"event_and_images", "event_images_labels"}:
+        for row in to_delete:
+            filename = row.get("image_filename", "")
+            if filename:
+                path = IMAGE_DIR / filename
+                if path.is_file():
+                    if request.scope == "event_images_labels":
+                        remove_label(filename)
+                    path.unlink(missing_ok=True)
+                    get_controller().clear_latest_if_deleted(path)
+    write_event_rows(remaining)
+    return DeleteAllResponse(deleted_count=len(to_delete), message=f"{len(to_delete)} event(s) deleted.")

@@ -26,3 +26,9 @@ class EventLabelResponse(BaseModel):
     manual_notes: str
     reviewed_at: str
     message: str
+
+
+class BulkDeleteEventsRequest(BaseModel):
+    event_ids: list[str]
+    scope: str = "event_only"
+

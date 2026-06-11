@@ -1,7 +1,9 @@
 import { signal, computed } from '@preact/signals';
-import type { Camera } from '../api/types';
+import { fetchCoordinatorDevices } from '../api/client';
+import type { Camera, CoordinatorDevice } from '../api/types';
 import { loadCameras, saveCameras } from '../lib/storage';
 import { normalizeRoi } from '../lib/roi';
+import { selectedGalleryCamera } from './gallery';
 
 function syncWorkflowAliases(camera: Camera): Camera {
   const confirmedROI = normalizeRoi(camera.roi);
@@ -114,6 +116,69 @@ export function removeCamera(cameraOrBaseUrl: Camera | string): void {
 
 export function persistCameras(): void {
   saveCameras(_cameras.value);
+}
+
+function sameCamera(left: Camera, right: Camera): boolean {
+  if (left.coordinator_device_id && right.coordinator_device_id) {
+    return left.coordinator_device_id === right.coordinator_device_id;
+  }
+  if (left.managed_by_coordinator || right.managed_by_coordinator) {
+    return left.device_id === right.device_id && left.device_id !== '';
+  }
+  return left.baseUrl === right.baseUrl || left.device_id === right.device_id;
+}
+
+export function coordinatorDeviceToCamera(
+  baseUrl: string,
+  device: CoordinatorDevice,
+  previous?: Camera,
+): Camera {
+  return initCamera({
+    address: device.address,
+    baseUrl,
+    apiPathPrefix: device.api_path_prefix,
+    coordinator_device_id: device.id,
+    managed_by_coordinator: true,
+    device_id: device.device_id,
+    device_name: device.device_name,
+    camera_label: device.display_name || device.camera_label,
+    camera_model: device.camera_model,
+    camera_profile: device.camera_profile,
+    is_ai_camera: device.is_ai_camera,
+    is_noir: device.is_noir,
+    is_wide: device.is_wide,
+    roi: previous?.roi || null,
+    angle_confirmed: Boolean(previous?.angle_confirmed),
+    roi_stale: Boolean(previous?.roi_stale || previous?.roi_pending),
+    roi_tracking: Boolean(previous?.roi_tracking),
+    roi_search_margin: previous?.roi_search_margin || 30,
+    roi_tracking_min_score: previous?.roi_tracking_min_score || 0.45,
+  });
+}
+
+export async function syncDevices(baseUrl: string): Promise<number> {
+  const devices = await fetchCoordinatorDevices(baseUrl);
+  const previousCameras = _cameras.value;
+  const coordinatorCameras = devices.map((device) => {
+    const previous = previousCameras.find((camera) =>
+      camera.coordinator_device_id === device.id ||
+      camera.device_id === device.device_id ||
+      camera.address === device.address,
+    );
+    return coordinatorDeviceToCamera(baseUrl, device, previous);
+  });
+  const localCameras = previousCameras.filter((camera) => !camera.managed_by_coordinator);
+  const nextCameras = [...localCameras, ...coordinatorCameras];
+  setCameras(nextCameras);
+
+  const selected = selectedGalleryCamera.value;
+  if (selected) {
+    selectedGalleryCamera.value = nextCameras.find((camera) => sameCamera(camera, selected)) || null;
+  }
+  if (!selectedGalleryCamera.value && coordinatorCameras[0]) {
+    selectedGalleryCamera.value = coordinatorCameras[0];
+  }
+  return coordinatorCameras.length;
 }
 
 export { syncWorkflowAliases, initCamera };

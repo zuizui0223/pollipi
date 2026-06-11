@@ -375,9 +375,65 @@ def run_capture_loop(
 
         import time as _time
 
+        _adaptive_candidates: list[float] = []
         next_scheduled_time = _time.monotonic()
         while not stop_event.is_set():
             captured_at = datetime.now().astimezone()
+
+            # ---- Adaptive timelapse mode ------------------------------------
+            if request.adaptive_timelapse_mode:
+                with camera_lock:
+                    frame = camera.capture_array("lores")
+                metrics, insect_candidate, background = _detect_motion_with_tracking(
+                    frame, background,
+                    request.pixel_difference, request.motion_ratio,
+                    roi, roi_tracker, request,
+                )
+                score = metrics["motion_score"]
+                filename = captured_at.strftime("adaptive_%Y%m%d_%H%M%S_%f.jpg")
+                image_path = image_dir / filename
+                with camera_lock:
+                    camera.capture_file(str(image_path))
+                
+                if insect_candidate:
+                    _adaptive_candidates.append(_time.monotonic())
+                    _write_event_log(captured_at, image_path, metrics, request)
+                    interval_reason = "Motion candidate detected; adaptive interval shortened."
+                else:
+                    interval_reason = "No candidate; adaptive timelapse continuing."
+                
+                now = _time.monotonic()
+                _adaptive_candidates[:] = [t for t in _adaptive_candidates if now - t <= request.adaptive_window_sec]
+                if _adaptive_candidates:
+                    next_interval = request.adaptive_min_interval_sec
+                else:
+                    next_interval = request.interval_sec
+
+                _write_metric(
+                    captured_at, image_path, next_interval,
+                    score, metrics, insect_candidate, interval_reason, request,
+                )
+                _label_captured_image(
+                    image_path,
+                    "positive" if insect_candidate else "negative",
+                    request.ml_assist_mode, trainer,
+                )
+                update_state({
+                    "capture_count_delta": 1,
+                    "interval_sec": next_interval,
+                    "last_capture_time": captured_at.isoformat(timespec="seconds"),
+                    "last_image": str(image_path),
+                    "message": "Adaptive timelapse running.",
+                    "motion_score": score,
+                    "metrics": metrics,
+                    "insect_candidate": insect_candidate,
+                    "detection_count_delta": 1 if insect_candidate else 0,
+                    "event_count_delta": 1 if insect_candidate else 0,
+                    "interval_reason": interval_reason,
+                })
+                if stop_event.wait(next_interval):
+                    break
+                continue
 
             # ---- Hybrid mode ------------------------------------------------
             if request.hybrid_mode:

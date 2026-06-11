@@ -51,3 +51,8 @@ class LabelResponse(BaseModel):
     label_source: str
     review_status: str
     message: str
+
+
+class BulkDeleteImagesRequest(BaseModel):
+    filenames: list[str]
+

@@ -50,6 +50,7 @@ class TimelapseController:
         self.hybrid_mode = False
         self.ml_assist_mode = False
         self.autonomous_mode = False
+        self.adaptive_timelapse_mode = False
         self.motion_score: Optional[float] = None
         self.changed_area_ratio: Optional[float] = None
         self.mean_brightness: Optional[float] = None
@@ -112,6 +113,7 @@ class TimelapseController:
             hybrid_mode=self.hybrid_mode,
             ml_assist_mode=self.ml_assist_mode,
             autonomous_mode=self.autonomous_mode,
+            adaptive_timelapse_mode=self.adaptive_timelapse_mode,
             motion_score=self.motion_score,
             changed_area_ratio=self.changed_area_ratio,
             mean_brightness=self.mean_brightness,
@@ -193,6 +195,7 @@ class TimelapseController:
             self.hybrid_mode = request.hybrid_mode
             self.ml_assist_mode = request.ml_assist_mode
             self.autonomous_mode = request.autonomous_mode
+            self.adaptive_timelapse_mode = request.adaptive_timelapse_mode
             self.motion_score = None
             self.changed_area_ratio = None
             self.mean_brightness = None
@@ -235,7 +238,9 @@ class TimelapseController:
             self.tracked_roi_h = request.roi_h if self.roi_tracking else None
             self.roi_shift_x = 0 if self.roi_tracking else None
             self.roi_shift_y = 0 if self.roi_tracking else None
-            if request.hybrid_mode:
+            if request.adaptive_timelapse_mode:
+                self.interval_reason = "Waiting for adaptive baseline."
+            elif request.hybrid_mode:
                 self.interval_reason = "Waiting for scheduled and motion baselines."
             elif request.motion_trigger_mode:
                 self.interval_reason = "Waiting for motion-trigger baseline."

@@ -27,6 +27,9 @@ import {
   motionTriggerMode,
   pixelDifference,
   syncLabel,
+  adaptiveTimelapseMode,
+  adaptiveMinIntervalSec,
+  adaptiveWindowSec,
 } from './state/session';
 import { formatSyncTime } from './lib/formatting';
 import { normalizeRoi } from './lib/roi';
@@ -41,6 +44,9 @@ function startPayloadFor(camera: Camera): StartPayload {
     hybrid_mode: hybridMode.value,
     ml_assist_mode: mlAssistMode.value,
     autonomous_mode: autonomousMode.value,
+    adaptive_timelapse_mode: adaptiveTimelapseMode.value,
+    adaptive_min_interval_sec: adaptiveMinIntervalSec.value,
+    adaptive_window_sec: adaptiveWindowSec.value,
     idle_interval_sec: idleIntervalSec.value,
     detection_interval_sec: detectionIntervalSec.value,
     pixel_difference: Math.round(pixelDifference.value),

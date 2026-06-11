@@ -137,6 +137,16 @@ async def api_proxy_delete_all_images(
     return await PiClient(device.base_url).json("DELETE", "/images", body=request)
 
 
+@app.post("/api/devices/{device_id}/images/bulk-delete")
+async def api_proxy_bulk_delete_images(
+    device_id: int,
+    request: dict[str, Any],
+    user: User = Depends(CurrentUser(Token.Access.General)),
+) -> Any:
+    device = await get_device(user.id, device_id)
+    return await PiClient(device.base_url).json("POST", "/images/bulk-delete", body=request)
+
+
 @app.post("/api/devices/{device_id}/images/{filename}/label")
 async def api_proxy_label_image(
     device_id: int,
@@ -278,6 +288,16 @@ async def api_proxy_events(
         "/events",
         params={"limit": limit, "category": category},
     )
+
+
+@app.post("/api/devices/{device_id}/events/bulk-delete")
+async def api_proxy_bulk_delete_events(
+    device_id: int,
+    request: dict[str, Any],
+    user: User = Depends(CurrentUser(Token.Access.General)),
+) -> Any:
+    device = await get_device(user.id, device_id)
+    return await PiClient(device.base_url).json("POST", "/events/bulk-delete", body=request)
 
 
 @app.post("/api/devices/{device_id}/events/{event_id}/label")

@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import { selectedGalleryCamera, selectedCollection } from '../state/gallery';
 import { cameras } from '../state/devices';
-import { deviceUrl, fetchImages, deleteImage, labelImage, deleteAllImages } from '../api/client';
+import { deviceUrl, fetchImages, deleteImage, labelImage, deleteAllImages, bulkDeleteImages } from '../api/client';
 import type { ImageInfo, ImagesResponse } from '../api/types';
 import { formatCaptureTime, formatBytes } from '../lib/formatting';
 import * as s from '../styles/components.css';
@@ -15,6 +15,8 @@ export function Gallery() {
   const imageDir = useSignal('保存先を読み込み中...');
   const loadError = useSignal('');
   const deletingAll = useSignal(false);
+  const selectMode = useSignal(false);
+  const selectedFilenames = useSignal<Set<string>>(new Set());
 
   const camera = selectedGalleryCamera.value;
   const collection = selectedCollection.value;
@@ -87,6 +89,32 @@ export function Gallery() {
     }
   }
 
+  function toggleSelect(filename: string) {
+    const next = new Set(selectedFilenames.value);
+    if (next.has(filename)) {
+      next.delete(filename);
+    } else {
+      next.add(filename);
+    }
+    selectedFilenames.value = next;
+  }
+
+  async function handleBulkDelete() {
+    if (!camera || selectedFilenames.value.size === 0) return;
+    if (!confirm(`選択した ${selectedFilenames.value.size} 枚の画像を削除しますか？`)) return;
+    deletingAll.value = true;
+    try {
+      const result = await bulkDeleteImages(camera, [...selectedFilenames.value]);
+      alert(`${result.deleted_count} 枚を削除しました。`);
+      selectedFilenames.value = new Set();
+      await load();
+    } catch (err: unknown) {
+      alert(`削除できませんでした: ${(err as Error).message}`);
+    } finally {
+      deletingAll.value = false;
+    }
+  }
+
   const zipHref = camera
     ? deviceUrl(camera, `/exports/images.zip?collection=${collection}`)
     : undefined;
@@ -124,23 +152,47 @@ export function Gallery() {
             </button>
           ))}
         </div>
-        <a
-          class={`${s.downloadLink}${!camera ? ' ' + s.downloadLinkDisabled : ''}`}
-          href={zipHref}
-          download
-        >
-          {zipLabel}
-        </a>
-        {collection === 'all' && (
-          <button
-            class={s.btnDanger}
-            type="button"
-            onClick={handleDeleteAll}
-            disabled={deletingAll.value}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <a
+            class={`${s.downloadLink}${!camera ? ' ' + s.downloadLinkDisabled : ''}`}
+            href={zipHref}
+            download
           >
-            全画像を削除
-          </button>
-        )}
+            {zipLabel}
+          </a>
+          {camera && (
+            <button
+              class={s.btnSecondary}
+              type="button"
+              onClick={() => {
+                selectMode.value = !selectMode.value;
+                selectedFilenames.value = new Set();
+              }}
+            >
+              {selectMode.value ? '選択解除' : '選択モード'}
+            </button>
+          )}
+          {selectMode.value && selectedFilenames.value.size > 0 && (
+            <button
+              class={s.btnDanger}
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={deletingAll.value}
+            >
+              選択を削除 ({selectedFilenames.value.size})
+            </button>
+          )}
+          {collection === 'all' && !selectMode.value && (
+            <button
+              class={s.btnDanger}
+              type="button"
+              onClick={handleDeleteAll}
+              disabled={deletingAll.value}
+            >
+              全画像を削除
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Collection tabs */}
@@ -190,8 +242,14 @@ export function Gallery() {
               camera,
               `${img.url}${img.url.includes('?') ? '&' : '?'}download=true`,
             );
+            const isSelected = selectedFilenames.value.has(img.filename);
             return (
-              <article key={img.filename} class={s.galleryItem}>
+              <article
+                key={img.filename}
+                class={`${s.galleryItem}${isSelected ? ' ' + s.galleryItemSelected : ''}`}
+                style={selectMode.value ? { cursor: 'pointer' } : undefined}
+                onClick={selectMode.value ? () => toggleSelect(img.filename) : undefined}
+              >
                 <img
                   class={s.galleryItemImg}
                   src={deviceUrl(camera, img.url)}
@@ -209,42 +267,47 @@ export function Gallery() {
                   href={downloadUrl}
                   download={img.filename}
                   style={{ display: 'block', padding: '0 10px 4px', fontSize: '13px', color: 'var(--leaf)' }}
+                  onClick={selectMode.value ? (e) => e.stopPropagation() : undefined}
                 >
                   iPadに保存
                 </a>
-                <div class={s.reviewActions}>
-                  <button
-                    class={s.labelPositive}
-                    type="button"
-                    style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '6px' }}
-                    onClick={() => handleLabel(img.filename, 'positive')}
-                  >
-                    Positive
-                  </button>
-                  <button
-                    class={s.labelNegative}
-                    type="button"
-                    style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '6px' }}
-                    onClick={() => handleLabel(img.filename, 'negative')}
-                  >
-                    Negative
-                  </button>
-                  <button
-                    class={s.labelUnclear}
-                    type="button"
-                    style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '6px', gridColumn: '1 / -1' }}
-                    onClick={() => handleLabel(img.filename, 'unlabeled')}
-                  >
-                    Unclear
-                  </button>
-                </div>
-                <button
-                  class={s.deleteImageBtn}
-                  type="button"
-                  onClick={() => handleDelete(img.filename)}
-                >
-                  削除
-                </button>
+                {!selectMode.value && (
+                  <>
+                    <div class={s.reviewActions}>
+                      <button
+                        class={s.labelPositive}
+                        type="button"
+                        style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '6px' }}
+                        onClick={() => handleLabel(img.filename, 'positive')}
+                      >
+                        Positive
+                      </button>
+                      <button
+                        class={s.labelNegative}
+                        type="button"
+                        style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '6px' }}
+                        onClick={() => handleLabel(img.filename, 'negative')}
+                      >
+                        Negative
+                      </button>
+                      <button
+                        class={s.labelUnclear}
+                        type="button"
+                        style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '6px', gridColumn: '1 / -1' }}
+                        onClick={() => handleLabel(img.filename, 'unlabeled')}
+                      >
+                        Unclear
+                      </button>
+                    </div>
+                    <button
+                      class={s.deleteImageBtn}
+                      type="button"
+                      onClick={() => handleDelete(img.filename)}
+                    >
+                      削除
+                    </button>
+                  </>
+                )}
               </article>
             );
           })}

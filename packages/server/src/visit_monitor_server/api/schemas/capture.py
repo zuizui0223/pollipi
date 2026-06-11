@@ -28,6 +28,9 @@ class StartRequest(BaseModel):
     hybrid_mode: bool = False
     ml_assist_mode: bool = False
     autonomous_mode: bool = False
+    adaptive_timelapse_mode: bool = False
+    adaptive_min_interval_sec: float = Field(default=15, ge=1, le=3600)
+    adaptive_window_sec: float = Field(default=300, ge=60, le=3600)
     idle_interval_sec: float = Field(default=60, ge=1, le=3600)
     detection_interval_sec: float = Field(default=3, ge=1, le=3600)
     pixel_difference: int = Field(default=30, ge=1, le=255)
@@ -46,6 +49,7 @@ class StatusResponse(BaseModel):
     hybrid_mode: bool
     ml_assist_mode: bool
     autonomous_mode: bool
+    adaptive_timelapse_mode: bool = False
     motion_score: Optional[float]
     changed_area_ratio: Optional[float]
     mean_brightness: Optional[float]

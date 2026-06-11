@@ -262,3 +262,33 @@ export async function stopCoordinatorDevices(baseUrl: string, deviceIds: number[
     body: JSON.stringify({ device_ids: deviceIds }),
   });
 }
+
+export async function deleteCoordinatorDevice(baseUrl: string, deviceId: number): Promise<void> {
+  await apiRequest<void>(baseUrl, `/api/devices/${deviceId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function bulkDeleteImages(
+  baseUrl: ApiTarget,
+  filenames: string[],
+): Promise<DeleteImagesResponse> {
+  return apiRequest<DeleteImagesResponse>(baseUrl, '/images/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filenames }),
+  });
+}
+
+export async function bulkDeleteEvents(
+  baseUrl: ApiTarget,
+  eventIds: string[],
+  scope: string = 'event_only',
+): Promise<DeleteImagesResponse> {
+  return apiRequest<DeleteImagesResponse>(baseUrl, '/events/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event_ids: eventIds, scope }),
+  });
+}
+

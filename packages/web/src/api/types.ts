@@ -67,6 +67,7 @@ export interface StatusResponse {
   hybrid_mode: boolean;
   autonomous_mode: boolean;
   ml_assist_mode: boolean;
+  adaptive_timelapse_mode: boolean;
   motion_score: number | null;
   motion_type: string | null;
   interval_reason: string | null;
@@ -154,6 +155,7 @@ export interface TrainingStatus {
 /** Delete images response */
 export interface DeleteImagesResponse {
   deleted_count: number;
+  message?: string;
 }
 
 /** The full camera object used in frontend state */
@@ -204,6 +206,9 @@ export interface StartPayload {
   hybrid_mode: boolean;
   ml_assist_mode: boolean;
   autonomous_mode: boolean;
+  adaptive_timelapse_mode: boolean;
+  adaptive_min_interval_sec?: number;
+  adaptive_window_sec?: number;
   idle_interval_sec: number;
   detection_interval_sec: number;
   pixel_difference: number;

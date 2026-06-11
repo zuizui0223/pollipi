@@ -19,6 +19,7 @@ from visit_monitor_server.api.schemas.images import (
     ImageListResponse,
     LabelRequest,
     LabelResponse,
+    BulkDeleteImagesRequest,
 )
 from visit_monitor_server.config import (
     IMAGE_DIR,
@@ -220,3 +221,20 @@ def delete_all_images(request: DeleteAllRequest) -> DeleteAllResponse:
                     p.unlink()
     get_controller().clear_latest_if_deleted()
     return DeleteAllResponse(deleted_count=len(image_paths), message="All images deleted.")
+
+
+@router.post("/images/bulk-delete", response_model=DeleteAllResponse)
+def bulk_delete_images(request: BulkDeleteImagesRequest) -> DeleteAllResponse:
+    if not request.filenames:
+        raise HTTPException(status_code=400, detail="No filenames specified.")
+    deleted = 0
+    for filename in request.filenames:
+        try:
+            path = image_file(filename, "all")
+            remove_label(path.name)
+            path.unlink()
+            get_controller().clear_latest_if_deleted(path)
+            deleted += 1
+        except HTTPException:
+            pass
+    return DeleteAllResponse(deleted_count=deleted, message=f"{deleted} image(s) deleted.")

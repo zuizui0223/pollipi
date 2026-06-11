@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import importlib
 import sys
 import time
@@ -53,6 +54,47 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
         assert client.get(f"/images/{filename}").status_code == 200
         assert client.get("/latest").status_code == 200
 
+        # Bulk delete images test
+        bulk_del_img = client.post("/images/bulk-delete", json={"filenames": [filename]})
+        assert bulk_del_img.status_code == 200
+        assert bulk_del_img.json()["deleted_count"] == 1
+
+        event_log = tmp_path / "images" / "event_log.csv"
+        with event_log.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "timestamp",
+                    "image_filename",
+                    "motion_score",
+                    "changed_area_ratio",
+                    "small_blob_count",
+                    "insect_candidate",
+                ],
+            )
+            writer.writeheader()
+            writer.writerow({
+                "timestamp": "2026-06-10T12:00:00+09:00",
+                "image_filename": "missing.jpg",
+                "motion_score": "0.02",
+                "changed_area_ratio": "0.02",
+                "small_blob_count": "1",
+                "insect_candidate": "true",
+            })
+
+        events = client.get("/events")
+        assert events.status_code == 200
+        event_payload = events.json()
+        assert event_payload["event_count"] == 1
+        event_id = event_payload["events"][0]["event_id"]
+        assert event_id.startswith("fallback-")
+        assert event_payload["events"][0]["review_status"] == "motion_candidate"
+
+        bulk_del_ev = client.post("/events/bulk-delete", json={"event_ids": [event_id], "scope": "event_only"})
+        assert bulk_del_ev.status_code == 200
+        assert bulk_del_ev.json()["deleted_count"] == 1
+        assert client.get("/events").json()["event_count"] == 0
+
         training = client.get("/training/status")
         assert training.status_code == 200
         assert "model_available" in training.json()
@@ -60,4 +102,3 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
         stopped = client.post("/stop")
         assert stopped.status_code == 200
         assert stopped.json()["running"] is False
-

@@ -18,8 +18,12 @@ import {
   pixelDifference,
   motionRatio,
   getSessionMetadata,
+  adaptiveTimelapseMode,
+  adaptiveMinIntervalSec,
+  adaptiveWindowSec,
 } from '../state/session';
-import { deviceUrl, postStart, postStop, fetchStatus, fetchSystem } from '../api/client';
+import { deviceUrl, postStart, postStop, fetchStatus, fetchSystem, deleteCoordinatorDevice } from '../api/client';
+import { coordinatorBaseUrl, coordinatorOnline } from '../state/coordinator';
 import { RoiEditor } from './RoiEditor';
 import * as s from '../styles/components.css';
 
@@ -62,6 +66,14 @@ function getStartPayload(camera: Camera) {
     alert('画角を再調整したため、ROIをもう一度指定してください。');
     return null;
   }
+  const adaptive = adaptiveTimelapseMode.value;
+  const adaptiveMin = adaptiveMinIntervalSec.value;
+  const adaptiveWin = adaptiveWindowSec.value;
+  if (adaptive && (!Number.isFinite(adaptiveMin) || adaptiveMin < 1 || adaptiveMin > 3600 ||
+    !Number.isFinite(adaptiveWin) || adaptiveWin < 60 || adaptiveWin > 3600)) {
+    alert('適応型タイムラプスの設定値を確認してください (最小間隔 1~3600秒, ウィンドウ 60~3600秒)。');
+    return null;
+  }
   const metadata = getSessionMetadata();
   const payload: Record<string, unknown> = {
     interval_sec: interval,
@@ -70,6 +82,9 @@ function getStartPayload(camera: Camera) {
     hybrid_mode: hybridMode.value,
     ml_assist_mode: mlAssistMode.value,
     autonomous_mode: autonomousMode.value,
+    adaptive_timelapse_mode: adaptive,
+    adaptive_min_interval_sec: adaptiveMin,
+    adaptive_window_sec: adaptiveWin,
     idle_interval_sec: idle,
     detection_interval_sec: detection,
     pixel_difference: Math.round(pd),
@@ -411,8 +426,19 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     message.value = 'ROIを解除しました。動き検出は全画面で行います。';
   }
 
-  function handleRemove() {
+  async function handleRemove() {
     if (!confirm(`${camera.camera_label} の登録をこの iPad から削除しますか？\n撮影画像は Raspberry Pi に残ります。`)) return;
+    if (camera.managed_by_coordinator && camera.coordinator_device_id) {
+      const coordinatorUrl = coordinatorBaseUrl.value;
+      if (coordinatorUrl) {
+        try {
+          await deleteCoordinatorDevice(coordinatorUrl, camera.coordinator_device_id);
+        } catch (err: any) {
+          alert(`Coordinator での削除に失敗しました: ${err.message}`);
+          return;
+        }
+      }
+    }
     removeCamera(camera);
     onUpdated();
   }

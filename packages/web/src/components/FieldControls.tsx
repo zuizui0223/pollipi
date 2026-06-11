@@ -20,6 +20,9 @@ import {
   methodMode,
   selectExclusiveMode,
   anyAutoMode,
+  adaptiveTimelapseMode,
+  adaptiveMinIntervalSec,
+  adaptiveWindowSec,
 } from '../state/session';
 import * as s from '../styles/components.css';
 
@@ -280,6 +283,45 @@ export function FieldControls({ onStartAll, onStopAll, onReviewEvents }: Props) 
                 />
                 <span>保存写真を positive / negative に仮分類</span>
               </label>
+              <label class={s.autoToggle}>
+                <input
+                  class={s.autoToggleInput}
+                  type="checkbox"
+                  checked={adaptiveTimelapseMode.value}
+                  onChange={() => {
+                    adaptiveTimelapseMode.value = !adaptiveTimelapseMode.value;
+                  }}
+                />
+                <span>適応型タイムラプス（候補が多い時に間隔を短縮）</span>
+              </label>
+              {adaptiveTimelapseMode.value && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginTop: '8px', padding: '10px', background: '#f8f8f0', borderRadius: '12px', border: '1px solid var(--line)', gridColumn: '1 / -1' }}>
+                  <label class={s.advancedGridLabel}>
+                    最小間隔 (秒)
+                    <input
+                      type="number"
+                      min={1}
+                      max={3600}
+                      value={adaptiveMinIntervalSec.value}
+                      onInput={(e) => {
+                        adaptiveMinIntervalSec.value = Number((e.target as HTMLInputElement).value || 15);
+                      }}
+                    />
+                  </label>
+                  <label class={s.advancedGridLabel}>
+                    適応ウィンドウ (秒)
+                    <input
+                      type="number"
+                      min={60}
+                      max={3600}
+                      value={adaptiveWindowSec.value}
+                      onInput={(e) => {
+                        adaptiveWindowSec.value = Number((e.target as HTMLInputElement).value || 300);
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
             </div>
           </div>
         </details>

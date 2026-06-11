@@ -5,7 +5,7 @@ import { selectedGalleryCamera } from '../state/gallery';
 import { selectedEventCategory } from '../state/events';
 import type { EventCategory } from '../state/events';
 import { cameras } from '../state/devices';
-import { deviceUrl, fetchEvents, saveEventReview } from '../api/client';
+import { deviceUrl, fetchEvents, saveEventReview, bulkDeleteEvents } from '../api/client';
 import type { EventInfo } from '../api/types';
 import * as s from '../styles/components.css';
 
@@ -13,6 +13,8 @@ export function EventReview() {
   const events = useSignal<EventInfo[]>([]);
   const eventCount = useSignal(0);
   const loadError = useSignal('');
+  const selectMode = useSignal(false);
+  const selectedEventIds = useSignal<Set<string>>(new Set());
 
   const camera = selectedGalleryCamera.value;
   const category = selectedEventCategory.value;
@@ -59,6 +61,35 @@ export function EventReview() {
     }
   }
 
+  function toggleSelect(eventId: string) {
+    const next = new Set(selectedEventIds.value);
+    if (next.has(eventId)) {
+      next.delete(eventId);
+    } else {
+      next.add(eventId);
+    }
+    selectedEventIds.value = next;
+  }
+
+  async function handleBulkDelete() {
+    if (!camera || selectedEventIds.value.size === 0) return;
+    const scope = window.prompt(
+      "削除スコープを選択してください:\n1: event_only（イベント行のみ）\n2: event_and_images（イベント+画像）\n3: event_images_labels（イベント+画像+ラベル）\n\n1, 2, または 3 を入力:",
+      "1"
+    );
+    const scopeMap: Record<string, string> = { "1": "event_only", "2": "event_and_images", "3": "event_images_labels" };
+    const resolvedScope = scopeMap[scope || ''] || "event_only";
+    if (!confirm(`選択した ${selectedEventIds.value.size} 件のイベントを削除しますか？（スコープ: ${resolvedScope}）`)) return;
+    try {
+      const result = await bulkDeleteEvents(camera, [...selectedEventIds.value], resolvedScope);
+      alert(`${result.deleted_count} 件のイベントを削除しました。`);
+      selectedEventIds.value = new Set();
+      await load();
+    } catch (err: unknown) {
+      alert(`削除できませんでした: ${(err as Error).message}`);
+    }
+  }
+
   const exportHref = camera ? deviceUrl(camera, '/events/export_labels.csv') : undefined;
 
   return (
@@ -71,13 +102,36 @@ export function EventReview() {
             候補を自動で Positive / Negative / Unclear に分けます。間違っているものだけ修正してください。
           </p>
         </div>
-        <a
-          class={`${s.downloadLink}${!camera ? ' ' + s.downloadLinkDisabled : ''}`}
-          href={exportHref}
-          download
-        >
-          Export labels CSV
-        </a>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <a
+            class={`${s.downloadLink}${!camera ? ' ' + s.downloadLinkDisabled : ''}`}
+            href={exportHref}
+            download
+          >
+            Export labels CSV
+          </a>
+          {camera && (
+            <button
+              class={s.btnSecondary}
+              type="button"
+              onClick={() => {
+                selectMode.value = !selectMode.value;
+                selectedEventIds.value = new Set();
+              }}
+            >
+              {selectMode.value ? '選択解除' : '選択モード'}
+            </button>
+          )}
+          {selectMode.value && selectedEventIds.value.size > 0 && (
+            <button
+              class={s.btnDanger}
+              type="button"
+              onClick={handleBulkDelete}
+            >
+              選択を削除 ({selectedEventIds.value.size})
+            </button>
+          )}
+        </div>
       </div>
 
       <div class={s.folderSummary}>
@@ -111,9 +165,20 @@ export function EventReview() {
         )}
         {camera &&
           !loadError.value &&
-          events.value.map((ev) => (
-            <EventItem key={ev.event_id} camera={camera} event={ev} onLabel={handleLabel} />
-          ))}
+          events.value.map((ev) => {
+            const isSelected = selectedEventIds.value.has(ev.event_id);
+            return (
+              <EventItem
+                key={ev.event_id}
+                camera={camera}
+                event={ev}
+                onLabel={handleLabel}
+                selectMode={selectMode.value}
+                isSelected={isSelected}
+                onToggleSelect={() => toggleSelect(ev.event_id)}
+              />
+            );
+          })}
       </div>
     </section>
   );
@@ -129,16 +194,22 @@ interface EventItemProps {
     reason: string,
     notes: string,
   ) => Promise<void>;
+  selectMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
 }
 
-function EventItem({ camera, event: ev, onLabel }: EventItemProps) {
+function EventItem({ camera, event: ev, onLabel, selectMode, isSelected, onToggleSelect }: EventItemProps) {
   const taxon = useSignal(ev.manual_taxon || '');
   const reason = useSignal(ev.false_positive_reason || '');
   const notes = useSignal(ev.manual_notes || '');
+  const imageMissing = useSignal(false);
 
   const category = ev.final_category || 'unclear';
   const source = ev.category_source || 'auto';
-  const reviewStatus = ev.review_status || 'auto_grouped';
+  const reviewStatus = ev.review_status || 'motion_candidate';
+  const displayStatus =
+    reviewStatus === 'motion_candidate' ? 'motion_candidate (未レビュー)' : reviewStatus;
 
   const categoryClass =
     category === 'positive'
@@ -150,19 +221,40 @@ function EventItem({ camera, event: ev, onLabel }: EventItemProps) {
   const imgSrc = ev.image_url ? deviceUrl(camera, ev.image_url) : '';
 
   return (
-    <article class={`${s.eventItem}`}>
-      {imgSrc && (
+    <article
+      class={`${s.eventItem}${isSelected ? ' ' + s.eventItemSelected : ''}`}
+      style={selectMode ? { cursor: 'pointer' } : undefined}
+      onClick={selectMode ? onToggleSelect : undefined}
+    >
+      {imgSrc && !imageMissing.value ? (
         <img
           style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', background: '#dde2d7' }}
           src={imgSrc}
           alt={ev.image_filename || ev.event_id}
           loading="lazy"
+          onError={() => {
+            imageMissing.value = true;
+          }}
         />
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            placeItems: 'center',
+            width: '100%',
+            aspectRatio: '4 / 3',
+            background: '#dde2d7',
+            color: '#5e675c',
+            fontWeight: 700,
+          }}
+        >
+          画像なし
+        </div>
       )}
       <div class={s.eventMeta}>
         <strong>{ev.timestamp || '-'}</strong>
         <span class={`${s.categoryBadge} ${categoryClass}`}>
-          {category} / {source} / {reviewStatus}
+          {category} / {source} / {displayStatus}
         </span>
         <span>{ev.device_name || camera.camera_label} / {ev.camera_profile || '-'}</span>
         <span>
@@ -177,58 +269,60 @@ function EventItem({ camera, event: ev, onLabel }: EventItemProps) {
           {ev.auto_category || '-'}
         </span>
       </div>
-      <div class={s.eventReviewForm}>
-        <input
-          placeholder="manual taxon"
-          value={taxon.value}
-          onInput={(e) => {
-            taxon.value = (e.target as HTMLInputElement).value;
-          }}
-        />
-        <select
-          value={reason.value}
-          onChange={(e) => {
-            reason.value = (e.target as HTMLSelectElement).value;
-          }}
-        >
-          {['', 'wind', 'shadow', 'flower_movement', 'camera_shake', 'non_insect_object', 'lighting_change', 'unclear', 'other'].map(
-            (v) => (
-              <option key={v} value={v}>
-                {v || 'false positive reason'}
-              </option>
-            ),
-          )}
-        </select>
-        <input
-          placeholder="manual notes"
-          value={notes.value}
-          style={{ gridColumn: '1 / -1' }}
-          onInput={(e) => {
-            notes.value = (e.target as HTMLInputElement).value;
-          }}
-        />
-        <div class={s.eventReviewActions}>
-          {([['insect', 'Positive'], ['non_insect', 'Negative'], ['unclear', 'Unclear']] as const).map(
-            ([val, text]) => (
-              <button
-                key={val}
-                type="button"
-                class={`${
-                  val === 'insect'
-                    ? s.quickLabelPositive
-                    : val === 'non_insect'
-                    ? s.quickLabelNegative
-                    : s.quickLabelUnclear
-                }${ev.manual_label === val ? ' ' + s.quickLabelSelected : ''}`}
-                style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '8px' }}
-                onClick={() => onLabel(ev.event_id, val, taxon.value, reason.value, notes.value)}
-              >
-                {text}
-              </button>
-            ),
-          )}
+      {!selectMode && (
+        <div class={s.eventReviewForm}>
+          <input
+            placeholder="manual taxon"
+            value={taxon.value}
+            onInput={(e) => {
+              taxon.value = (e.target as HTMLInputElement).value;
+            }}
+          />
+          <select
+            value={reason.value}
+            onChange={(e) => {
+              reason.value = (e.target as HTMLSelectElement).value;
+            }}
+          >
+            {['', 'wind', 'shadow', 'flower_movement', 'camera_shake', 'non_insect_object', 'lighting_change', 'unclear', 'other'].map(
+              (v) => (
+                <option key={v} value={v}>
+                  {v || 'false positive reason'}
+                </option>
+              ),
+            )}
+          </select>
+          <input
+            placeholder="manual notes"
+            value={notes.value}
+            style={{ gridColumn: '1 / -1' }}
+            onInput={(e) => {
+              notes.value = (e.target as HTMLInputElement).value;
+            }}
+          />
+          <div class={s.eventReviewActions}>
+            {([['insect', 'Positive'], ['non_insect', 'Negative'], ['unclear', 'Unclear']] as const).map(
+              ([val, text]) => (
+                <button
+                  key={val}
+                  type="button"
+                  class={`${
+                    val === 'insect'
+                      ? s.quickLabelPositive
+                      : val === 'non_insect'
+                      ? s.quickLabelNegative
+                      : s.quickLabelUnclear
+                  }${ev.manual_label === val ? ' ' + s.quickLabelSelected : ''}`}
+                  style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '8px' }}
+                  onClick={() => onLabel(ev.event_id, val, taxon.value, reason.value, notes.value)}
+                >
+                  {text}
+                </button>
+              ),
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </article>
   );
 }

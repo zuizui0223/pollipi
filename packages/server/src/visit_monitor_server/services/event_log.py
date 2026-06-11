@@ -23,9 +23,13 @@ def read_event_rows() -> list[dict[str, str]]:
         return []
     with EVENT_LOG_PATH.open("r", newline="", encoding="utf-8") as csv_file:
         rows = [dict(row) for row in csv.DictReader(csv_file)]
-    for row in rows:
+    for i, row in enumerate(rows):
         for column in EVENT_LOG_COLUMNS:
             row.setdefault(column, "")
+        if not row.get("event_id"):
+            ts = row.get("timestamp", "").replace(":", "").replace(" ", "_")
+            fname = row.get("image_filename", "")
+            row["event_id"] = f"fallback-{ts}-{fname}-{i}" if (ts or fname) else f"fallback-{i}"
         filename = row.get("image_filename", "")
         row["image_url"] = f"/images/{filename}" if filename else ""
         add_event_categories(row)
@@ -117,6 +121,6 @@ def add_event_categories(row: dict[str, str]) -> dict[str, str]:
     row["auto_category"] = auto_category
     row["final_category"] = final_category
     row["category_source"] = category_source
-    row["review_status"] = "reviewed" if manual_label else "auto_grouped"
+    row["review_status"] = "reviewed" if manual_label else "motion_candidate"
     row["final_label"] = final_category
     return row

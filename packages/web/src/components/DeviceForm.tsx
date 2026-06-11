@@ -1,8 +1,9 @@
 import { h } from 'preact';
 import { useSignal } from '@preact/signals';
 import type { Camera } from '../api/types';
-import { resolveBaseUrl, fetchDevice } from '../api/client';
-import { getCameras, addOrReplaceCamera, initCamera, syncWorkflowAliases } from '../state/devices';
+import { resolveBaseUrl, fetchDevice, createCoordinatorDevice } from '../api/client';
+import { getCameras, addOrReplaceCamera, initCamera, syncWorkflowAliases, syncDevices } from '../state/devices';
+import { coordinatorBaseUrl, coordinatorOnline } from '../state/coordinator';
 import { normalizeRoi } from '../lib/roi';
 import * as s from '../styles/components.css';
 
@@ -35,21 +36,32 @@ export function DeviceForm({ onCameraAdded }: Props) {
       const existing = cameras.findIndex(
         (item) => item.baseUrl === baseUrl || item.device_id === device.device_id,
       );
-      const old = existing >= 0 ? cameras[existing] : ({} as Partial<Camera>);
-      const camera = initCamera({
-        ...device,
-        address: rawAddress,
-        baseUrl,
-        roi: old.roi || null,
-        editing_roi: null,
-        angle_confirmed: Boolean(old.angle_confirmed),
-        roi_stale: Boolean(old.roi_stale || old.roi_pending),
-        roi_pending: false,
-        roi_tracking: Boolean(old.roi_tracking),
-        roi_search_margin: old.roi_search_margin || 30,
-        roi_tracking_min_score: old.roi_tracking_min_score || 0.45,
-      });
-      addOrReplaceCamera(camera);
+      if (coordinatorOnline.value && coordinatorBaseUrl.value) {
+        const coordinatorUrl = coordinatorBaseUrl.value.replace(/\/+$/, '');
+        await createCoordinatorDevice(coordinatorUrl, {
+          address: rawAddress,
+          base_url: baseUrl,
+          display_name: device.camera_label || undefined,
+          verify_connection: true,
+        });
+        await syncDevices(coordinatorUrl);
+      } else {
+        const old = existing >= 0 ? cameras[existing] : ({} as Partial<Camera>);
+        const camera = initCamera({
+          ...device,
+          address: rawAddress,
+          baseUrl,
+          roi: old.roi || null,
+          editing_roi: null,
+          angle_confirmed: Boolean(old.angle_confirmed),
+          roi_stale: Boolean(old.roi_stale || old.roi_pending),
+          roi_pending: false,
+          roi_tracking: Boolean(old.roi_tracking),
+          roi_search_margin: old.roi_search_margin || 30,
+          roi_tracking_min_score: old.roi_tracking_min_score || 0.45,
+        });
+        addOrReplaceCamera(camera);
+      }
       address.value = '';
       await onCameraAdded();
     } catch (err: unknown) {
