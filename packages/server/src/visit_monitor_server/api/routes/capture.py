@@ -1,8 +1,9 @@
 """Route handlers for /start, /stop, /status."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from visit_monitor_server.api.auth import require_device_secret
 from visit_monitor_server.api.schemas.capture import StartRequest, StatusResponse
 from visit_monitor_server.config import MONITOR_SIZE
 from visit_monitor_server.services import get_controller
@@ -31,7 +32,7 @@ def _validate_roi(request: StartRequest) -> None:
         )
 
 
-@router.post("/start", response_model=StatusResponse)
+@router.post("/start", response_model=StatusResponse, dependencies=[Depends(require_device_secret)])
 def start_timelapse(request: StartRequest) -> StatusResponse:
     selected_modes = sum((request.auto_mode, request.motion_trigger_mode, request.hybrid_mode))
     if selected_modes > 1:
@@ -43,7 +44,7 @@ def start_timelapse(request: StartRequest) -> StatusResponse:
     return get_controller().start(request)
 
 
-@router.post("/stop", response_model=StatusResponse)
+@router.post("/stop", response_model=StatusResponse, dependencies=[Depends(require_device_secret)])
 def stop_timelapse() -> StatusResponse:
     return get_controller().stop()
 
