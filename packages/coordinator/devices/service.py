@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 
 from devices.model import Device
 from devices.pi_client import PiClient
 from devices.schemas import DeviceCreateRequest, DeviceResponse, DeviceUpdateRequest
-from utils.db import AsyncSessionLocal
+from utils.db import AsyncSessionLocal, engine
 
 
 def normalize_base_url(base_url: str) -> str:
@@ -27,6 +27,21 @@ def normalize_device_secret(device_secret: str | None) -> str | None:
 
 def pi_client(device: Device, timeout: float = 8.0) -> PiClient:
     return PiClient(device.base_url, timeout=timeout, device_secret=device.device_secret)
+
+
+async def ensure_device_secret_column() -> None:
+    """Add device_secret to existing SQLite coordinator databases.
+
+    The coordinator currently uses create_all rather than a migration framework,
+    so existing SQLite deployments need this additive compatibility step.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+    async with engine.begin() as conn:
+        rows = await conn.execute(text("PRAGMA table_info(devices)"))
+        columns = {str(row[1]) for row in rows}
+        if "device_secret" not in columns:
+            await conn.execute(text("ALTER TABLE devices ADD COLUMN device_secret VARCHAR(255)"))
 
 
 async def probe_pi(base_url: str, device_secret: str | None = None) -> dict[str, Any]:
