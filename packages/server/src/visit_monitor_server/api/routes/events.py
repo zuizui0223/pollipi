@@ -6,22 +6,23 @@ import io
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
+from visit_monitor_server.api.auth import require_device_secret
 from visit_monitor_server.api.schemas.events import (
+    BulkDeleteEventsRequest,
     EventLabelRequest,
     EventLabelResponse,
     EventListResponse,
-    BulkDeleteEventsRequest,
 )
 from visit_monitor_server.api.schemas.images import DeleteAllResponse
 from visit_monitor_server.config import FALSE_POSITIVE_REASONS, IMAGE_DIR
 from visit_monitor_server.services import get_controller
-from visit_monitor_server.services.image_store import remove_label
 from visit_monitor_server.services.event_log import read_event_rows, write_event_rows
+from visit_monitor_server.services.image_store import remove_label
 
-router = APIRouter(tags=["events"])
+router = APIRouter(tags=["events"], dependencies=[Depends(require_device_secret)])
 
 
 @router.get("/events", response_model=EventListResponse)
