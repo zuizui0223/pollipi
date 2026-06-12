@@ -5,11 +5,19 @@ from typing import Any, Optional
 import httpx
 from fastapi import HTTPException
 
+DEVICE_SECRET_HEADER = "X-Pollipi-Device-Secret"
+
 
 class PiClient:
-    def __init__(self, base_url: str, timeout: float = 8.0) -> None:
+    def __init__(self, base_url: str, timeout: float = 8.0, device_secret: Optional[str] = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.device_secret = (device_secret or "").strip()
+
+    def headers(self) -> dict[str, str]:
+        if not self.device_secret:
+            return {}
+        return {DEVICE_SECRET_HEADER: self.device_secret}
 
     async def json(
         self,
@@ -26,6 +34,7 @@ class PiClient:
                     f"{self.base_url}{path}",
                     params=params,
                     json=body,
+                    headers=self.headers(),
                 )
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
@@ -47,7 +56,12 @@ class PiClient:
     ) -> tuple[bytes, str, Optional[str]]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
-                response = await client.request(method, f"{self.base_url}{path}", params=params)
+                response = await client.request(
+                    method,
+                    f"{self.base_url}{path}",
+                    params=params,
+                    headers=self.headers(),
+                )
                 response.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 detail = _response_detail(exc.response)
