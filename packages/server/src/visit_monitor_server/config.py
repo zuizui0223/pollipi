@@ -52,6 +52,7 @@ IS_AI_CAMERA = env_bool("POLLIPI_IS_AI_CAMERA")
 IS_NOIR = env_bool("POLLIPI_IS_NOIR")
 IS_WIDE = env_bool("POLLIPI_IS_WIDE")
 USE_FAKE_CAMERA = env_bool("POLLIPI_FAKE_CAMERA")
+DEVICE_SECRET = os.getenv("POLLIPI_DEVICE_SECRET", "").strip()
 
 # ---------------------------------------------------------------------------
 # Monitor / vision
