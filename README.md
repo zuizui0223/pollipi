@@ -347,6 +347,78 @@ For one-camera field use, a Pi-hosted Wi-Fi network is usually simplest. For mul
 
 ---
 
+## Device authentication
+
+PolliPi supports optional per-device shared-secret authentication for coordinator-to-Pi traffic.
+
+Local direct field use:
+
+- Leave `POLLIPI_DEVICE_SECRET` unset.
+- The Pi API keeps the historical local-network behavior.
+- This is suitable for one Pi and one iPad on a private field Wi-Fi where the Pi is not exposed outside the local network.
+
+Coordinator-managed use:
+
+- Set the same secret on the Pi and in the coordinator device record.
+- The Pi requires `X-Pollipi-Device-Secret` only when `POLLIPI_DEVICE_SECRET` is set.
+- The coordinator stores `device_secret` and `PiClient` sends it as `X-Pollipi-Device-Secret` on proxied Pi requests.
+- Device API responses never include the stored secret.
+
+Protected Pi endpoints include:
+
+```text
+/start
+/stop
+/mjpeg
+/images...
+/events...
+/exports...
+/training...
+```
+
+Unprotected discovery/status endpoints include:
+
+```text
+/device
+/status
+/system
+/preview
+/latest
+```
+
+Set the secret on the Pi service environment:
+
+```ini
+Environment=POLLIPI_DEVICE_SECRET=change-this-long-random-secret
+```
+
+Or for a manual run:
+
+```bash
+POLLIPI_DEVICE_SECRET='change-this-long-random-secret' \
+  .venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000
+```
+
+Coordinator registration can include:
+
+```json
+{
+  "address": "pi@pollipi1",
+  "base_url": "http://pollipi1.local:8000",
+  "device_secret": "change-this-long-random-secret",
+  "verify_connection": true
+}
+```
+
+Remote deployment:
+
+- Prefer VPN or private overlay networking such as Tailscale, WireGuard, or ZeroTier.
+- If traffic crosses untrusted networks, use HTTPS or a tunnel. Plain HTTP exposes the shared secret and image data to anyone who can observe the network.
+- A shared secret is a minimal control-plane protection, not a substitute for TLS, VPN, or a private tunnel.
+- DDNS alone does not solve NAT/CGNAT reachability and does not encrypt traffic.
+
+---
+
 ## Raspberry Pi setup
 
 Confirm the camera works:
@@ -543,6 +615,15 @@ curl -X POST http://pollipi1.local:8000/start \
   -d '{"interval_sec": 30, "autonomous_mode": true}'
 ```
 
+Start with a configured device secret:
+
+```bash
+curl -X POST http://pollipi1.local:8000/start \
+  -H "Content-Type: application/json" \
+  -H "X-Pollipi-Device-Secret: change-this-long-random-secret" \
+  -d '{"interval_sec": 30, "autonomous_mode": true}'
+```
+
 Start hybrid baseline + candidate evidence:
 
 ```bash
@@ -643,6 +724,7 @@ The current design discussion is tracked mainly in GitHub issues:
 #2 selectable deletion / cleanup UI
 #3 iPad Event Review robustness
 #8 consolidated method design and adaptive timelapse scheduler
+#10 Pi-to-coordinator device authentication
 #11 monorepo migration tracking
 ```
 
