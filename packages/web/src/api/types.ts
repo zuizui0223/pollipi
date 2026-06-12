@@ -24,6 +24,14 @@ export interface CoordinatorAuthResponse {
   user?: CoordinatorUser;
 }
 
+export interface CoordinatorDeviceCreatePayload {
+  address: string;
+  base_url: string;
+  display_name?: string;
+  device_secret?: string;
+  verify_connection?: boolean;
+}
+
 export interface CoordinatorDevice {
   id: number;
   address: string;
