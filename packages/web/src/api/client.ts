@@ -11,6 +11,7 @@ import type {
   Camera,
   CoordinatorAuthResponse,
   CoordinatorDevice,
+  CoordinatorDeviceCreatePayload,
   CoordinatorDeviceList,
   CoordinatorUser,
 } from './types';
@@ -241,12 +242,7 @@ export async function fetchCoordinatorDevices(baseUrl: string): Promise<Coordina
 
 export async function createCoordinatorDevice(
   baseUrl: string,
-  payload: {
-    address: string;
-    base_url: string;
-    display_name?: string;
-    verify_connection?: boolean;
-  },
+  payload: CoordinatorDeviceCreatePayload,
 ): Promise<CoordinatorDevice> {
   return apiRequest<CoordinatorDevice>(baseUrl, '/api/devices', {
     method: 'POST',
@@ -291,4 +287,3 @@ export async function bulkDeleteEvents(
     body: JSON.stringify({ event_ids: eventIds, scope }),
   });
 }
-
