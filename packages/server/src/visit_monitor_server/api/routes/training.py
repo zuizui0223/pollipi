@@ -1,12 +1,13 @@
 """Route handlers for /training/*."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from visit_monitor_server.api.auth import require_device_secret
 from visit_monitor_server.api.schemas.training import TrainingStatusResponse
 from visit_monitor_server.services import get_controller, get_trainer
 
-router = APIRouter(tags=["training"])
+router = APIRouter(tags=["training"], dependencies=[Depends(require_device_secret)])
 
 
 @router.get("/training/status", response_model=TrainingStatusResponse)
