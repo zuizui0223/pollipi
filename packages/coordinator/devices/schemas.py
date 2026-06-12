@@ -8,6 +8,7 @@ class DeviceCreateRequest(BaseModel):
     address: str = ""
     base_url: str
     display_name: Optional[str] = None
+    device_secret: Optional[str] = None
     verify_connection: bool = True
 
 
@@ -15,6 +16,7 @@ class DeviceUpdateRequest(BaseModel):
     display_name: Optional[str] = None
     address: Optional[str] = None
     base_url: Optional[str] = None
+    device_secret: Optional[str] = None
     verify_connection: bool = True
 
 
