@@ -17,6 +17,7 @@ class Device(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     address: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    device_secret: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     device_id: Mapped[str] = mapped_column(String(128), nullable=False)
     device_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     display_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
