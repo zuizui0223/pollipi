@@ -10,12 +10,14 @@ import sessions
 import orchestration
 
 from config import EnvConfig
+from devices.service import ensure_device_secret_column
 from user.model import ensure_root_user
 from utils.db import init_db
 
 
 async def startup() -> None:
     await init_db()
+    await ensure_device_secret_column()
     await ensure_root_user()
 
 
