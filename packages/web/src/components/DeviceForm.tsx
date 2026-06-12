@@ -2,9 +2,8 @@ import { h } from 'preact';
 import { useSignal } from '@preact/signals';
 import type { Camera } from '../api/types';
 import { resolveBaseUrl, fetchDevice, createCoordinatorDevice } from '../api/client';
-import { getCameras, addOrReplaceCamera, initCamera, syncWorkflowAliases, syncDevices } from '../state/devices';
+import { getCameras, addOrReplaceCamera, initCamera, syncDevices } from '../state/devices';
 import { coordinatorBaseUrl, coordinatorOnline } from '../state/coordinator';
-import { normalizeRoi } from '../lib/roi';
 import * as s from '../styles/components.css';
 
 interface Props {
@@ -13,6 +12,7 @@ interface Props {
 
 export function DeviceForm({ onCameraAdded }: Props) {
   const address = useSignal('');
+  const deviceSecret = useSignal('');
   const busy = useSignal(false);
   const error = useSignal('');
 
@@ -20,6 +20,7 @@ export function DeviceForm({ onCameraAdded }: Props) {
     e.preventDefault();
     if (busy.value) return;
     const rawAddress = address.value.trim();
+    const rawSecret = deviceSecret.value.trim();
     if (!rawAddress) return;
     busy.value = true;
     error.value = '';
@@ -42,6 +43,7 @@ export function DeviceForm({ onCameraAdded }: Props) {
           address: rawAddress,
           base_url: baseUrl,
           display_name: device.camera_label || undefined,
+          device_secret: rawSecret || undefined,
           verify_connection: true,
         });
         await syncDevices(coordinatorUrl);
@@ -63,6 +65,7 @@ export function DeviceForm({ onCameraAdded }: Props) {
         addOrReplaceCamera(camera);
       }
       address.value = '';
+      deviceSecret.value = '';
       await onCameraAdded();
     } catch (err: unknown) {
       error.value = `観察機に接続できません: ${(err as Error).message}`;
@@ -92,6 +95,18 @@ export function DeviceForm({ onCameraAdded }: Props) {
           value={address.value}
           onInput={(e) => {
             address.value = (e.target as HTMLInputElement).value;
+          }}
+          disabled={busy.value}
+        />
+        <input
+          class={s.deviceFormInput}
+          type="password"
+          placeholder="Device secret (coordinator only)"
+          autoCapitalize="none"
+          autoComplete="off"
+          value={deviceSecret.value}
+          onInput={(e) => {
+            deviceSecret.value = (e.target as HTMLInputElement).value;
           }}
           disabled={busy.value}
         />
