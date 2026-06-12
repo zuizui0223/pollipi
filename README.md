@@ -27,6 +27,96 @@ POLLIPI_IMAGE_DIR
 
 ---
 
+## Repository source of truth
+
+This branch is migrating PolliPi from the historical root-level layout into a monorepo.
+
+| Area | Current root operation | Monorepo source of truth |
+| --- | --- | --- |
+| Raspberry Pi API server | `pollipi_api_server.py` at the repository root | `packages/server/src/visit_monitor_server` |
+| iPad web app | root-level `web/` | `packages/web` |
+| API/browser contracts | implicit in root Python + DOM code | `packages/contracts` plus typed web API helpers |
+| Pi deployable server artifact | copied root `pollipi_api_server.py` | generated `dist/pollipi_api_server.py` |
+
+During the transition, the root-level `pollipi_api_server.py` and `web/` are **not deleted**. They are treated as legacy / compatibility references so existing Pi deployments and behavior checks can continue while the package implementation becomes the maintained source.
+
+After the migration is accepted:
+
+- Backend feature work should happen in `packages/server`.
+- Web UI feature work should happen in `packages/web`.
+- Pi distribution should use a generated `dist/pollipi_api_server.py` artifact, not a manually edited root server file.
+- Root-level files should become either compatibility shims, generated outputs, or archived legacy references. They should not regain source-of-truth status.
+
+This PR does not intentionally change capture behavior, adaptive timelapse rules, ROI tracking semantics, or candidate review methodology. Those belong to separate issues such as #1 and #8.
+
+---
+
+## Monorepo developer workflow
+
+Install workspace dependencies from the repository root:
+
+```bash
+pnpm install
+```
+
+Run the packaged server in development:
+
+```bash
+pnpm dev:server
+```
+
+Run the server fake-camera smoke tests:
+
+```bash
+pnpm test:server
+```
+
+Equivalent direct command:
+
+```bash
+cd packages/server
+POLLIPI_FAKE_CAMERA=1 pytest -q
+```
+
+Run the web type check and production build:
+
+```bash
+pnpm check:web
+pnpm build:web
+```
+
+The web build output is produced under `packages/web/dist/`.
+
+Build the Pi deployable single-file server artifact:
+
+```bash
+pnpm build:server
+```
+
+This writes:
+
+```text
+dist/pollipi_api_server.py
+```
+
+The generated file embeds the repository's `visit_monitor_server` package code. Third-party dependencies such as FastAPI, Uvicorn, Picamera2, and OpenCV still come from the Pi system packages or virtual environment.
+
+A smoke check for the generated artifact can be run with:
+
+```bash
+POLLIPI_FAKE_CAMERA=1 POLLIPI_IMAGE_DIR="$(mktemp -d)" \
+  python dist/pollipi_api_server.py --host 127.0.0.1 --port 8000
+```
+
+Or with Uvicorn:
+
+```bash
+POLLIPI_FAKE_CAMERA=1 POLLIPI_IMAGE_DIR="$(mktemp -d)" \
+  python -m uvicorn --app-dir dist pollipi_api_server:app --host 127.0.0.1 --port 8000
+```
+
+---
+
 ## Current research framing
 
 PolliPi should be evaluated against ordinary fixed-interval timelapse, not framed as a pure motion-trigger camera.
@@ -59,9 +149,9 @@ ROI-local image changes are treated as candidate evidence, not biological truth.
 
 ```text
 ROI-local change
-→ candidate event
-→ human review
-→ insect / noise / unclear
+-> candidate event
+-> human review
+-> insect / noise / unclear
 ```
 
 Automatic detection should answer:
@@ -223,15 +313,15 @@ Suggested interpretation:
 
 ```text
 high tracking score + local visitor-like change
-→ stronger insect-like candidate
+-> stronger insect-like candidate
 
 low tracking score + image change
-→ lower confidence candidate / review priority only
+-> lower confidence candidate / review priority only
 
 tracking lost or large ROI shift
-→ do not save supplemental event JPEG
-→ keep scheduled timelapse image
-→ log candidate_reason = tracking_lost or flower_or_camera_motion
+-> do not save supplemental event JPEG
+-> keep scheduled timelapse image
+-> log candidate_reason = tracking_lost or flower_or_camera_motion
 ```
 
 This prevents flower movement, camera movement, or tracking failure from being treated as insect activity.
@@ -281,39 +371,85 @@ cd ~/pollipi_timelapse
 python3 -m venv --system-site-packages .venv
 ```
 
-Place the application files under:
+### Current root operation
+
+Existing Pi deployments can continue to run the compatibility layout:
 
 ```text
 ~/pollipi_timelapse/
+  pollipi_api_server.py
+  install.sh
+  setup_device.sh
+  web/
 ```
 
-At minimum:
+Start command:
+
+```bash
+cd ~/pollipi_timelapse
+.venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000
+```
+
+This path remains valid during the migration so field devices are not forced to switch immediately.
+
+### Monorepo artifact operation
+
+The target deployment flow is to build from `packages/server` and copy the generated artifact:
+
+```bash
+pnpm build:server
+```
+
+Then place the generated file on the Pi as:
 
 ```text
-pollipi_api_server.py
-install.sh
-setup_device.sh
-web/
+~/pollipi_timelapse/pollipi_api_server.py
 ```
+
+The service can keep the same Uvicorn import path:
+
+```bash
+cd ~/pollipi_timelapse
+.venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000
+```
+
+This preserves the Pi operational model while moving maintained backend source code to `packages/server`.
 
 ---
 
 ## Deploy from Windows
 
-Example PowerShell deployment:
+Current compatibility deployment still copies root files:
 
 ```powershell
 $env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
 .\deploy_pollipi_pi.ps1 -HostName pollipi1.local -User pi -Preset module3-wide -DeviceId pollipi1 -InstallDependencies
 ```
 
-Manual copy:
+The monorepo target is:
+
+1. Build `dist/pollipi_api_server.py` from `packages/server`.
+2. Build the PWA with `pnpm build:web`.
+3. Copy `dist/pollipi_api_server.py` to the Pi as `~/pollipi_timelapse/pollipi_api_server.py`.
+4. Copy `packages/web/dist/` to the Pi web asset location used by the packaged server.
+5. Restart `pollipi.service` and run `/device`, `/status`, `/start`, `/images`, `/latest`, and `/stop` smoke checks.
+
+Manual compatibility copy:
 
 ```bash
 ssh pi@pollipi1.local "mkdir -p ~/pollipi_timelapse"
 scp pollipi_api_server.py install.sh setup_device.sh pi@pollipi1.local:~/pollipi_timelapse/
 scp -r web pi@pollipi1.local:~/pollipi_timelapse/
 ssh pi@pollipi1.local "bash ~/pollipi_timelapse/install.sh"
+```
+
+Manual artifact copy after building:
+
+```bash
+ssh pi@pollipi1.local "mkdir -p ~/pollipi_timelapse"
+scp dist/pollipi_api_server.py pi@pollipi1.local:~/pollipi_timelapse/pollipi_api_server.py
+scp -r packages/web/dist pi@pollipi1.local:~/pollipi_timelapse/web
+ssh pi@pollipi1.local "sudo systemctl restart pollipi.service"
 ```
 
 ---
@@ -497,6 +633,7 @@ HANDOFF.md          handoff notes
 DECISIONS.md        design decisions
 CHANGELOG_AI.md     AI-assisted change log
 FIELD_METHOD_ROADMAP.md field-method roadmap
+MIGRATION_PLAN.md   monorepo migration and artifact plan
 ```
 
 The current design discussion is tracked mainly in GitHub issues:
@@ -506,6 +643,7 @@ The current design discussion is tracked mainly in GitHub issues:
 #2 selectable deletion / cleanup UI
 #3 iPad Event Review robustness
 #8 consolidated method design and adaptive timelapse scheduler
+#11 monorepo migration tracking
 ```
 
 ---
