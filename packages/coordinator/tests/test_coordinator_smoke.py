@@ -64,16 +64,23 @@ def test_user_device_session_and_orchestration_smoke(monkeypatch, tmp_path: Path
                 "address": "pi@pollipi-test",
                 "base_url": "http://127.0.0.1:9",
                 "display_name": "Offline test Pi",
+                "device_secret": "stored-but-not-returned",
                 "verify_connection": False,
             },
         )
         assert device.status_code == 200, device.text
-        device_id = device.json()["id"]
-        assert device.json()["api_path_prefix"] == f"/api/devices/{device_id}"
+        device_payload = device.json()
+        device_id = device_payload["id"]
+        assert device_payload["api_path_prefix"] == f"/api/devices/{device_id}"
+        assert "device_secret" not in device_payload
+        assert "stored-but-not-returned" not in device.text
 
         listing = client.get("/api/devices", headers=headers)
         assert listing.status_code == 200
-        assert len(listing.json()["devices"]) == 1
+        listing_payload = listing.json()
+        assert len(listing_payload["devices"]) == 1
+        assert "device_secret" not in listing_payload["devices"][0]
+        assert "stored-but-not-returned" not in listing.text
 
         session = client.post(
             "/api/sessions",
