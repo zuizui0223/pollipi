@@ -8,7 +8,6 @@ from fastapi.responses import Response, StreamingResponse
 
 from base import app
 from constants import Token
-from devices.pi_client import PiClient
 from devices.schemas import (
     DeviceCreateRequest,
     DeviceListResponse,
@@ -20,6 +19,7 @@ from devices.service import (
     delete_device,
     get_device,
     list_devices,
+    pi_client,
     refresh_device_status,
     to_response,
     update_device,
@@ -73,7 +73,7 @@ async def api_proxy_device(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("GET", "/device")
+    return await pi_client(device).json("GET", "/device")
 
 
 @app.get("/api/devices/{device_id}/status")
@@ -90,7 +90,7 @@ async def api_proxy_system(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("GET", "/system")
+    return await pi_client(device).json("GET", "/system")
 
 
 @app.post("/api/devices/{device_id}/start")
@@ -100,7 +100,7 @@ async def api_proxy_start(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url, timeout=15).json("POST", "/start", body=request)
+    return await pi_client(device, timeout=15).json("POST", "/start", body=request)
 
 
 @app.post("/api/devices/{device_id}/stop")
@@ -109,7 +109,7 @@ async def api_proxy_stop(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url, timeout=15).json("POST", "/stop")
+    return await pi_client(device, timeout=15).json("POST", "/stop")
 
 
 @app.get("/api/devices/{device_id}/images")
@@ -120,7 +120,7 @@ async def api_proxy_images(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json(
+    return await pi_client(device).json(
         "GET",
         "/images",
         params={"limit": limit, "collection": collection},
@@ -134,7 +134,7 @@ async def api_proxy_delete_all_images(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("DELETE", "/images", body=request)
+    return await pi_client(device).json("DELETE", "/images", body=request)
 
 
 @app.post("/api/devices/{device_id}/images/bulk-delete")
@@ -144,7 +144,7 @@ async def api_proxy_bulk_delete_images(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("POST", "/images/bulk-delete", body=request)
+    return await pi_client(device).json("POST", "/images/bulk-delete", body=request)
 
 
 @app.post("/api/devices/{device_id}/images/{filename}/label")
@@ -155,7 +155,7 @@ async def api_proxy_label_image(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("POST", f"/images/{filename}/label", body=request)
+    return await pi_client(device).json("POST", f"/images/{filename}/label", body=request)
 
 
 @app.delete("/api/devices/{device_id}/images/{filename}")
@@ -165,7 +165,7 @@ async def api_proxy_delete_image(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("DELETE", f"/images/{filename}")
+    return await pi_client(device).json("DELETE", f"/images/{filename}")
 
 
 @app.get("/api/devices/{device_id}/images/{filename}")
@@ -177,7 +177,7 @@ async def api_proxy_image_file(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Response:
     device = await get_device(user.id, device_id)
-    content, media_type, disposition = await PiClient(device.base_url, timeout=30).bytes(
+    content, media_type, disposition = await pi_client(device, timeout=30).bytes(
         "GET",
         f"/images/{filename}",
         params={"collection": collection, "download": download},
@@ -195,7 +195,7 @@ async def api_proxy_latest(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Response:
     device = await get_device(user.id, device_id)
-    content, media_type, disposition = await PiClient(device.base_url, timeout=30).bytes(
+    content, media_type, disposition = await pi_client(device, timeout=30).bytes(
         "GET",
         "/latest",
         params={"capture": capture} if capture else None,
@@ -213,7 +213,7 @@ async def api_proxy_preview(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Response:
     device = await get_device(user.id, device_id)
-    content, media_type, _ = await PiClient(device.base_url, timeout=30).bytes(
+    content, media_type, _ = await pi_client(device, timeout=30).bytes(
         "GET",
         "/preview",
         params={"t": t} if t else None,
@@ -229,17 +229,19 @@ async def api_proxy_mjpeg(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> StreamingResponse:
     device = await get_device(user.id, device_id)
-    client = httpx.AsyncClient(timeout=None)
-    request = client.build_request(
+    client = pi_client(device)
+    stream_client = httpx.AsyncClient(timeout=None)
+    request = stream_client.build_request(
         "GET",
         f"{device.base_url.rstrip('/')}/mjpeg",
         params={"detect": detect, "t": t},
+        headers=client.headers(),
     )
-    response = await client.send(request, stream=True)
+    response = await stream_client.send(request, stream=True)
     if response.status_code >= 400:
         body = await response.aread()
         await response.aclose()
-        await client.aclose()
+        await stream_client.aclose()
         raise HTTPException(status_code=response.status_code, detail=body.decode("utf-8", errors="replace"))
 
     async def iterator():
@@ -248,7 +250,7 @@ async def api_proxy_mjpeg(
                 yield chunk
         finally:
             await response.aclose()
-            await client.aclose()
+            await stream_client.aclose()
 
     return StreamingResponse(
         iterator(),
@@ -264,7 +266,7 @@ async def api_proxy_images_zip(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Response:
     device = await get_device(user.id, device_id)
-    content, media_type, disposition = await PiClient(device.base_url, timeout=60).bytes(
+    content, media_type, disposition = await pi_client(device, timeout=60).bytes(
         "GET",
         "/exports/images.zip",
         params={"collection": collection},
@@ -283,7 +285,7 @@ async def api_proxy_events(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json(
+    return await pi_client(device).json(
         "GET",
         "/events",
         params={"limit": limit, "category": category},
@@ -297,7 +299,7 @@ async def api_proxy_bulk_delete_events(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("POST", "/events/bulk-delete", body=request)
+    return await pi_client(device).json("POST", "/events/bulk-delete", body=request)
 
 
 @app.post("/api/devices/{device_id}/events/{event_id}/label")
@@ -308,7 +310,7 @@ async def api_proxy_event_label(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("POST", f"/events/{event_id}/label", body=request)
+    return await pi_client(device).json("POST", f"/events/{event_id}/label", body=request)
 
 
 @app.get("/api/devices/{device_id}/events/export_labels.csv")
@@ -317,7 +319,7 @@ async def api_proxy_event_labels_csv(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Response:
     device = await get_device(user.id, device_id)
-    content, media_type, disposition = await PiClient(device.base_url, timeout=30).bytes(
+    content, media_type, disposition = await pi_client(device, timeout=30).bytes(
         "GET",
         "/events/export_labels.csv",
     )
@@ -333,7 +335,7 @@ async def api_proxy_training_status(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url).json("GET", "/training/status")
+    return await pi_client(device).json("GET", "/training/status")
 
 
 @app.post("/api/devices/{device_id}/training/start")
@@ -342,7 +344,7 @@ async def api_proxy_training_start(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url, timeout=60).json("POST", "/training/start")
+    return await pi_client(device, timeout=60).json("POST", "/training/start")
 
 
 @app.delete("/api/devices/{device_id}/training/model")
@@ -351,4 +353,4 @@ async def api_proxy_training_reset(
     user: User = Depends(CurrentUser(Token.Access.General)),
 ) -> Any:
     device = await get_device(user.id, device_id)
-    return await PiClient(device.base_url, timeout=30).json("DELETE", "/training/model")
+    return await pi_client(device, timeout=30).json("DELETE", "/training/model")
