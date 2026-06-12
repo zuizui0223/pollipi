@@ -5,13 +5,14 @@ import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
+from visit_monitor_server.api.auth import require_device_secret
 from visit_monitor_server.api.schemas.images import (
+    BulkDeleteImagesRequest,
     DeleteAllRequest,
     DeleteAllResponse,
     DeleteImageResponse,
@@ -19,9 +20,9 @@ from visit_monitor_server.api.schemas.images import (
     ImageListResponse,
     LabelRequest,
     LabelResponse,
-    BulkDeleteImagesRequest,
 )
 from visit_monitor_server.config import (
+    EVENT_LOG_PATH,
     IMAGE_DIR,
     LABEL_LOG_PATH,
     LEGACY_CANDIDATE_DIR,
@@ -30,7 +31,6 @@ from visit_monitor_server.config import (
     NEGATIVE_DIR,
     OBSERVATION_LOG_PATH,
     POSITIVE_DIR,
-    EVENT_LOG_PATH,
 )
 from visit_monitor_server.services import get_controller
 from visit_monitor_server.services.image_store import (
@@ -42,7 +42,7 @@ from visit_monitor_server.services.image_store import (
     review_status,
 )
 
-router = APIRouter(tags=["images"])
+router = APIRouter(tags=["images"], dependencies=[Depends(require_device_secret)])
 
 
 @router.get("/images", response_model=ImageListResponse)
