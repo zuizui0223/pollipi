@@ -1,10 +1,10 @@
 """
-Usage: 
-
+Usage:
 
 mkdir -p ~/camera_stream
 cd ~/camera_stream
 nano mjpeg_server.py
+python3 mjpeg_server.py
 """
 
 #!/usr/bin/python3
@@ -103,12 +103,3 @@ try:
     server.serve_forever()
 finally:
     picam2.stop_recording()
-
-cd ~/camera_stream
-python3 mjpeg_server.py
-
-cd ~/camera_stream
-python3 mjpeg_server.py
-
-
-
