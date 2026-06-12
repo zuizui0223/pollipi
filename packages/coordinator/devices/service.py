@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import delete, select
@@ -20,18 +20,29 @@ def normalize_base_url(base_url: str) -> str:
     return value
 
 
-async def probe_pi(base_url: str) -> dict[str, Any]:
-    return await PiClient(base_url).json("GET", "/device")
+def normalize_device_secret(device_secret: str | None) -> str | None:
+    value = (device_secret or "").strip()
+    return value or None
+
+
+def pi_client(device: Device, timeout: float = 8.0) -> PiClient:
+    return PiClient(device.base_url, timeout=timeout, device_secret=device.device_secret)
+
+
+async def probe_pi(base_url: str, device_secret: str | None = None) -> dict[str, Any]:
+    return await PiClient(base_url, device_secret=device_secret).json("GET", "/device")
 
 
 async def create_device(user_id: int, request: DeviceCreateRequest) -> DeviceResponse:
     base_url = normalize_base_url(request.base_url)
-    metadata = await probe_pi(base_url) if request.verify_connection else {}
+    device_secret = normalize_device_secret(request.device_secret)
+    metadata = await probe_pi(base_url, device_secret) if request.verify_connection else {}
     device_id = str(metadata.get("device_id") or request.display_name or base_url)
     device = Device(
         user_id=user_id,
         address=request.address,
         base_url=base_url,
+        device_secret=device_secret,
         device_id=device_id,
         device_name=str(metadata.get("device_name") or request.display_name or device_id),
         display_name=str(request.display_name or metadata.get("camera_label") or metadata.get("device_name") or device_id),
@@ -81,12 +92,14 @@ async def update_device(user_id: int, device_id: int, request: DeviceUpdateReque
             raise HTTPException(status_code=404, detail="Device not found.")
         if request.base_url is not None:
             device.base_url = normalize_base_url(request.base_url)
+        if request.device_secret is not None:
+            device.device_secret = normalize_device_secret(request.device_secret)
         if request.address is not None:
             device.address = request.address
         if request.display_name is not None:
             device.display_name = request.display_name
         if request.verify_connection:
-            metadata = await probe_pi(device.base_url)
+            metadata = await probe_pi(device.base_url, device.device_secret)
             apply_device_metadata(device, metadata)
         await session.commit()
         await session.refresh(device)
@@ -112,7 +125,7 @@ async def refresh_device_status(user_id: int, device_id: int) -> dict[str, Any]:
         if device is None:
             raise HTTPException(status_code=404, detail="Device not found.")
         try:
-            status = await PiClient(device.base_url).json("GET", "/status")
+            status = await pi_client(device).json("GET", "/status")
             device.last_status = status
             device.last_error = None
             device.last_seen_at = datetime.now(tz=timezone.utc)
