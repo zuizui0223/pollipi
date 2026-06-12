@@ -1,9 +1,10 @@
 """Route handlers for /latest, /preview, /mjpeg."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from visit_monitor_server.api.auth import require_device_secret
 from visit_monitor_server.config import CAMERA_MODEL, USE_FAKE_CAMERA
 from visit_monitor_server.services import get_controller
 
@@ -48,7 +49,7 @@ def get_preview() -> Response:
     return Response(content=frame, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
-@router.get("/mjpeg")
+@router.get("/mjpeg", dependencies=[Depends(require_device_secret)])
 def get_mjpeg(detect: bool = Query(default=False)) -> StreamingResponse:
     _ensure_camera_available()
     if detect and CAMERA_MODEL.lower() != "imx500":
