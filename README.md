@@ -59,6 +59,12 @@ Install workspace dependencies from the repository root:
 pnpm install
 ```
 
+Install the server Python package with test dependencies once per environment:
+
+```bash
+pip install -e "packages/server[dev]"
+```
+
 Run the packaged server in development:
 
 ```bash
@@ -416,6 +422,45 @@ Remote deployment:
 - If traffic crosses untrusted networks, use HTTPS or a tunnel. Plain HTTP exposes the shared secret and image data to anyone who can observe the network.
 - A shared secret is a minimal control-plane protection, not a substitute for TLS, VPN, or a private tunnel.
 - DDNS alone does not solve NAT/CGNAT reachability and does not encrypt traffic.
+
+Short-term field-network decision for #10:
+
+- Keep the Pi HTTP API reachable only on a private field LAN or private overlay network.
+- Use `POLLIPI_DEVICE_SECRET` for coordinator-to-Pi control and streaming endpoints.
+- Do not expose Pi ports directly to the public internet.
+- Treat outbound WebSocket control from Pi to coordinator as future hardening, not required for the current field deployment issue.
+
+---
+
+## GL.iNet / field router operation
+
+A small GL.iNet router can be the field network hub for multi-camera work:
+
+```text
+GL.iNet field router
+  - pollipi1 192.168.8.101
+  - pollipi2 192.168.8.102
+  - pollipi3 192.168.8.103
+  - iPad or coordinator laptop
+```
+
+Recommended setup:
+
+1. Configure one private SSID for the field site.
+2. Join every Raspberry Pi and the iPad/coordinator to that SSID.
+3. Add DHCP reservations for each Pi so the addresses stay stable.
+4. Open each Pi directly from the iPad for one-by-one operation, or register the fixed Pi URLs in the coordinator.
+5. If remote access is needed, run Tailscale, WireGuard, or another private overlay on the router or coordinator instead of forwarding Pi ports.
+
+Example coordinator device URLs:
+
+```text
+http://192.168.8.101:8000
+http://192.168.8.102:8000
+http://192.168.8.103:8000
+```
+
+For direct one-camera operation on a private router LAN, `POLLIPI_DEVICE_SECRET` can be left unset. For coordinator-managed or remote-overlay operation, set a long unique secret on each Pi and store the same value in the coordinator device record.
 
 ---
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import socket
+import tempfile
 from pathlib import Path
 
 
@@ -38,7 +39,9 @@ MODEL_INFO_PATH = MODEL_DIR / "insect_presence_model.json"
 AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
 
 WEB_DIR = Path(__file__).parent.parent.parent.parent.parent / "web"
-PREVIEW_PATH = Path("/tmp/pollipi_preview.jpg")
+PREVIEW_PATH = Path(
+    os.getenv("POLLIPI_PREVIEW_PATH", str(Path(tempfile.gettempdir()) / "pollipi_preview.jpg"))
+).expanduser()
 
 # ---------------------------------------------------------------------------
 # Camera / device identity

@@ -31,7 +31,7 @@ Implemented in PR #9:
 - Restored main PolliPi API routes in the packaged server: `/start`, `/stop`, `/status`, `/device`, `/system`, `/latest`, `/preview`, `/mjpeg`, `/roi/suggest`, `/images`, `/exports/images.zip`, `/events`, and `/training/*`.
 - Fake-camera smoke coverage in `packages/server/tests/test_api_smoke.py`.
 - Single-file bundler at `visit_monitor_server.distribution.bundle_single_file` that writes `dist/pollipi_api_server.py`.
-- `.github/workflows/server-ci.yml` that compile-checks server code, runs fake-camera pytest, builds the single-file artifact, compile-checks it, smoke-tests it, uploads it, and optionally runs a self-hosted Pi smoke test.
+- `.github/workflows/server-ci.yml` that compile-checks server code, runs fake-camera pytest, builds the single-file artifact, compile-checks it, smoke-tests it, uploads it, runs web type/build checks, and optionally runs a self-hosted Pi smoke test.
 - `packages/web` rebuilt with Vite, Preact, Signals, vanilla-extract, typed API helpers, and component/state modules.
 - `legacy/` retained as archived prototype/reference code.
 
@@ -49,6 +49,12 @@ Install workspace dependencies from the repository root:
 
 ```bash
 pnpm install
+```
+
+Install the server Python package with test dependencies once per environment:
+
+```bash
+pip install -e "packages/server[dev]"
 ```
 
 Server smoke test:
@@ -187,7 +193,7 @@ Issue #11 checklist mapping:
 - `packages/server` is the backend source of truth: documented here and in README; package implementation exists.
 - `packages/web` is the web UI source of truth: documented here and in README; package implementation exists.
 - Fake-camera server smoke tests: `pnpm test:server` / `pytest packages/server`.
-- Web type/build checks: `pnpm check:web` and `pnpm build:web`.
+- Web type/build checks: `pnpm check:web` and `pnpm build:web`, now recorded by the `Web Typecheck & Build` GitHub Actions job.
 - Single-file artifact: `pnpm build:server` creates `dist/pollipi_api_server.py`.
 - Pi hardware validation: still requires real hardware or a self-hosted Pi runner.
 - Root deployment docs/scripts: partially documented here and in README; script conversion remains follow-up.

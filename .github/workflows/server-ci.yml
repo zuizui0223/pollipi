@@ -1,4 +1,4 @@
-name: Server CI/CD
+name: Server/Web CI/CD
 
 on:
   push:
@@ -6,10 +6,22 @@ on:
       - main
     paths:
       - "packages/server/**"
+      - "packages/web/**"
+      - "packages/contracts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
       - ".github/workflows/server-ci.yml"
   pull_request:
     paths:
       - "packages/server/**"
+      - "packages/web/**"
+      - "packages/contracts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
       - ".github/workflows/server-ci.yml"
   workflow_dispatch:
     inputs:
@@ -110,6 +122,34 @@ jobs:
           path: dist/pollipi_api_server.py
           retention-days: 30
           if-no-files-found: error
+
+  web:
+    name: Web Typecheck & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run web type check
+        run: pnpm check:web
+
+      - name: Build web app
+        run: pnpm build:web
 
   pi-smoke:
     name: Pi Smoke Test (arm64)
