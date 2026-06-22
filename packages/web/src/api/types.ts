@@ -100,6 +100,24 @@ export interface StatusResponse {
   tracked_roi_y: number | null;
   tracked_roi_w: number | null;
   tracked_roi_h: number | null;
+  roi_semantics?: string | null;
+  control_roi_used?: boolean;
+  control_roi_x?: number | null;
+  control_roi_y?: number | null;
+  control_roi_w?: number | null;
+  control_roi_h?: number | null;
+  floral_zone_score?: number | null;
+  background_control_score?: number | null;
+  zone_minus_control_score?: number | null;
+  grid_rows?: number;
+  grid_cols?: number;
+  changed_cell_count?: number;
+  changed_cell_ratio?: number | null;
+  local_compactness?: number | null;
+  whole_frame_change_score?: number | null;
+  previous_frame_elapsed_sec?: number | null;
+  robust_background_score?: number | null;
+  candidate_reasons?: string | null;
 }
 
 /** System info from GET /system */
@@ -139,6 +157,7 @@ export interface EventInfo {
   category_source: string | null;
   review_status: string | null;
   manual_label: string | null;
+  review_label: string | null;
   manual_taxon: string | null;
   false_positive_reason: string | null;
   manual_notes: string | null;
@@ -153,6 +172,13 @@ export interface EventInfo {
   wind_like_motion: string | null;
   motion_type: string | null;
   auto_category: string | null;
+  floral_zone_score?: string | null;
+  background_control_score?: string | null;
+  zone_minus_control_score?: string | null;
+  changed_cell_count?: string | null;
+  changed_cell_ratio?: string | null;
+  local_compactness?: string | null;
+  candidate_reasons?: string | null;
 }
 
 /** Events list response */
@@ -255,6 +281,12 @@ export interface StartPayload {
   roi_y?: number;
   roi_w?: number;
   roi_h?: number;
+  control_roi_x?: number;
+  control_roi_y?: number;
+  control_roi_w?: number;
+  control_roi_h?: number;
+  roi_grid_rows?: number;
+  roi_grid_cols?: number;
   roi_tracking?: boolean;
   roi_search_margin?: number;
   roi_tracking_min_score?: number;

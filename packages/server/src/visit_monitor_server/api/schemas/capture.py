@@ -20,6 +20,12 @@ class StartRequest(BaseModel):
     roi_y: Optional[int] = None
     roi_w: Optional[int] = None
     roi_h: Optional[int] = None
+    control_roi_x: Optional[int] = None
+    control_roi_y: Optional[int] = None
+    control_roi_w: Optional[int] = None
+    control_roi_h: Optional[int] = None
+    roi_grid_rows: int = Field(default=4, ge=1, le=12)
+    roi_grid_cols: int = Field(default=4, ge=1, le=12)
     roi_tracking: bool = False
     roi_search_margin: int = Field(default=30, ge=0, le=160)
     roi_tracking_min_score: float = Field(default=0.45, ge=-1.0, le=1.0)
@@ -85,6 +91,24 @@ class StatusResponse(BaseModel):
     roi_y: Optional[int]
     roi_w: Optional[int]
     roi_h: Optional[int]
+    roi_semantics: str = "floral_display_zone"
+    control_roi_used: bool = False
+    control_roi_x: Optional[int] = None
+    control_roi_y: Optional[int] = None
+    control_roi_w: Optional[int] = None
+    control_roi_h: Optional[int] = None
+    floral_zone_score: Optional[float] = None
+    background_control_score: Optional[float] = None
+    zone_minus_control_score: Optional[float] = None
+    grid_rows: int = 4
+    grid_cols: int = 4
+    changed_cell_count: int = 0
+    changed_cell_ratio: Optional[float] = None
+    local_compactness: Optional[float] = None
+    whole_frame_change_score: Optional[float] = None
+    previous_frame_elapsed_sec: Optional[float] = None
+    robust_background_score: Optional[float] = None
+    candidate_reasons: Optional[str] = None
     roi_tracking: bool
     roi_tracking_success: bool
     roi_tracking_score: Optional[float]

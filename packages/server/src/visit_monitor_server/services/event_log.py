@@ -113,9 +113,12 @@ def auto_event_category(row: dict[str, str]) -> str:
 
 def add_event_categories(row: dict[str, str]) -> dict[str, str]:
     """Enrich *row* in-place with derived category fields and return it."""
-    manual_label = row.get("manual_label", "").strip()
+    manual_label = canonical_review_label(row.get("review_label") or row.get("manual_label", ""))
+    if manual_label:
+        row["review_label"] = manual_label
+        row["manual_label"] = manual_label
     auto_category = auto_event_category(row)
-    manual_map = {"insect": "positive", "non_insect": "negative", "unclear": "unclear"}
+    manual_map = {"visit": "positive", "noise": "negative", "unclear": "unclear"}
     final_category = manual_map.get(manual_label, auto_category)
     category_source = "manual" if manual_label else "auto"
     row["auto_category"] = auto_category
@@ -124,3 +127,16 @@ def add_event_categories(row: dict[str, str]) -> dict[str, str]:
     row["review_status"] = "reviewed" if manual_label else "motion_candidate"
     row["final_label"] = final_category
     return row
+
+
+def canonical_review_label(value: str | None) -> str:
+    label = (value or "").strip()
+    return {
+        "insect": "visit",
+        "positive": "visit",
+        "visit": "visit",
+        "non_insect": "noise",
+        "negative": "noise",
+        "noise": "noise",
+        "unclear": "unclear",
+    }.get(label, "")

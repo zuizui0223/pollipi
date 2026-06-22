@@ -27,6 +27,7 @@ IMAGE_DIR = Path(
 ).expanduser()
 
 METRICS_PATH = IMAGE_DIR / "adaptive_metrics.csv"
+ADAPTIVE_DECISION_LOG_PATH = IMAGE_DIR / "adaptive_decisions.csv"
 OBSERVATION_LOG_PATH = IMAGE_DIR / "observation_events.csv"
 EVENT_LOG_PATH = IMAGE_DIR / "event_log.csv"
 LABEL_LOG_PATH = IMAGE_DIR / "image_labels.csv"
@@ -104,11 +105,15 @@ EVENT_LOG_COLUMNS = [
     "comparison_session_id", "camera_role", "method_mode",
     "motion_score", "changed_area_ratio", "mean_brightness", "brightness_delta",
     "wind_like_motion", "num_blobs", "largest_blob_area", "largest_blob_ratio",
-    "small_blob_count", "motion_type", "roi_used", "roi_x", "roi_y", "roi_w", "roi_h",
+    "small_blob_count", "motion_type", "roi_used", "roi_semantics", "roi_x", "roi_y", "roi_w", "roi_h",
+    "control_roi_used", "control_roi_x", "control_roi_y", "control_roi_w", "control_roi_h",
+    "floral_zone_score", "background_control_score", "zone_minus_control_score",
+    "grid_rows", "grid_cols", "changed_cell_count", "changed_cell_ratio", "local_compactness",
+    "whole_frame_change_score", "previous_frame_elapsed_sec", "robust_background_score", "candidate_reasons",
     "roi_tracking", "roi_tracking_success", "roi_tracking_score", "roi_search_margin",
     "roi_tracking_min_score", "initial_roi_x", "initial_roi_y", "initial_roi_w", "initial_roi_h",
     "tracked_roi_x", "tracked_roi_y", "tracked_roi_w", "tracked_roi_h", "roi_shift_x", "roi_shift_y",
-    "manual_label", "manual_taxon", "false_positive_reason", "manual_notes", "reviewed_at",
+    "manual_label", "review_label", "manual_taxon", "false_positive_reason", "manual_notes", "reviewed_at",
 ]
 
 DERIVED_EVENT_COLUMNS = {

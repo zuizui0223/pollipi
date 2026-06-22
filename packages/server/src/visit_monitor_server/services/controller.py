@@ -78,6 +78,24 @@ class TimelapseController:
         self.roi_y: Optional[int] = None
         self.roi_w: Optional[int] = None
         self.roi_h: Optional[int] = None
+        self.roi_semantics = "floral_display_zone"
+        self.control_roi_used = False
+        self.control_roi_x: Optional[int] = None
+        self.control_roi_y: Optional[int] = None
+        self.control_roi_w: Optional[int] = None
+        self.control_roi_h: Optional[int] = None
+        self.floral_zone_score: Optional[float] = None
+        self.background_control_score: Optional[float] = None
+        self.zone_minus_control_score: Optional[float] = None
+        self.grid_rows = 4
+        self.grid_cols = 4
+        self.changed_cell_count = 0
+        self.changed_cell_ratio: Optional[float] = None
+        self.local_compactness: Optional[float] = None
+        self.whole_frame_change_score: Optional[float] = None
+        self.previous_frame_elapsed_sec: Optional[float] = None
+        self.robust_background_score: Optional[float] = None
+        self.candidate_reasons: Optional[str] = None
         self.roi_tracking = False
         self.roi_tracking_success = False
         self.roi_tracking_score: Optional[float] = None
@@ -149,6 +167,24 @@ class TimelapseController:
             roi_y=self.roi_y,
             roi_w=self.roi_w,
             roi_h=self.roi_h,
+            roi_semantics=self.roi_semantics,
+            control_roi_used=self.control_roi_used,
+            control_roi_x=self.control_roi_x,
+            control_roi_y=self.control_roi_y,
+            control_roi_w=self.control_roi_w,
+            control_roi_h=self.control_roi_h,
+            floral_zone_score=self.floral_zone_score,
+            background_control_score=self.background_control_score,
+            zone_minus_control_score=self.zone_minus_control_score,
+            grid_rows=self.grid_rows,
+            grid_cols=self.grid_cols,
+            changed_cell_count=self.changed_cell_count,
+            changed_cell_ratio=self.changed_cell_ratio,
+            local_compactness=self.local_compactness,
+            whole_frame_change_score=self.whole_frame_change_score,
+            previous_frame_elapsed_sec=self.previous_frame_elapsed_sec,
+            robust_background_score=self.robust_background_score,
+            candidate_reasons=self.candidate_reasons,
             roi_tracking=self.roi_tracking,
             roi_tracking_success=self.roi_tracking_success,
             roi_tracking_score=self.roi_tracking_score,
@@ -223,6 +259,19 @@ class TimelapseController:
             self.roi_y = request.roi_y
             self.roi_w = request.roi_w
             self.roi_h = request.roi_h
+            self.roi_semantics = "floral_display_zone"
+            self.control_roi_used = None not in (
+                request.control_roi_x,
+                request.control_roi_y,
+                request.control_roi_w,
+                request.control_roi_h,
+            )
+            self.control_roi_x = request.control_roi_x
+            self.control_roi_y = request.control_roi_y
+            self.control_roi_w = request.control_roi_w
+            self.control_roi_h = request.control_roi_h
+            self.grid_rows = request.roi_grid_rows
+            self.grid_cols = request.roi_grid_cols
             self.roi_tracking = bool(request.roi_tracking and self.roi_used)
             self.roi_tracking_success = False
             self.roi_tracking_score = None
@@ -561,6 +610,24 @@ class TimelapseController:
         self.roi_y = metrics.get("roi_y")
         self.roi_w = metrics.get("roi_w")
         self.roi_h = metrics.get("roi_h")
+        self.roi_semantics = str(metrics.get("roi_semantics") or "floral_display_zone")
+        self.control_roi_used = bool(metrics.get("control_roi_used"))
+        self.control_roi_x = metrics.get("control_roi_x")
+        self.control_roi_y = metrics.get("control_roi_y")
+        self.control_roi_w = metrics.get("control_roi_w")
+        self.control_roi_h = metrics.get("control_roi_h")
+        self.floral_zone_score = metrics.get("floral_zone_score")
+        self.background_control_score = metrics.get("background_control_score")
+        self.zone_minus_control_score = metrics.get("zone_minus_control_score")
+        self.grid_rows = int(metrics.get("grid_rows") or self.grid_rows)
+        self.grid_cols = int(metrics.get("grid_cols") or self.grid_cols)
+        self.changed_cell_count = int(metrics.get("changed_cell_count") or 0)
+        self.changed_cell_ratio = metrics.get("changed_cell_ratio")
+        self.local_compactness = metrics.get("local_compactness")
+        self.whole_frame_change_score = metrics.get("whole_frame_change_score")
+        self.previous_frame_elapsed_sec = metrics.get("previous_frame_elapsed_sec")
+        self.robust_background_score = metrics.get("robust_background_score")
+        self.candidate_reasons = metrics.get("candidate_reasons")
         self.roi_tracking = bool(metrics.get("roi_tracking"))
         self.roi_tracking_success = bool(metrics.get("roi_tracking_success"))
         self.roi_tracking_score = metrics.get("roi_tracking_score")

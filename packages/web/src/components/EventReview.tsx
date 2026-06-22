@@ -58,7 +58,7 @@ export function EventReview() {
       await saveEventReview(camera, eventId, {
         manual_label: manualLabel,
         manual_taxon: taxon,
-        false_positive_reason: manualLabel === 'non_insect' ? reason : '',
+        false_positive_reason: manualLabel === 'noise' ? reason : '',
         manual_notes: notes,
       } as any);
       await load();
@@ -236,6 +236,7 @@ function EventItem({ camera, event: ev, onLabel, isSelected, onToggleSelect }: E
   const category = ev.final_category || 'unclear';
   const source = ev.category_source || 'auto';
   const reviewStatus = ev.review_status || 'motion_candidate';
+  const reviewLabel = normalizeReviewLabel(ev.review_label || ev.manual_label || '');
   const categoryClass =
     category === 'positive'
       ? s.categoryPositive
@@ -294,6 +295,10 @@ function EventItem({ camera, event: ev, onLabel, isSelected, onToggleSelect }: E
         <span>
           wind {ev.wind_like_motion || '-'} / type {ev.motion_type || '-'} / auto {ev.auto_category || '-'}
         </span>
+        <span>
+          floral {ev.floral_zone_score || '-'} / control {ev.background_control_score || '-'} / cells {ev.changed_cell_count || '-'}
+        </span>
+        <span>{ev.candidate_reasons || '-'}</span>
       </div>
       <div class={s.eventReviewForm}>
         <input
@@ -326,18 +331,18 @@ function EventItem({ camera, event: ev, onLabel, isSelected, onToggleSelect }: E
           }}
         />
         <div class={s.eventReviewActions}>
-          {([['insect', 'Positive'], ['non_insect', 'Negative'], ['unclear', 'Unclear']] as const).map(
+          {([['visit', 'Visit'], ['noise', 'Noise'], ['unclear', 'Unclear']] as const).map(
             ([val, text]) => (
               <button
                 key={val}
                 type="button"
                 class={`${
-                  val === 'insect'
+                  val === 'visit'
                     ? s.quickLabelPositive
-                    : val === 'non_insect'
+                    : val === 'noise'
                     ? s.quickLabelNegative
                     : s.quickLabelUnclear
-                }${ev.manual_label === val ? ' ' + s.quickLabelSelected : ''}`}
+                }${reviewLabel === val ? ' ' + s.quickLabelSelected : ''}`}
                 style={{ border: 0, borderRadius: '8px', cursor: 'pointer', padding: '8px' }}
                 onClick={() => onLabel(ev.event_id, val, taxon.value, reason.value, notes.value)}
               >
@@ -349,4 +354,16 @@ function EventItem({ camera, event: ev, onLabel, isSelected, onToggleSelect }: E
       </div>
     </article>
   );
+}
+
+function normalizeReviewLabel(value: string): string {
+  return ({
+    insect: 'visit',
+    positive: 'visit',
+    visit: 'visit',
+    non_insect: 'noise',
+    negative: 'noise',
+    noise: 'noise',
+    unclear: 'unclear',
+  } as Record<string, string>)[value] || '';
 }

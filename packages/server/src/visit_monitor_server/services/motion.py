@@ -14,6 +14,8 @@ def detect_motion(
     pixel_difference: int,
     motion_ratio: float,
     roi: Optional[tuple[int, int, int, int]] = None,
+    control_roi: Optional[tuple[int, int, int, int]] = None,
+    grid_shape: tuple[int, int] = (4, 4),
     monitor_size: tuple[int, int] = (640, 360),
 ):
     """
@@ -51,6 +53,13 @@ def detect_motion(
         x, y, width, height = None, None, None, None
         luminance = full_luminance
     mean_brightness = float(luminance.mean())
+    control_luminance = None
+    if control_roi is not None:
+        cx, cy, cwidth, cheight = control_roi
+        control_luminance = full_luminance[cy:cy + cheight, cx:cx + cwidth]
+    else:
+        cx, cy, cwidth, cheight = None, None, None, None
+    rows, cols = grid_shape
     metrics: dict = {
         "motion_score": None,
         "changed_area_ratio": None,
@@ -61,6 +70,24 @@ def detect_motion(
         "roi_y": y,
         "roi_w": width,
         "roi_h": height,
+        "roi_semantics": "floral_display_zone",
+        "control_roi_used": control_roi is not None,
+        "control_roi_x": cx,
+        "control_roi_y": cy,
+        "control_roi_w": cwidth,
+        "control_roi_h": cheight,
+        "floral_zone_score": None,
+        "background_control_score": None,
+        "zone_minus_control_score": None,
+        "grid_rows": rows,
+        "grid_cols": cols,
+        "changed_cell_count": 0,
+        "changed_cell_ratio": None,
+        "local_compactness": None,
+        "whole_frame_change_score": None,
+        "previous_frame_elapsed_sec": None,
+        "robust_background_score": None,
+        "candidate_reasons": "",
         "wind_like_motion": False,
         "num_blobs": 0,
         "largest_blob_area": 0,
@@ -73,6 +100,13 @@ def detect_motion(
 
     changed = np.abs(luminance - background) >= pixel_difference
     changed_area_ratio = float(changed.mean())
+    whole_changed = np.abs(full_luminance - float(background.mean())) >= pixel_difference
+    whole_frame_change_score = float(whole_changed.mean())
+    control_score = None
+    if control_luminance is not None:
+        control_changed = np.abs(control_luminance - float(background.mean())) >= pixel_difference
+        control_score = float(control_changed.mean())
+    grid_metrics = grid_change_metrics(changed, rows, cols)
     brightness_delta = abs(float(mean_brightness - float(background.mean())))
     blob_m = blob_metrics(changed)
     motion_type = classify_motion(
@@ -86,16 +120,64 @@ def detect_motion(
         {
             "motion_score": changed_area_ratio,
             "changed_area_ratio": changed_area_ratio,
+            "floral_zone_score": changed_area_ratio,
+            "background_control_score": control_score,
+            "zone_minus_control_score": None if control_score is None else changed_area_ratio - control_score,
+            "whole_frame_change_score": whole_frame_change_score,
+            **grid_metrics,
             "brightness_delta": brightness_delta,
             "wind_like_motion": motion_type == "wind_like_large_motion" or changed_area_ratio >= 0.20,
             **blob_m,
             "motion_type": motion_type,
+            "candidate_reasons": candidate_reasons(motion_type, changed_area_ratio, control_score, grid_metrics),
         }
     )
     detected = motion_type == "small_object_motion"
     if not detected:
         background = (background * 0.9) + (luminance * 0.1)
     return metrics, detected, background
+
+
+def grid_change_metrics(mask, rows: int, cols: int) -> dict:
+    import numpy as np
+
+    rows = max(1, rows)
+    cols = max(1, cols)
+    height, width = mask.shape
+    changed_cells = 0
+    cell_scores = []
+    for y0 in np.linspace(0, height, rows, endpoint=False, dtype=int):
+        y1 = min(height, y0 + max(1, height // rows))
+        for x0 in np.linspace(0, width, cols, endpoint=False, dtype=int):
+            x1 = min(width, x0 + max(1, width // cols))
+            score = float(mask[y0:y1, x0:x1].mean()) if y1 > y0 and x1 > x0 else 0.0
+            cell_scores.append(score)
+            if score > 0:
+                changed_cells += 1
+    total_cells = rows * cols
+    changed_cell_ratio = changed_cells / total_cells if total_cells else 0.0
+    local_compactness = max(cell_scores) / (sum(cell_scores) + 1e-9) if cell_scores else 0.0
+    return {
+        "changed_cell_count": changed_cells,
+        "changed_cell_ratio": changed_cell_ratio,
+        "local_compactness": local_compactness,
+    }
+
+
+def candidate_reasons(
+    motion_type: str,
+    floral_zone_score: float,
+    control_score: Optional[float],
+    grid_metrics: dict,
+) -> str:
+    reasons = [motion_type]
+    if control_score is not None:
+        reasons.append("zone_gt_control" if floral_zone_score > control_score else "control_matches_zone")
+    if (grid_metrics.get("local_compactness") or 0) >= 0.45:
+        reasons.append("localized_change")
+    if (grid_metrics.get("changed_cell_ratio") or 0) >= 0.5:
+        reasons.append("broad_zone_change")
+    return ";".join(reasons)
 
 
 def blob_metrics(mask) -> dict:

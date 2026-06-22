@@ -21,7 +21,7 @@ from visit_monitor_server.api.schemas.events import (
 )
 from visit_monitor_server.config import FALSE_POSITIVE_REASONS, IMAGE_DIR, OBSERVATION_LOG_PATH
 from visit_monitor_server.services import get_controller
-from visit_monitor_server.services.event_log import read_event_rows, write_event_rows
+from visit_monitor_server.services.event_log import canonical_review_label, read_event_rows, write_event_rows
 
 router = APIRouter(tags=["events"], dependencies=[Depends(require_device_secret)])
 
@@ -106,14 +106,15 @@ def label_event(event_id: str, request: EventLabelRequest) -> EventLabelResponse
     for row in rows:
         if row.get("event_id") == event_id:
             if request.manual_label is not None:
-                manual_label = request.manual_label.strip()
-                if manual_label not in {"insect", "non_insect", "unclear"}:
+                manual_label = canonical_review_label(request.manual_label)
+                if manual_label not in {"visit", "noise", "unclear"}:
                     raise HTTPException(
                         status_code=400,
-                        detail="manual_label must be insect, non_insect, or unclear.",
+                        detail="manual_label must be visit, noise, or unclear.",
                     )
                 row["manual_label"] = manual_label
-                if manual_label == "insect":
+                row["review_label"] = manual_label
+                if manual_label == "visit":
                     false_positive_reason = ""
             if request.manual_taxon is not None:
                 row["manual_taxon"] = request.manual_taxon.strip()
@@ -141,7 +142,7 @@ def export_event_labels() -> Response:
     output = io.StringIO()
     fieldnames = [
         "event_id", "timestamp", "image_filename",
-        "auto_category", "manual_label", "final_label", "final_category", "category_source", "review_status",
+        "auto_category", "manual_label", "review_label", "final_label", "final_category", "category_source", "review_status",
         "manual_taxon", "false_positive_reason", "manual_notes",
         "device_id", "device_name", "camera_label", "camera_model", "camera_profile",
         "site_id", "flower_id", "plant_species", "observer", "comparison_session_id", "camera_role", "method_mode",

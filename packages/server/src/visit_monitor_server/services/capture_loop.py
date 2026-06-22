@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Optional
 
 from visit_monitor_server.config import (
     DEVICE_ID, DEVICE_NAME,
+    ADAPTIVE_DECISION_LOG_PATH,
     CAMERA_LABEL, CAMERA_MODEL, CAMERA_PROFILE,
     IS_AI_CAMERA, IS_NOIR, IS_WIDE,
     METRICS_PATH, OBSERVATION_LOG_PATH,
@@ -41,6 +42,19 @@ def _metric_value(metrics: dict, key: str):
     return value
 
 
+EVIDENCE_COLUMNS = [
+    "roi_semantics",
+    "control_roi_used", "control_roi_x", "control_roi_y", "control_roi_w", "control_roi_h",
+    "floral_zone_score", "background_control_score", "zone_minus_control_score",
+    "grid_rows", "grid_cols", "changed_cell_count", "changed_cell_ratio", "local_compactness",
+    "whole_frame_change_score", "previous_frame_elapsed_sec", "robust_background_score", "candidate_reasons",
+]
+
+
+def _evidence_values(metrics: dict) -> list:
+    return [_metric_value(metrics, key) for key in EVIDENCE_COLUMNS]
+
+
 def _open_camera():
     """Return a started camera (FakeCamera or Picamera2)."""
     if USE_FAKE_CAMERA:
@@ -59,6 +73,7 @@ def _label_captured_image(image_path: Path, motion_label: str, ml_assist_mode: b
         if predicted is not None:
             label = predicted
             source = "field_ml_prediction"
+    label = {"visit": "positive", "noise": "negative"}.get(label, label)
     register_label(image_path, label, source)
 
 
@@ -85,6 +100,7 @@ def _write_metric(
                 "changed_area_ratio", "mean_brightness", "brightness_delta", "wind_like_motion",
                 "num_blobs", "largest_blob_area", "largest_blob_ratio", "small_blob_count", "motion_type",
                 "roi_used", "roi_x", "roi_y", "roi_w", "roi_h",
+                *EVIDENCE_COLUMNS,
                 "roi_tracking", "roi_tracking_success", "roi_tracking_score", "roi_search_margin",
                 "roi_tracking_min_score", "initial_roi_x", "initial_roi_y", "initial_roi_w", "initial_roi_h",
                 "tracked_roi_x", "tracked_roi_y", "tracked_roi_w", "tracked_roi_h", "roi_shift_x", "roi_shift_y",
@@ -120,6 +136,7 @@ def _write_metric(
             _metric_value(metrics, "roi_y"),
             _metric_value(metrics, "roi_w"),
             _metric_value(metrics, "roi_h"),
+            *_evidence_values(metrics),
             bool(metrics.get("roi_tracking")),
             bool(metrics.get("roi_tracking_success")),
             _metric_value(metrics, "roi_tracking_score"),
@@ -135,6 +152,36 @@ def _write_metric(
             _metric_value(metrics, "tracked_roi_h"),
             _metric_value(metrics, "roi_shift_x"),
             _metric_value(metrics, "roi_shift_y"),
+        ])
+
+
+def _write_adaptive_decision(
+    captured_at: datetime,
+    previous_interval: float,
+    new_interval: float,
+    activity_score: float,
+    candidate_rate: float,
+    mean_visit_likeness: float,
+    mean_noise_likeness: float,
+    reason: str,
+) -> None:
+    write_header = not ADAPTIVE_DECISION_LOG_PATH.exists()
+    with ADAPTIVE_DECISION_LOG_PATH.open("a", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        if write_header:
+            writer.writerow([
+                "timestamp", "previous_interval_sec", "new_interval_sec", "activity_score",
+                "candidate_rate", "mean_visit_likeness", "mean_noise_likeness", "reason",
+            ])
+        writer.writerow([
+            captured_at.isoformat(timespec="seconds"),
+            f"{previous_interval:.3f}",
+            f"{new_interval:.3f}",
+            f"{activity_score:.6f}",
+            f"{candidate_rate:.6f}",
+            f"{mean_visit_likeness:.6f}",
+            f"{mean_noise_likeness:.6f}",
+            reason,
         ])
 
 
@@ -165,6 +212,7 @@ def _write_observation_event(
                 "changed_area_ratio", "mean_brightness", "brightness_delta", "wind_like_motion",
                 "num_blobs", "largest_blob_area", "largest_blob_ratio", "small_blob_count", "motion_type",
                 "roi_used", "roi_x", "roi_y", "roi_w", "roi_h",
+                *EVIDENCE_COLUMNS,
                 "roi_tracking", "roi_tracking_success", "roi_tracking_score", "roi_search_margin",
                 "roi_tracking_min_score", "initial_roi_x", "initial_roi_y", "initial_roi_w", "initial_roi_h",
                 "tracked_roi_x", "tracked_roi_y", "tracked_roi_w", "tracked_roi_h", "roi_shift_x", "roi_shift_y",
@@ -202,6 +250,7 @@ def _write_observation_event(
             _metric_value(metrics, "roi_y"),
             _metric_value(metrics, "roi_w"),
             _metric_value(metrics, "roi_h"),
+            *_evidence_values(metrics),
             bool(metrics.get("roi_tracking")),
             bool(metrics.get("roi_tracking_success")),
             _metric_value(metrics, "roi_tracking_score"),
@@ -262,6 +311,7 @@ def _write_event_log(
             _metric_value(metrics, "roi_y"),
             _metric_value(metrics, "roi_w"),
             _metric_value(metrics, "roi_h"),
+            *_evidence_values(metrics),
             bool(metrics.get("roi_tracking")),
             bool(metrics.get("roi_tracking_success")),
             _metric_value(metrics, "roi_tracking_score"),
@@ -277,7 +327,7 @@ def _write_event_log(
             _metric_value(metrics, "tracked_roi_h"),
             _metric_value(metrics, "roi_shift_x"),
             _metric_value(metrics, "roi_shift_y"),
-            "", "", "", "", "",  # manual fields
+            "", "", "", "", "", "",  # manual fields
         ])
 
 
@@ -285,6 +335,17 @@ def _roi_tuple(request) -> Optional[tuple[int, int, int, int]]:
     if None in (request.roi_x, request.roi_y, request.roi_w, request.roi_h):
         return None
     return (int(request.roi_x), int(request.roi_y), int(request.roi_w), int(request.roi_h))
+
+
+def _control_roi_tuple(request) -> Optional[tuple[int, int, int, int]]:
+    if None in (request.control_roi_x, request.control_roi_y, request.control_roi_w, request.control_roi_h):
+        return None
+    return (
+        int(request.control_roi_x),
+        int(request.control_roi_y),
+        int(request.control_roi_w),
+        int(request.control_roi_h),
+    )
 
 
 def _detect_motion_with_tracking(
@@ -306,7 +367,13 @@ def _detect_motion_with_tracking(
         else roi
     )
     metrics, detected, background = detect_motion(
-        frame, background, pixel_difference, motion_ratio, active_roi
+        frame,
+        background,
+        pixel_difference,
+        motion_ratio,
+        active_roi,
+        _control_roi_tuple(request),
+        (request.roi_grid_rows, request.roi_grid_cols),
     )
     metrics.update(tracking_metrics(roi_tracker, active_roi, request.roi_search_margin, request.roi_tracking_min_score))
     return metrics, detected, background
@@ -376,7 +443,9 @@ def run_capture_loop(
         import time as _time
 
         _adaptive_candidates: list[float] = []
+        _adaptive_visit_scores: list[tuple[float, float]] = []
         next_scheduled_time = _time.monotonic()
+        current_adaptive_interval = request.interval_sec
         while not stop_event.is_set():
             captured_at = datetime.now().astimezone()
 
@@ -395,19 +464,51 @@ def run_capture_loop(
                 with camera_lock:
                     camera.capture_file(str(image_path))
                 
+                predicted_label = trainer.predict(image_path) if request.ml_assist_mode and MODEL_PATH.is_file() else None
+                visit_likeness = 1.0 if predicted_label == "visit" else 0.5 if insect_candidate else 0.0
+                noise_likeness = 1.0 if predicted_label == "noise" else 0.0 if insect_candidate else 0.5
                 if insect_candidate:
-                    _adaptive_candidates.append(_time.monotonic())
+                    candidate_time = _time.monotonic()
+                    _adaptive_candidates.append(candidate_time)
+                    _adaptive_visit_scores.append((candidate_time, visit_likeness))
                     _write_event_log(captured_at, image_path, metrics, request)
-                    interval_reason = "Motion candidate detected; adaptive interval shortened."
+                    interval_reason = "Motion candidate evidence updated future scheduled interval."
                 else:
                     interval_reason = "No candidate; adaptive timelapse continuing."
                 
                 now = _time.monotonic()
                 _adaptive_candidates[:] = [t for t in _adaptive_candidates if now - t <= request.adaptive_window_sec]
-                if _adaptive_candidates:
-                    next_interval = request.adaptive_min_interval_sec
-                else:
-                    next_interval = request.interval_sec
+                _adaptive_visit_scores[:] = [item for item in _adaptive_visit_scores if now - item[0] <= request.adaptive_window_sec]
+                candidate_rate = min(1.0, len(_adaptive_candidates) / max(1.0, request.adaptive_window_sec / max(1.0, request.interval_sec)))
+                mean_visit_likeness = (
+                    sum(score for _, score in _adaptive_visit_scores) / len(_adaptive_visit_scores)
+                    if _adaptive_visit_scores
+                    else 0.0
+                )
+                mean_noise_likeness = 1.0 - mean_visit_likeness if _adaptive_candidates else 0.0
+                activity_score = max(
+                    0.0,
+                    min(1.0, (0.55 * candidate_rate) + (0.35 * mean_visit_likeness) - (0.20 * mean_noise_likeness)),
+                )
+                target_interval = request.interval_sec - activity_score * (request.interval_sec - request.adaptive_min_interval_sec)
+                next_interval = (0.7 * current_adaptive_interval) + (0.3 * target_interval)
+                previous_interval = current_adaptive_interval
+                current_adaptive_interval = next_interval
+                interval_reason = (
+                    f"Adaptive scheduled interval from activity_score={activity_score:.3f}, "
+                    f"candidate_rate={candidate_rate:.3f}, visit_like={mean_visit_likeness:.3f}, "
+                    f"noise_like={mean_noise_likeness:.3f}."
+                )
+                _write_adaptive_decision(
+                    captured_at,
+                    previous_interval,
+                    next_interval,
+                    activity_score,
+                    candidate_rate,
+                    mean_visit_likeness,
+                    mean_noise_likeness,
+                    interval_reason,
+                )
 
                 _write_metric(
                     captured_at, image_path, next_interval,
