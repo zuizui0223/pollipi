@@ -1,0 +1,19 @@
+{
+  "defaults": {
+    "ssh_port": 22,
+    "server_artifact": "dist/pollipi_api_server.py",
+    "web_build_dir": "packages/web/dist",
+    "remote_dir": "/home/CHANGE_ME/pollipi_timelapse",
+    "server_filename": "pollipi_api_server.py",
+    "web_remote_dir": "web",
+    "service_name": "pollipi.service",
+    "post_deploy_base_url": "http://{host}:8000"
+  },
+  "devices": [
+    { "name": "pollipi-11", "host": "192.168.8.11", "ssh_user": "CHANGE_ME" },
+    { "name": "pollipi-12", "host": "192.168.8.12", "ssh_user": "CHANGE_ME" },
+    { "name": "pollipi-13", "host": "192.168.8.13", "ssh_user": "CHANGE_ME" },
+    { "name": "pollipi-14", "host": "192.168.8.14", "ssh_user": "CHANGE_ME" },
+    { "name": "pollipi-15", "host": "192.168.8.15", "ssh_user": "CHANGE_ME" }
+  ]
+}

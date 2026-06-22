@@ -1,6 +1,14 @@
 import type { RoiRect } from '../lib/roi';
 
 /** Device info returned by GET /device */
+export interface BuildInfo {
+  app_version: string;
+  git_commit: string;
+  build_timestamp: string;
+  deployment_mode: string;
+  web_build_id: string;
+}
+
 export interface DeviceInfo {
   device_id: string;
   device_name: string;
@@ -10,6 +18,7 @@ export interface DeviceInfo {
   is_ai_camera: boolean;
   is_noir: boolean;
   is_wide: boolean;
+  build_info?: BuildInfo;
 }
 
 export interface CoordinatorUser {
@@ -166,6 +175,18 @@ export interface DeleteImagesResponse {
   message?: string;
 }
 
+export interface BulkDeleteEventFailure {
+  event_id: string;
+  reason: string;
+}
+
+export interface BulkDeleteEventsResponse {
+  deleted_count: number;
+  image_deleted_count: number;
+  failed: BulkDeleteEventFailure[];
+  message?: string;
+}
+
 /** The full camera object used in frontend state */
 export interface Camera {
   address: string;
@@ -204,6 +225,7 @@ export interface Camera {
   // from status updates
   camera_role?: string | null;
   comparison_session_id?: string | null;
+  build_info?: BuildInfo;
 }
 
 /** Start payload for POST /start */

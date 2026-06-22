@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class EventListResponse(BaseModel):
@@ -31,4 +31,16 @@ class EventLabelResponse(BaseModel):
 class BulkDeleteEventsRequest(BaseModel):
     event_ids: list[str]
     scope: str = "event_only"
+
+
+class BulkDeleteEventFailure(BaseModel):
+    event_id: str
+    reason: str
+
+
+class BulkDeleteEventsResponse(BaseModel):
+    deleted_count: int
+    image_deleted_count: int = 0
+    failed: list[BulkDeleteEventFailure] = Field(default_factory=list)
+    message: str
 

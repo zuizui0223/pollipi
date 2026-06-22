@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 PACKAGE_NAME = "visit_monitor_server"
+BUILD_INFO_MODULE = f"{PACKAGE_NAME}.build_info"
 
 
 def _package_root() -> Path:
@@ -35,6 +38,42 @@ def collect_sources(package_root: Path) -> dict[str, str]:
         module_name = ".".join(part for part in module_parts if part)
         sources[module_name] = path.read_text(encoding="utf-8")
     return sources
+
+
+def _git_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short=12", "HEAD"],
+            cwd=Path(__file__).resolve().parents[4],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return ""
+
+
+def apply_build_metadata(
+    sources: dict[str, str],
+    *,
+    git_commit: str,
+    build_timestamp: str,
+    web_build_id: str,
+) -> dict[str, str]:
+    """Embed metadata constants in the bundled build_info module."""
+    patched = dict(sources)
+    source = patched.get(BUILD_INFO_MODULE)
+    if source is None:
+        return patched
+    replacements = {
+        'EMBEDDED_GIT_COMMIT = ""': f'EMBEDDED_GIT_COMMIT = "{git_commit}"',
+        'EMBEDDED_BUILD_TIMESTAMP = ""': f'EMBEDDED_BUILD_TIMESTAMP = "{build_timestamp}"',
+        'EMBEDDED_DEPLOYMENT_MODE = ""': 'EMBEDDED_DEPLOYMENT_MODE = "packaged_artifact"',
+        'EMBEDDED_WEB_BUILD_ID = ""': f'EMBEDDED_WEB_BUILD_ID = "{web_build_id}"',
+    }
+    for old, new in replacements.items():
+        source = source.replace(old, new)
+    patched[BUILD_INFO_MODULE] = source
+    return patched
 
 
 def render_bundle(sources: dict[str, str]) -> str:
@@ -111,11 +150,25 @@ if __name__ == "__main__":
 '''
 
 
-def build(output: Path, package_root: Path | None = None) -> Path:
+def build(
+    output: Path,
+    package_root: Path | None = None,
+    *,
+    git_commit: str | None = None,
+    build_timestamp: str | None = None,
+    web_build_id: str = "",
+) -> Path:
     """Write the bundled artifact to *output* and return its path."""
     root = package_root or _package_root()
+    metadata_timestamp = build_timestamp or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    sources = apply_build_metadata(
+        collect_sources(root),
+        git_commit=git_commit if git_commit is not None else _git_commit(),
+        build_timestamp=metadata_timestamp,
+        web_build_id=web_build_id,
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render_bundle(collect_sources(root)), encoding="utf-8")
+    output.write_text(render_bundle(sources), encoding="utf-8")
     output.chmod(0o755)
     return output
 
@@ -123,8 +176,16 @@ def build(output: Path, package_root: Path | None = None) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bundle PolliPi into one Python script.")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--git-commit", default=None)
+    parser.add_argument("--build-timestamp", default=None)
+    parser.add_argument("--web-build-id", default="")
     args = parser.parse_args()
-    path = build(args.output)
+    path = build(
+        args.output,
+        git_commit=args.git_commit,
+        build_timestamp=args.build_timestamp,
+        web_build_id=args.web_build_id,
+    )
     print(f"Wrote {path}")
 
 

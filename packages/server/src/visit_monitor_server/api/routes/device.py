@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from visit_monitor_server.adapters.system_info import disk_usage, throttle_status
+from visit_monitor_server.build_info import get_build_info
 from visit_monitor_server.api.schemas.device import DeviceInfoResponse, SystemInfoResponse
 from visit_monitor_server.config import (
     CAMERA_LABEL,
@@ -31,6 +32,7 @@ def get_device() -> DeviceInfoResponse:
         is_ai_camera=IS_AI_CAMERA,
         is_noir=IS_NOIR,
         is_wide=IS_WIDE,
+        build_info=get_build_info(),
     )
 
 

@@ -715,11 +715,47 @@ export const eventGrid = style({
   },
 });
 
+export const eventBulkBar = style({
+  display: 'flex',
+  gap: '8px',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  margin: '0 0 14px',
+});
+
+export const eventDeleteOption = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  minHeight: '38px',
+  color: 'var(--muted)',
+  fontSize: '13px',
+});
+
+export const eventDeleteMessage = style({
+  margin: '0 0 14px',
+  borderRadius: '8px',
+  background: '#f4f4ee',
+  color: 'var(--ink)',
+  padding: '10px 12px',
+  fontSize: '13px',
+});
+
 export const eventItem = style({
   overflow: 'hidden',
   border: '1px solid var(--line)',
   borderRadius: '14px',
   background: 'white',
+});
+
+export const eventSelectLabel = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '8px 10px',
+  borderBottom: '1px solid var(--line)',
+  color: 'var(--muted)',
+  fontSize: '13px',
 });
 
 export const eventMeta = style({

@@ -7,6 +7,7 @@ import type {
   EventInfo,
   TrainingStatus,
   DeleteImagesResponse,
+  BulkDeleteEventsResponse,
   StartPayload,
   Camera,
   CoordinatorAuthResponse,
@@ -280,8 +281,8 @@ export async function bulkDeleteEvents(
   baseUrl: ApiTarget,
   eventIds: string[],
   scope: string = 'event_only',
-): Promise<DeleteImagesResponse> {
-  return apiRequest<DeleteImagesResponse>(baseUrl, '/events/bulk-delete', {
+): Promise<BulkDeleteEventsResponse> {
+  return apiRequest<BulkDeleteEventsResponse>(baseUrl, '/events/bulk-delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ event_ids: eventIds, scope }),

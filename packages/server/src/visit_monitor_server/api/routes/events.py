@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,17 +13,46 @@ from fastapi.responses import Response
 from visit_monitor_server.api.auth import require_device_secret
 from visit_monitor_server.api.schemas.events import (
     BulkDeleteEventsRequest,
+    BulkDeleteEventsResponse,
+    BulkDeleteEventFailure,
     EventLabelRequest,
     EventLabelResponse,
     EventListResponse,
 )
-from visit_monitor_server.api.schemas.images import DeleteAllResponse
-from visit_monitor_server.config import FALSE_POSITIVE_REASONS, IMAGE_DIR
+from visit_monitor_server.config import FALSE_POSITIVE_REASONS, IMAGE_DIR, OBSERVATION_LOG_PATH
 from visit_monitor_server.services import get_controller
 from visit_monitor_server.services.event_log import read_event_rows, write_event_rows
-from visit_monitor_server.services.image_store import remove_label
 
 router = APIRouter(tags=["events"], dependencies=[Depends(require_device_secret)])
+
+EVENT_DELETE_SCOPES = {"event_only", "event_and_event_image"}
+BASELINE_CAPTURE_TYPES = {"scheduled", "baseline", "timelapse", "scheduled_timelapse"}
+
+
+def _baseline_image_filenames() -> set[str]:
+    if not OBSERVATION_LOG_PATH.is_file():
+        return set()
+    filenames: set[str] = set()
+    with OBSERVATION_LOG_PATH.open("r", newline="", encoding="utf-8") as csv_file:
+        for row in csv.DictReader(csv_file):
+            capture_type = row.get("capture_type", "").strip().lower()
+            filename = row.get("image_filename", "").strip()
+            if filename and capture_type in BASELINE_CAPTURE_TYPES:
+                filenames.add(filename)
+    return filenames
+
+
+def _resolve_event_image(filename: str) -> tuple[Path | None, str | None]:
+    clean = Path(filename).name
+    if not clean or clean != filename:
+        return None, "unsafe image filename"
+    if Path(clean).suffix.lower() not in {".jpg", ".jpeg"}:
+        return None, "event image is not a JPEG"
+    path = (IMAGE_DIR / clean).resolve()
+    image_root = IMAGE_DIR.resolve()
+    if path.parent != image_root:
+        return None, "event image is outside image directory"
+    return path, None
 
 
 @router.get("/events", response_model=EventListResponse)
@@ -115,25 +145,54 @@ def export_event_labels() -> Response:
     )
 
 
-@router.post("/events/bulk-delete", response_model=DeleteAllResponse)
-def bulk_delete_events(request: BulkDeleteEventsRequest) -> DeleteAllResponse:
-    if request.scope not in {"event_only", "event_and_images", "event_images_labels"}:
-        raise HTTPException(status_code=400, detail="scope must be event_only, event_and_images, or event_images_labels.")
+@router.post("/events/bulk-delete", response_model=BulkDeleteEventsResponse)
+def bulk_delete_events(request: BulkDeleteEventsRequest) -> BulkDeleteEventsResponse:
+    if request.scope not in EVENT_DELETE_SCOPES:
+        raise HTTPException(status_code=400, detail="scope must be event_only or event_and_event_image.")
     if not request.event_ids:
         raise HTTPException(status_code=400, detail="No event_ids specified.")
     rows = read_event_rows()
-    id_set = set(request.event_ids)
+    id_set = {event_id.strip() for event_id in request.event_ids if event_id.strip()}
+    if not id_set:
+        raise HTTPException(status_code=400, detail="No event_ids specified.")
+    row_by_id = {row.get("event_id", ""): row for row in rows}
+    failures: list[BulkDeleteEventFailure] = []
+    for event_id in sorted(id_set):
+        if event_id not in row_by_id:
+            failures.append(BulkDeleteEventFailure(event_id=event_id, reason="event not found"))
     to_delete = [row for row in rows if row.get("event_id") in id_set]
     remaining = [row for row in rows if row.get("event_id") not in id_set]
-    if request.scope in {"event_and_images", "event_images_labels"}:
+    image_deleted_count = 0
+    if request.scope == "event_and_event_image":
+        baseline_filenames = _baseline_image_filenames()
         for row in to_delete:
+            event_id = row.get("event_id", "")
             filename = row.get("image_filename", "")
-            if filename:
-                path = IMAGE_DIR / filename
-                if path.is_file():
-                    if request.scope == "event_images_labels":
-                        remove_label(filename)
-                    path.unlink(missing_ok=True)
-                    get_controller().clear_latest_if_deleted(path)
+            if not filename:
+                continue
+            if filename in baseline_filenames:
+                failures.append(BulkDeleteEventFailure(
+                    event_id=event_id,
+                    reason="image also belongs to scheduled baseline capture; image was not deleted",
+                ))
+                continue
+            path, reason = _resolve_event_image(filename)
+            if reason or path is None:
+                failures.append(BulkDeleteEventFailure(event_id=event_id, reason=reason or "invalid image"))
+                continue
+            if path.is_file():
+                path.unlink(missing_ok=True)
+                image_deleted_count += 1
+                get_controller().clear_latest_if_deleted(path)
     write_event_rows(remaining)
-    return DeleteAllResponse(deleted_count=len(to_delete), message=f"{len(to_delete)} event(s) deleted.")
+    message = f"{len(to_delete)} event(s) deleted."
+    if image_deleted_count:
+        message += f" {image_deleted_count} event image(s) deleted."
+    if failures:
+        message += f" {len(failures)} item(s) need attention."
+    return BulkDeleteEventsResponse(
+        deleted_count=len(to_delete),
+        image_deleted_count=image_deleted_count,
+        failed=failures,
+        message=message,
+    )

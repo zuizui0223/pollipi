@@ -6,6 +6,14 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class BuildInfoResponse(BaseModel):
+    app_version: str = "unknown"
+    git_commit: str = "unknown"
+    build_timestamp: str = "unknown"
+    deployment_mode: str = "unknown"
+    web_build_id: str = "unknown"
+
+
 class DeviceInfoResponse(BaseModel):
     device_id: str
     device_name: str
@@ -17,6 +25,7 @@ class DeviceInfoResponse(BaseModel):
     is_wide: bool
     app_name: str = "PolliPi Field Observer"
     api_version: str = "1"
+    build_info: BuildInfoResponse = BuildInfoResponse()
 
 
 class SystemInfoResponse(BaseModel):

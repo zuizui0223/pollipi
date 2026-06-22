@@ -23,6 +23,10 @@ def _client(monkeypatch, tmp_path: Path, *, device_secret: str | None = None) ->
     monkeypatch.setenv("POLLIPI_IMAGE_DIR", str(tmp_path / "images"))
     monkeypatch.setenv("POLLIPI_DEVICE_ID", "test-pollipi")
     monkeypatch.setenv("POLLIPI_DEVICE_NAME", "Test PolliPi")
+    monkeypatch.delenv("POLLIPI_GIT_COMMIT", raising=False)
+    monkeypatch.delenv("POLLIPI_BUILD_TIMESTAMP", raising=False)
+    monkeypatch.delenv("POLLIPI_DEPLOYMENT_MODE", raising=False)
+    monkeypatch.delenv("POLLIPI_WEB_BUILD_ID", raising=False)
     if device_secret is None:
         monkeypatch.delenv("POLLIPI_DEVICE_SECRET", raising=False)
     else:
@@ -37,6 +41,7 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
         device = client.get("/device")
         assert device.status_code == 200
         assert device.json()["device_id"] == "test-pollipi"
+        assert device.json()["build_info"]["deployment_mode"] == "unknown"
         assert "secret" not in device.text.lower()
 
         status = client.get("/status")
@@ -101,6 +106,37 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
         bulk_del_ev = client.post("/events/bulk-delete", json={"event_ids": [event_id], "scope": "event_only"})
         assert bulk_del_ev.status_code == 200
         assert bulk_del_ev.json()["deleted_count"] == 1
+        assert client.get("/events").json()["event_count"] == 0
+
+        baseline_image = tmp_path / "images" / "baseline.jpg"
+        baseline_image.write_bytes(b"baseline")
+        observation_log = tmp_path / "images" / "observation_events.csv"
+        with observation_log.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["timestamp", "capture_type", "image_filename"])
+            writer.writeheader()
+            writer.writerow({
+                "timestamp": "2026-06-10T12:00:01+09:00",
+                "capture_type": "scheduled",
+                "image_filename": baseline_image.name,
+            })
+        with event_log.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["event_id", "timestamp", "image_filename"])
+            writer.writeheader()
+            writer.writerow({
+                "event_id": "event_unsafe_baseline",
+                "timestamp": "2026-06-10T12:00:02+09:00",
+                "image_filename": baseline_image.name,
+            })
+        unsafe_delete = client.post(
+            "/events/bulk-delete",
+            json={"event_ids": ["event_unsafe_baseline"], "scope": "event_and_event_image"},
+        )
+        assert unsafe_delete.status_code == 200
+        unsafe_payload = unsafe_delete.json()
+        assert unsafe_payload["deleted_count"] == 1
+        assert unsafe_payload["image_deleted_count"] == 0
+        assert unsafe_payload["failed"][0]["event_id"] == "event_unsafe_baseline"
+        assert baseline_image.is_file()
         assert client.get("/events").json()["event_count"] == 0
 
         training = client.get("/training/status")

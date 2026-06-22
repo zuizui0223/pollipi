@@ -22,7 +22,7 @@ import {
   adaptiveMinIntervalSec,
   adaptiveWindowSec,
 } from '../state/session';
-import { deviceUrl, postStart, postStop, fetchStatus, fetchSystem, deleteCoordinatorDevice } from '../api/client';
+import { deviceUrl, postStart, postStop, fetchStatus, fetchSystem, fetchDevice, deleteCoordinatorDevice } from '../api/client';
 import { coordinatorBaseUrl, coordinatorOnline } from '../state/coordinator';
 import { RoiEditor } from './RoiEditor';
 import * as s from '../styles/components.css';
@@ -114,6 +114,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   const status = useSignal<StatusResponse | null>(null);
   const storage = useSignal('-');
   const power = useSignal('-');
+  const buildDetails = useSignal('build unknown');
 
   // ROI state
   const confirmedRoi = useSignal<RoiRect | null>(normalizeRoi(camera.roi));
@@ -250,10 +251,25 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     }
   }
 
+  async function refreshBuildInfo() {
+    try {
+      const device = await fetchDevice(camera);
+      camera.build_info = device.build_info;
+      const info = device.build_info;
+      const commit = info?.git_commit && info.git_commit !== 'unknown' ? info.git_commit : 'unknown';
+      const mode = info?.deployment_mode || 'unknown';
+      const web = info?.web_build_id && info.web_build_id !== 'unknown' ? ` / web ${info.web_build_id}` : '';
+      buildDetails.value = `${mode} / ${commit}${web}`;
+    } catch (_) {
+      buildDetails.value = 'build unknown';
+    }
+  }
+
   async function refreshCamera() {
     try {
       const st = await fetchStatus(camera) as StatusResponse;
       updateFromStatus(st);
+      await refreshBuildInfo();
       // system info
       try {
         const sys = await fetchSystem(camera);
@@ -688,6 +704,10 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <div class={s.metricsCell}>
           <dt class={s.metricsDt}>電源状態</dt>
           <dd class={s.metricsDd}>{power.value}</dd>
+        </div>
+        <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>Build</dt>
+          <dd class={s.metricsDd}>{buildDetails.value}</dd>
         </div>
       </dl>
 
