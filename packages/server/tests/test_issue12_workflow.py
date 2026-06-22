@@ -5,6 +5,7 @@ import importlib
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -53,7 +54,7 @@ def test_candidate_review_uses_visit_noise_unclear_and_training_counts(monkeypat
 
 
 def test_motion_features_include_floral_display_control_and_grid() -> None:
-    import numpy as np
+    np = pytest.importorskip("numpy")
 
     from visit_monitor_server.services.motion import detect_motion
 
