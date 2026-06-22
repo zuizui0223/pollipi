@@ -1,4 +1,5 @@
 {
+  "subnet": "192.168.8.0/24",
   "defaults": {
     "ssh_port": 22,
     "server_artifact": "dist/pollipi_api_server.py",

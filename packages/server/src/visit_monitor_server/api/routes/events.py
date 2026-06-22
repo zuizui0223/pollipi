@@ -26,20 +26,34 @@ from visit_monitor_server.services.event_log import read_event_rows, write_event
 router = APIRouter(tags=["events"], dependencies=[Depends(require_device_secret)])
 
 EVENT_DELETE_SCOPES = {"event_only", "event_and_event_image"}
-BASELINE_CAPTURE_TYPES = {"scheduled", "baseline", "timelapse", "scheduled_timelapse"}
+BASELINE_CAPTURE_TYPES = {"scheduled", "scheduled_event", "baseline", "timelapse", "scheduled_timelapse"}
+EVENT_IMAGE_CAPTURE_TYPES = {"event"}
 
 
-def _baseline_image_filenames() -> set[str]:
+def _image_capture_types() -> dict[str, set[str]]:
     if not OBSERVATION_LOG_PATH.is_file():
-        return set()
-    filenames: set[str] = set()
+        return {}
+    capture_types: dict[str, set[str]] = {}
     with OBSERVATION_LOG_PATH.open("r", newline="", encoding="utf-8") as csv_file:
         for row in csv.DictReader(csv_file):
             capture_type = row.get("capture_type", "").strip().lower()
             filename = row.get("image_filename", "").strip()
-            if filename and capture_type in BASELINE_CAPTURE_TYPES:
-                filenames.add(filename)
-    return filenames
+            if filename:
+                capture_types.setdefault(filename, set()).add(capture_type or "unknown")
+    return capture_types
+
+
+def _event_image_delete_reason(filename: str, capture_types: dict[str, set[str]]) -> str | None:
+    if not OBSERVATION_LOG_PATH.is_file():
+        return "observation log missing; image provenance is unknown"
+    types = capture_types.get(filename)
+    if not types:
+        return "image is not present in observation log; image provenance is unknown"
+    if types & BASELINE_CAPTURE_TYPES:
+        return "image belongs to scheduled/baseline capture; image was not deleted"
+    if types != EVENT_IMAGE_CAPTURE_TYPES:
+        return f"image is not proven event-only; capture_type={','.join(sorted(types))}"
+    return None
 
 
 def _resolve_event_image(filename: str) -> tuple[Path | None, str | None]:
@@ -164,16 +178,21 @@ def bulk_delete_events(request: BulkDeleteEventsRequest) -> BulkDeleteEventsResp
     remaining = [row for row in rows if row.get("event_id") not in id_set]
     image_deleted_count = 0
     if request.scope == "event_and_event_image":
-        baseline_filenames = _baseline_image_filenames()
+        capture_types = _image_capture_types()
         for row in to_delete:
             event_id = row.get("event_id", "")
             filename = row.get("image_filename", "")
             if not filename:
-                continue
-            if filename in baseline_filenames:
                 failures.append(BulkDeleteEventFailure(
                     event_id=event_id,
-                    reason="image also belongs to scheduled baseline capture; image was not deleted",
+                    reason="event has no image filename; image was not deleted",
+                ))
+                continue
+            provenance_reason = _event_image_delete_reason(filename, capture_types)
+            if provenance_reason:
+                failures.append(BulkDeleteEventFailure(
+                    event_id=event_id,
+                    reason=provenance_reason,
                 ))
                 continue
             path, reason = _resolve_event_image(filename)

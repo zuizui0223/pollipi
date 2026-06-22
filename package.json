@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev:web": "pnpm --filter @visit-monitor/web dev",
-    "build:web": "pnpm --filter @visit-monitor/web build",
+    "build:web": "node tools/write_web_build_id.mjs && pnpm --filter @visit-monitor/web build",
     "check:web": "pnpm --filter @visit-monitor/web typecheck",
     "dev:server": "pnpm --filter @visit-monitor/server dev",
     "build:server": "pnpm --filter @visit-monitor/server build",

@@ -14,6 +14,9 @@ autonomous_run.json
 *.log
 .pollipi_askpass.cmd
 .DS_Store
+Thumbs.db
+Desktop.ini
+._*
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -21,3 +24,5 @@ node_modules/
 dist/
 coverage/
 *.egg-info/
+packages/web/public/build-info.json
+packages/web/dist/

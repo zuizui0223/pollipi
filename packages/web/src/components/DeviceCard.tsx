@@ -258,8 +258,8 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       const info = device.build_info;
       const commit = info?.git_commit && info.git_commit !== 'unknown' ? info.git_commit : 'unknown';
       const mode = info?.deployment_mode || 'unknown';
-      const web = info?.web_build_id && info.web_build_id !== 'unknown' ? ` / web ${info.web_build_id}` : '';
-      buildDetails.value = `${mode} / ${commit}${web}`;
+      const web = info?.web_build_id && info.web_build_id !== 'unknown' ? info.web_build_id : 'unknown';
+      buildDetails.value = `${mode} / ${commit} / ${web}`;
     } catch (_) {
       buildDetails.value = 'build unknown';
     }

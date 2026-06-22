@@ -139,6 +139,70 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
         assert baseline_image.is_file()
         assert client.get("/events").json()["event_count"] == 0
 
+        event_image = tmp_path / "images" / "event_only.jpg"
+        unknown_image = tmp_path / "images" / "unknown.jpg"
+        scheduled_event_image = tmp_path / "images" / "scheduled_event.jpg"
+        event_image.write_bytes(b"event")
+        unknown_image.write_bytes(b"unknown")
+        scheduled_event_image.write_bytes(b"scheduled-event")
+        with observation_log.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["timestamp", "capture_type", "image_filename"])
+            writer.writeheader()
+            writer.writerow({
+                "timestamp": "2026-06-10T12:01:00+09:00",
+                "capture_type": "event",
+                "image_filename": event_image.name,
+            })
+            writer.writerow({
+                "timestamp": "2026-06-10T12:01:01+09:00",
+                "capture_type": "scheduled_event",
+                "image_filename": scheduled_event_image.name,
+            })
+        with event_log.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["event_id", "timestamp", "image_filename"])
+            writer.writeheader()
+            writer.writerows([
+                {
+                    "event_id": "event_only",
+                    "timestamp": "2026-06-10T12:01:00+09:00",
+                    "image_filename": event_image.name,
+                },
+                {
+                    "event_id": "unknown_provenance",
+                    "timestamp": "2026-06-10T12:01:01+09:00",
+                    "image_filename": unknown_image.name,
+                },
+                {
+                    "event_id": "scheduled_event",
+                    "timestamp": "2026-06-10T12:01:02+09:00",
+                    "image_filename": scheduled_event_image.name,
+                },
+                {
+                    "event_id": "missing_filename",
+                    "timestamp": "2026-06-10T12:01:03+09:00",
+                    "image_filename": "",
+                },
+            ])
+        selective_delete = client.post(
+            "/events/bulk-delete",
+            json={
+                "event_ids": ["event_only", "unknown_provenance", "scheduled_event", "missing_filename"],
+                "scope": "event_and_event_image",
+            },
+        )
+        assert selective_delete.status_code == 200
+        selective_payload = selective_delete.json()
+        assert selective_payload["deleted_count"] == 4
+        assert selective_payload["image_deleted_count"] == 1
+        failure_reasons = {item["event_id"]: item["reason"] for item in selective_payload["failed"]}
+        assert "unknown" in failure_reasons["unknown_provenance"]
+        assert "scheduled/baseline" in failure_reasons["scheduled_event"]
+        assert "no image filename" in failure_reasons["missing_filename"]
+        assert not event_image.exists()
+        assert unknown_image.is_file()
+        assert scheduled_event_image.is_file()
+        assert client.get("/events").json()["event_count"] == 0
+
         training = client.get("/training/status")
         assert training.status_code == 200
         assert "model_available" in training.json()

@@ -16,27 +16,30 @@ Dry-run:
 python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json
 ```
 
-Execute after reviewing the printed plan:
+Live execution requires both flags after reviewing the printed plan:
 
 ```powershell
-python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --execute
+python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --execute --confirm-live-deploy
 ```
 
 For each Pi the plan is:
 
-1. Prepare the remote install and web directories.
-2. Back up the current server artifact with a timestamp.
-3. Back up the current web build with a timestamp.
-4. Upload `dist/pollipi_api_server.py`.
-5. Upload the built web assets.
-6. Restart the configured systemd service.
-7. Check `/device`.
-8. Check `/status`.
+1. Preflight: confirm local artifacts exist.
+2. Preflight: confirm the PC is on the configured GL LAN subnet.
+3. Preflight: confirm SSH and HTTP reachability.
+4. Preflight: check `/device` and `/status`.
+5. Prepare the remote install and web directories.
+6. Back up the current server artifact with a timestamp.
+7. Back up the current web build with a timestamp.
+8. Upload `dist/pollipi_api_server.py`.
+9. Upload the built web assets.
+10. Restart the configured systemd service.
+11. Confirm `/device` reports the expected `deployment_mode`, `git_commit`, and `web_build_id`.
 
 Rollback policy:
 
-- If upload or restart fails, keep the timestamped backups.
-- Restore the server artifact backup and web backup manually over SSH, then restart the configured service.
+- If upload, restart, or version verification fails, the tool restores the timestamped backups and restarts the configured service.
+- If rollback itself fails, restore the server artifact backup and web backup manually over SSH, then restart the configured service.
 - Re-check `/device` and `/status` from the iPad before field use.
 
 The deployment tool does not require WAN, cloud APIs, Git on the Pi, or a coordinator. It only uses SSH/SCP inside the local LAN plus direct HTTP checks against each Pi.

@@ -52,6 +52,50 @@ def _git_commit() -> str:
         return ""
 
 
+def _git_timestamp() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "show", "-s", "--format=%cI", "HEAD"],
+            cwd=Path(__file__).resolve().parents[4],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return ""
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def _web_build_id(commit: str, timestamp: str) -> str:
+    if not commit or commit == "unknown" or not timestamp:
+        return ""
+    cleaned = timestamp.replace("-", "").replace(":", "").replace("T", "-").replace("Z", "")
+    if "+" in cleaned:
+        cleaned = cleaned.split("+", 1)[0]
+    return f"{commit}-{cleaned}"
+
+
+def _web_build_metadata() -> dict[str, str]:
+    for path in (
+        _repo_root() / "packages" / "web" / "dist" / "build-info.json",
+        _repo_root() / "packages" / "web" / "public" / "build-info.json",
+    ):
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        return {
+            "web_build_id": str(payload.get("web_build_id", "")).strip(),
+            "git_commit": str(payload.get("git_commit", "")).strip(),
+            "build_timestamp": str(payload.get("build_timestamp", "")).strip(),
+        }
+    return {}
+
+
 def apply_build_metadata(
     sources: dict[str, str],
     *,
@@ -160,12 +204,23 @@ def build(
 ) -> Path:
     """Write the bundled artifact to *output* and return its path."""
     root = package_root or _package_root()
-    metadata_timestamp = build_timestamp or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    web_metadata = _web_build_metadata()
+    metadata_commit = git_commit if git_commit is not None else web_metadata.get("git_commit") or _git_commit()
+    metadata_timestamp = (
+        build_timestamp
+        or web_metadata.get("build_timestamp")
+        or _git_timestamp()
+        or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    )
+    metadata_web_build_id = web_build_id or web_metadata.get("web_build_id", "") or _web_build_id(
+        metadata_commit,
+        metadata_timestamp,
+    )
     sources = apply_build_metadata(
         collect_sources(root),
-        git_commit=git_commit if git_commit is not None else _git_commit(),
+        git_commit=metadata_commit,
         build_timestamp=metadata_timestamp,
-        web_build_id=web_build_id,
+        web_build_id=metadata_web_build_id,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_bundle(sources), encoding="utf-8")
