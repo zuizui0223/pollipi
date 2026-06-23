@@ -26,6 +26,7 @@ from pollipi_analysis.schemas import (
     ShadowDecisionRecord,
 )
 from pollipi_analysis.shadow import run_shadow_mode
+from pollipi_analysis.abtest import ABComparison, compare_policies
 
 __version__ = "0.2.0"
 
@@ -38,6 +39,8 @@ __all__ = [
     "IntervalBounds",
     "IntervalPlan",
     "run_shadow_mode",
+    "compare_policies",
+    "ABComparison",
     "MeshDecision",
     "MeshFeatures",
     "ShadowDecisionRecord",
