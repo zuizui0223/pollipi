@@ -12,7 +12,13 @@ event_log.csv
 adaptive_metrics.csv
 autonomous_run.json
 *.log
+*.bak
+*.tmp
+pollipi-offline-bundle*.zip
+pollipi-transfer/
 .pollipi_askpass.cmd
+.pollipi_*.cmd
+.pollipi_*.conf
 .DS_Store
 Thumbs.db
 Desktop.ini
