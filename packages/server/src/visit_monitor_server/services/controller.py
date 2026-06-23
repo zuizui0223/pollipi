@@ -38,9 +38,14 @@ class TimelapseController:
         self._stop_event: Optional[threading.Event] = None
         self._thread: Optional[threading.Thread] = None
         self._camera = None
+        # Monitor / preview producer fields (single producer)
         self._monitor_stop_event: Optional[threading.Event] = None
+        self._monitor_thread: Optional[threading.Thread] = None
+        self._monitor_lock = threading.Lock()
+        self._latest_frame_bytes: Optional[bytes] = None
         self._preview_subscriber_count = 0
         self._preview_producer_state = "idle"
+        self._monitor_idle_timeout = 6.0  # seconds: idle timeout before stopping producer
 
         self.running = False
         self.lifecycle_state = "stopped"
@@ -246,6 +251,7 @@ class TimelapseController:
         return self.status()
 
     def stop(self, preserve_autonomous: bool = False):
+        # ensure monitor/producers are stopped before stopping capture
         self.stop_monitor()
         with self._lock:
             stop_event = self._stop_event
@@ -364,55 +370,172 @@ class TimelapseController:
                 self.last_capture_time = None
 
     def preview_frame(self) -> bytes:
+        """Return a preview JPEG bytes.
+
+        Prefer the producer cache if available (non-blocking). If no cached latest
+        frame exists, fall back to the scheduled latest image on disk. We avoid
+        opening a camera instance here to prevent lifecycle conflicts with
+        /mjpeg and the capture loop.
+        """
+        # Prefer the in-memory producer cache
+        with self._monitor_lock:
+            if self._latest_frame_bytes is not None:
+                return self._latest_frame_bytes
+
+        # Fall back to the last scheduled image on disk
         image = self.latest_image()
-        if image is None:
-            raise RuntimeError("No scheduled image is available for preview.")
-        return image.read_bytes()
+        if image is not None:
+            return image.read_bytes()
+
+        # No scheduled image available; raise a consistent error so the router
+        # can turn it into a 503. Don't attempt to open the camera here which can
+        # cause acquisition conflicts with the monitor producer.
+        raise RuntimeError("No scheduled image is available for preview.")
 
     def stop_monitor(self) -> None:
         with self._lock:
             event = self._monitor_stop_event
             if event is not None:
                 event.set()
+        # Also stop the dedicated monitor producer if any
+        self._stop_monitor_producer()
+
+    def _start_monitor_producer(self) -> None:
+        with self._monitor_lock:
+            if self._monitor_thread is not None and self._monitor_thread.is_alive():
+                return
+            stop_event = threading.Event()
+            thread = threading.Thread(target=self._monitor_loop, args=(stop_event,), name="pollipi-monitor", daemon=True)
+            self._monitor_thread = thread
+            self._monitor_stop_event = stop_event
+            self._preview_producer_state = "starting"
+            thread.start()
+            self._preview_producer_state = "running"
+
+    def _stop_monitor_producer(self) -> None:
+        # Signal the monitor thread to stop and join it.
+        with self._monitor_lock:
+            ev = self._monitor_stop_event
+            thr = self._monitor_thread
+            # Null out first so concurrent starters see it
+            self._monitor_stop_event = None
+            self._monitor_thread = None
+            self._preview_producer_state = "stopping"
+        if ev is not None:
+            ev.set()
+        if thr is not None:
+            thr.join(timeout=2.0)
+        with self._monitor_lock:
+            self._preview_producer_state = "idle"
+            self._latest_frame_bytes = None
+
+    def _monitor_loop(self, stop_event: threading.Event) -> None:
+        """Producer loop that keeps _latest_frame_bytes populated.
+
+        It prefers reading the scheduled latest image from disk (cheap) and only
+        reads from the camera when no scheduled image is available. The loop
+        respects _camera_lock when interacting with hardware.
+        """
+        last_activity = time.monotonic()
+        try:
+            while not stop_event.is_set():
+                # Try scheduled image first
+                image_path = self.latest_image()
+                if image_path is not None:
+                    try:
+                        frame = image_path.read_bytes()
+                    except Exception:
+                        frame = None
+                else:
+                    frame = None
+
+                if frame is None:
+                    # No scheduled image on disk; attempt to capture one under camera lock
+                    # Only do this if fake camera is not configured, otherwise skip.
+                    if USE_FAKE_CAMERA:
+                        # Nothing to do in fake-camera mode if no scheduled image
+                        time.sleep(0.2)
+                        continue
+                    try:
+                        with self._camera_lock:
+                            # Prefer to reuse any controller-held camera (if set) else skip
+                            if self._camera is not None:
+                                # The real camera capture helper is intentionally
+                                # thin here; we avoid configuring/starting cameras in
+                                # the producer to reduce lifecycle complexity.
+                                # If the controller exposes a capture helper, call it.
+                                try:
+                                    frame = self._camera.capture_preview_bytes()  # type: ignore[attr-defined]
+                                except Exception:
+                                    frame = None
+                            else:
+                                # No camera object available; skip capture attempt
+                                frame = None
+                    except Exception:
+                        frame = None
+
+                if frame is not None:
+                    with self._monitor_lock:
+                        self._latest_frame_bytes = frame
+                    last_activity = time.monotonic()
+
+                # If there are no subscribers, allow idle timeout to stop the producer
+                with self._monitor_lock:
+                    subs = self._preview_subscriber_count
+                if subs == 0 and (time.monotonic() - last_activity) > self._monitor_idle_timeout:
+                    break
+
+                # Sleep a short time; producer doesn't need to be high-framerate here
+                if stop_event.wait(0.4):
+                    break
+        finally:
+            with self._monitor_lock:
+                # clear state on exit
+                self._monitor_thread = None
+                self._monitor_stop_event = None
+                self._preview_producer_state = "idle"
 
     def monitor_frames(self, ai_detection: bool = False) -> Generator[bytes, None, None]:
-        """Explicit one-viewer stream from scheduled images only.
+        """Explicit one-viewer stream from the producer's latest frame cache.
 
-        AI overlay is intentionally unsupported in the active runtime. The stream
-        never opens a second camera and never competes with scheduled capture.
+        The producer is single-instance: multiple consumers share the same cached
+        latest frame. Consumers increment preview_subscriber_count and the first
+        subscriber starts the producer.
         """
         if ai_detection:
             raise RuntimeError("AI monitor is removed from the active workflow.")
+        # Reset any existing monitor stop event for this consumer
         self.stop_monitor()
         stop_event = threading.Event()
         with self._lock:
             self._monitor_stop_event = stop_event
-            self._preview_subscriber_count = 1
-            self._preview_producer_state = "scheduled-image"
+            self._preview_subscriber_count += 1
+            # ensure a single producer is running
+            self._start_monitor_producer()
         try:
-            last_path = None
             while not stop_event.is_set():
-                image = self.latest_image()
-                if image is not None:
-                    path = str(image)
-                    if path != last_path or last_path is None:
-                        frame = image.read_bytes()
-                        last_path = path
-                        yield (
-                            b"--frame\r\n"
-                            b"Content-Type: image/jpeg\r\n"
-                            + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
-                            + frame
-                            + b"\r\n"
-                        )
-                if stop_event.wait(1.0):
+                with self._monitor_lock:
+                    frame = self._latest_frame_bytes
+                if frame is not None:
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n"
+                        + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
+                        + frame
+                        + b"\r\n"
+                    )
+                # Wait briefly for the next update or stop
+                if stop_event.wait(0.4):
                     break
         finally:
             with self._lock:
+                # decrement subscribers and possibly stop producer when no subscribers
+                self._preview_subscriber_count = max(0, self._preview_subscriber_count - 1)
+                if self._preview_subscriber_count == 0:
+                    # either stop immediately or let producer idle-timeout handle it
+                    self._stop_monitor_producer()
                 if self._monitor_stop_event is stop_event:
                     self._monitor_stop_event = None
-                self._preview_subscriber_count = 0
-                self._preview_producer_state = "idle"
 
     def _save_autonomous_request(self, request) -> None:
         AUTONOMOUS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -430,6 +553,7 @@ class TimelapseController:
             return
         try:
             from visit_monitor_server.api.schemas.capture import StartRequest
+
             data = json.loads(AUTONOMOUS_PATH.read_text(encoding="utf-8"))
             request = StartRequest(**data)
             if request.autonomous_mode:
