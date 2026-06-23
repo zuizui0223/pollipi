@@ -197,3 +197,7 @@ export async function stopCoordinatorDevices(baseUrl: string, deviceIds: number[
 export async function deleteCoordinatorDevice(baseUrl: string, deviceId: number): Promise<void> {
   await apiRequest<void>(baseUrl, `/api/devices/${deviceId}`, { method: 'DELETE' });
 }
+
+export function getMjpegStreamUrl(target: ApiTarget): string {
+  return deviceUrl(target, '/mjpeg');
+}
