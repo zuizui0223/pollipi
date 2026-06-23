@@ -54,7 +54,7 @@ validate_rsync_target() {
         exit 1
     fi
     case "$target" in
-        /|/home|/home/)
+        /|/home|/home/|"$HOME"|"$HOME/")
             echo "ERROR: Remote path '$target' is a system directory. Aborting."
             exit 1
             ;;

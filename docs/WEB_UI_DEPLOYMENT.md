@@ -1,40 +1,46 @@
-# Web UI Auto-Deployment Guide
+# Web UI Deployment Guide
 
-This guide explains how to quickly deploy web UI changes to your Raspberry Pi during development.
+This guide explains how to deploy web UI changes to your Raspberry Pi during development.
 
-## Quick Deployment (One-time)
+## Fleet Deployment (Recommended)
 
-Deploy the current web UI build to the Pi:
-
-```bash
-./scripts/deploy_web_only.sh -h pollipi1.local -u pi
-```
-
-Or with environment variables:
+Deploy the web UI to all five Pis in sequence with automatic verification and rollback:
 
 ```bash
-PI_HOST=192.168.1.100 PI_USER=pi ./scripts/deploy_web_only.sh
+python3 tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --web-only --execute --confirm-live-deploy
 ```
+
+Dry-run first (no changes made):
+
+```bash
+python3 tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --web-only
+```
+
+## Quick Deployment (Single Pi)
+
+Deploy the current web UI build to one Pi:
+
+```bash
+./scripts/deploy_web_only.sh -h zuizui.local -u zuizui0223
+```
+
+Both `-h` (host) and `-u` (user) are **required**. There are no defaults.
 
 **What it does:**
 1. Checks if web UI is built (`pnpm build:web` if needed)
 2. Verifies SSH connection to Pi
-3. Syncs `packages/web/dist/` to `~/pollipi_timelapse/web/dist/` on Pi
-4. Done — iPad will see changes on next refresh
+3. Syncs `packages/web/dist/` to `/home/<user>/pollipi_timelapse/web/` on Pi
+4. Done — iPad will see changes on next page load
 
 ## Continuous Auto-Sync (Development Mode)
 
-For iterative development, watch for changes and auto-sync:
+For iterative development, watch for changes and auto-sync to one Pi:
 
 ```bash
-./scripts/watch_web_and_sync.sh -h pollipi1.local -u pi
+./scripts/watch_web_and_sync_one_pi.sh -h zuizui.local -u zuizui0223
 ```
 
-Or with environment variables:
-
-```bash
-PI_HOST=192.168.1.100 PI_USER=pi ./scripts/watch_web_and_sync.sh
-```
+Both `-h` (host) and `-u` (user) are **required**. There are no defaults.
 
 **What it does:**
 1. Watches `packages/web/src/` for changes
@@ -42,7 +48,7 @@ PI_HOST=192.168.1.100 PI_USER=pi ./scripts/watch_web_and_sync.sh
    - Rebuilds: `pnpm build:web`
    - Syncs: `rsync` to Pi
    - Notifies completion
-3. iPad updates on next refresh (Cmd+Shift+R to force)
+3. iPad will see changes on next page load
 
 **Requirements:**
 - `fswatch` for file monitoring (optional, falls back to polling)
@@ -60,14 +66,14 @@ PI_HOST=192.168.1.100 PI_USER=pi ./scripts/watch_web_and_sync.sh
 pnpm build:web
 
 # First deploy
-./scripts/deploy_web_only.sh -h pollipi1.local -u pi
+./scripts/deploy_web_only.sh -h zuizui.local -u zuizui0223
 ```
 
 ### Development Loop
 
 Terminal 1 — Start auto-sync:
 ```bash
-./scripts/watch_web_and_sync.sh -h pollipi1.local -u pi
+./scripts/watch_web_and_sync_one_pi.sh -h zuizui.local -u zuizui0223
 ```
 
 Terminal 2 — Edit and see changes:
@@ -80,10 +86,11 @@ Terminal 2 — Edit and see changes:
 # 4. Print completion message
 ```
 
-iPad:
+iPad (Safari):
 ```
-1. Hard refresh: Cmd+Shift+R (Mac) or Ctrl+Shift+R (Linux/Windows)
-2. See changes immediately
+1. Tap the reload button, or close Safari completely and reopen the URL.
+2. For cache-busting, append a query string: http://zuizui.local:8000/app/?v=1
+3. See changes immediately.
 ```
 
 ## Troubleshooting
@@ -91,13 +98,13 @@ iPad:
 ### Connection Fails
 ```bash
 # Check SSH access
-ssh pi@pollipi1.local "echo 'Connected!'"
+ssh zuizui0223@zuizui.local "echo 'Connected!'"
 
 # Test with IP instead
-./scripts/deploy_web_only.sh -h 192.168.1.100 -u pi
+./scripts/deploy_web_only.sh -h 192.168.11.10 -u zuizui0223
 
 # Custom SSH port
-./scripts/deploy_web_only.sh -h pollipi1.local -u pi -p 2222
+./scripts/deploy_web_only.sh -h zuizui.local -u zuizui0223 -p 2222
 ```
 
 ### Build Fails
@@ -113,38 +120,22 @@ less /tmp/web_build.log
 ```
 
 ### Changes Don't Appear on iPad
-1. Hard refresh browser: **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Linux)
-2. Close browser entirely and reopen
+1. In Safari on iPad: tap and hold the reload button, then select "Reload Without Content Blockers" or simply close Safari entirely and reopen the URL.
+2. Alternatively, append a cache-busting query string: `http://zuizui.local:8000/app/?v=$(date +%s)`
 3. Check rsync succeeded: `./scripts/deploy_web_only.sh` should show "✓ Deployment complete!"
 
 ### File Permissions
 If deployment fails with permission error:
 ```bash
-ssh pi@pollipi1.local
-mkdir -p ~/pollipi_timelapse/web/dist/
+ssh zuizui0223@zuizui.local
+mkdir -p ~/pollipi_timelapse/web/
 chmod 755 ~/pollipi_timelapse/web/
 ```
 
 ## Integration with Full Deployment
 
-For server code changes, use the full deployment:
+For server code changes, use the full fleet deployment:
 
 ```bash
-# Web UI + Server code
-./scripts/deploy_pi.sh -h pollipi1.local -u pi
-```
-
-## Environment Variables
-
-Set these to avoid typing flags repeatedly:
-
-```bash
-# ~/.bashrc or ~/.zshrc
-export PI_HOST="pollipi1.local"
-export PI_USER="pi"
-export PI_PORT="22"
-
-# Now just run
-./scripts/deploy_web_only.sh
-./scripts/watch_web_and_sync.sh
+python3 tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --execute --confirm-live-deploy
 ```
