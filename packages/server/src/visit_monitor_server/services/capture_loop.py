@@ -48,6 +48,10 @@ EVIDENCE_COLUMNS = [
     "floral_zone_score", "background_control_score", "zone_minus_control_score",
     "grid_rows", "grid_cols", "changed_cell_count", "changed_cell_ratio", "local_compactness",
     "whole_frame_change_score", "previous_frame_elapsed_sec", "robust_background_score", "candidate_reasons",
+    "mesh_decision", "mesh_reason", "mesh_layout", "mesh_active_cell_proportion",
+    "mesh_largest_component_cells", "mesh_concentration", "mesh_offset_agreement",
+    "mesh_global_synchrony", "mesh_transition_score", "mesh_return_to_origin_score",
+    "mesh_centroid_x", "mesh_centroid_y",
 ]
 
 
@@ -465,8 +469,9 @@ def run_capture_loop(
                     camera.capture_file(str(image_path))
                 
                 predicted_label = trainer.predict(image_path) if request.ml_assist_mode and MODEL_PATH.is_file() else None
-                visit_likeness = 1.0 if predicted_label == "visit" else 0.5 if insect_candidate else 0.0
-                noise_likeness = 1.0 if predicted_label == "noise" else 0.0 if insect_candidate else 0.5
+                mesh_decision = metrics.get("mesh_decision")
+                visit_likeness = 1.0 if predicted_label == "visit" else 0.7 if mesh_decision == "visitation_candidate" else 0.5 if insect_candidate else 0.0
+                noise_likeness = 1.0 if predicted_label == "noise" else 0.8 if mesh_decision == "environmental_noise" else 0.0 if insect_candidate else 0.5
                 if insect_candidate:
                     candidate_time = _time.monotonic()
                     _adaptive_candidates.append(candidate_time)

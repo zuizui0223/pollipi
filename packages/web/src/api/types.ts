@@ -75,6 +75,11 @@ export interface StatusResponse {
   is_noir: boolean;
   is_wide: boolean;
   running: boolean;
+  lifecycle_state?: string;
+  last_error?: string | null;
+  preview_subscriber_count?: number;
+  preview_latest_frame_age_sec?: number | null;
+  preview_producer_state?: string;
   capture_count: number;
   interval_sec: number | null;
   last_capture_time: string | null;
@@ -118,6 +123,11 @@ export interface StatusResponse {
   previous_frame_elapsed_sec?: number | null;
   robust_background_score?: number | null;
   candidate_reasons?: string | null;
+  mesh_decision?: string | null;
+  mesh_reason?: string | null;
+  mesh_active_cell_proportion?: number | null;
+  mesh_offset_agreement?: number | null;
+  mesh_global_synchrony?: number | null;
 }
 
 /** System info from GET /system */

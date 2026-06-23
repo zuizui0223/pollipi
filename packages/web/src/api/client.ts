@@ -114,16 +114,16 @@ export async function apiRequest<T = unknown>(
   ) as Promise<T>;
 }
 
-export async function fetchDevice(baseUrl: ApiTarget): Promise<DeviceInfo> {
-  return apiRequest<DeviceInfo>(baseUrl, '/device');
+export async function fetchDevice(baseUrl: ApiTarget, options: RequestInit = {}): Promise<DeviceInfo> {
+  return apiRequest<DeviceInfo>(baseUrl, '/device', options);
 }
 
-export async function fetchStatus(baseUrl: ApiTarget): Promise<StatusResponse> {
-  return apiRequest<StatusResponse>(baseUrl, '/status');
+export async function fetchStatus(baseUrl: ApiTarget, options: RequestInit = {}): Promise<StatusResponse> {
+  return apiRequest<StatusResponse>(baseUrl, '/status', options);
 }
 
-export async function fetchSystem(baseUrl: ApiTarget): Promise<SystemInfo> {
-  return apiRequest<SystemInfo>(baseUrl, '/system');
+export async function fetchSystem(baseUrl: ApiTarget, options: RequestInit = {}): Promise<SystemInfo> {
+  return apiRequest<SystemInfo>(baseUrl, '/system', options);
 }
 
 export async function postStart(baseUrl: ApiTarget, payload: StartPayload): Promise<StatusResponse> {

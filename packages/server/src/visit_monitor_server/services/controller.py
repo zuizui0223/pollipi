@@ -22,6 +22,8 @@ from visit_monitor_server.config import (
     USE_FAKE_CAMERA,
 )
 
+STOP_JOIN_TIMEOUT_SEC = 8.0
+
 
 class TimelapseController:
     """Co-ordinates camera start/stop, capture threads, and preview streaming."""
@@ -37,9 +39,14 @@ class TimelapseController:
         self._monitor_closed_event: Optional[threading.Event] = None
         self._latest_preview_frame: Optional[bytes] = None
         self._latest_preview_time: Optional[float] = None
+        self._preview_subscriber_count = 0
+        self._preview_producer_state = "idle"
 
         # ---- Status fields ------------------------------------------------
         self.running = False
+        self.lifecycle_state = "stopped"
+        self.last_error: Optional[str] = None
+        self.stop_timeout_sec = STOP_JOIN_TIMEOUT_SEC
         self.interval_sec: Optional[float] = None
         self.capture_count = 0
         self.last_capture_time: Optional[str] = None
@@ -96,6 +103,11 @@ class TimelapseController:
         self.previous_frame_elapsed_sec: Optional[float] = None
         self.robust_background_score: Optional[float] = None
         self.candidate_reasons: Optional[str] = None
+        self.mesh_decision: Optional[str] = None
+        self.mesh_reason: Optional[str] = None
+        self.mesh_active_cell_proportion: Optional[float] = None
+        self.mesh_offset_agreement: Optional[float] = None
+        self.mesh_global_synchrony: Optional[float] = None
         self.roi_tracking = False
         self.roi_tracking_success = False
         self.roi_tracking_score: Optional[float] = None
@@ -121,6 +133,11 @@ class TimelapseController:
 
         return StatusResponse(
             running=self.running,
+            lifecycle_state=self.lifecycle_state,
+            last_error=self.last_error,
+            preview_subscriber_count=self._preview_subscriber_count,
+            preview_latest_frame_age_sec=self._preview_frame_age_unlocked(),
+            preview_producer_state=self._preview_producer_state,
             interval_sec=self.interval_sec,
             capture_count=self.capture_count,
             last_capture_time=self.last_capture_time,
@@ -185,6 +202,11 @@ class TimelapseController:
             previous_frame_elapsed_sec=self.previous_frame_elapsed_sec,
             robust_background_score=self.robust_background_score,
             candidate_reasons=self.candidate_reasons,
+            mesh_decision=self.mesh_decision,
+            mesh_reason=self.mesh_reason,
+            mesh_active_cell_proportion=self.mesh_active_cell_proportion,
+            mesh_offset_agreement=self.mesh_offset_agreement,
+            mesh_global_synchrony=self.mesh_global_synchrony,
             roi_tracking=self.roi_tracking,
             roi_tracking_success=self.roi_tracking_success,
             roi_tracking_score=self.roi_tracking_score,
@@ -214,13 +236,19 @@ class TimelapseController:
     # ------------------------------------------------------------------
 
     def start(self, request):
-        self.stop()
+        stopped_status = self.stop()
+        if stopped_status.lifecycle_state == "stopping":
+            with self._lock:
+                self.message = "Previous timelapse is still stopping; start was not duplicated."
+                return self.status_unlocked()
         if request.autonomous_mode:
             self._save_autonomous_request(request)
 
         stop_event = threading.Event()
         with self._lock:
             self.running = True
+            self.lifecycle_state = "starting"
+            self.last_error = None
             self.interval_sec = request.interval_sec
             self.capture_count = 0
             self.last_capture_time = None
@@ -317,14 +345,22 @@ class TimelapseController:
             was_active = self.running or thread is not None
             if stop_event is not None:
                 stop_event.set()
+            if was_active:
+                self.lifecycle_state = "stopping"
 
         if thread is not None and thread is not threading.current_thread():
-            thread.join()
+            thread.join(timeout=self.stop_timeout_sec)
 
         with self._lock:
+            if thread is not None and thread.is_alive():
+                self.running = False
+                self.message = f"Stop requested; capture thread did not exit within {self.stop_timeout_sec:.0f}s."
+                self.lifecycle_state = "stopping"
+                return self.status_unlocked()
             self.running = False
             self._stop_event = None
             self._thread = None
+            self.lifecycle_state = "stopped"
             if not preserve_autonomous:
                 self.autonomous_mode = False
             if was_active:
@@ -342,21 +378,36 @@ class TimelapseController:
         from visit_monitor_server.services import get_trainer
         from visit_monitor_server.services.capture_loop import run_capture_loop
 
-        run_capture_loop(
-            stop_event=stop_event,
-            request=request,
-            image_dir=self.image_dir,
-            camera_lock=self._camera_lock,
-            set_camera=self._set_camera,
-            update_state=self._apply_state_update,
-            set_message=lambda m: self._set_message_locked(m),
-            trainer=get_trainer(),
-        )
+        try:
+            run_capture_loop(
+                stop_event=stop_event,
+                request=request,
+                image_dir=self.image_dir,
+                camera_lock=self._camera_lock,
+                set_camera=self._set_camera,
+                update_state=self._apply_state_update,
+                set_message=lambda m: self._set_message_locked(m),
+                trainer=get_trainer(),
+            )
+        except Exception as exc:
+            with self._lock:
+                self.running = False
+                self.lifecycle_state = "error"
+                self.last_error = f"{type(exc).__name__}: {exc}"
+                self.message = f"Capture loop failed: {exc}"
+            raise
+        finally:
+            with self._lock:
+                if self._thread is threading.current_thread() and self.lifecycle_state != "error":
+                    self.running = False
+                    self.lifecycle_state = "stopped" if stop_event.is_set() else "stopped"
 
     def _set_camera(self, camera) -> None:
         with self._lock:
             self._camera = camera
-            if camera is None:
+            if camera is not None:
+                self.lifecycle_state = "running"
+            else:
                 self.running = False
 
     def _set_message_locked(self, msg: str) -> None:
@@ -468,6 +519,11 @@ class TimelapseController:
             self._latest_preview_frame = frame
             self._latest_preview_time = time.monotonic()
 
+    def _preview_frame_age_unlocked(self) -> Optional[float]:
+        if self._latest_preview_time is None:
+            return None
+        return max(0.0, time.monotonic() - self._latest_preview_time)
+
     def _wait_for_cached_preview(self, timeout: float) -> Optional[bytes]:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -497,6 +553,8 @@ class TimelapseController:
         with self._lock:
             self._monitor_stop_event = stop_event
             self._monitor_closed_event = closed_event
+            self._preview_subscriber_count = 1
+            self._preview_producer_state = "starting"
             timelapse_camera = self._camera
 
         try:
@@ -538,6 +596,8 @@ class TimelapseController:
 
             while not stop_event.is_set():
                 with self._lock:
+                    self._preview_producer_state = "running"
+                with self._lock:
                     active_camera = self._camera
                 camera = active_camera or temporary_camera
                 if camera is None:
@@ -572,6 +632,8 @@ class TimelapseController:
                 if self._monitor_stop_event is stop_event:
                     self._monitor_stop_event = None
                     self._monitor_closed_event = None
+                self._preview_subscriber_count = 0
+                self._preview_producer_state = "idle"
             closed_event.set()
 
     @staticmethod
@@ -628,6 +690,11 @@ class TimelapseController:
         self.previous_frame_elapsed_sec = metrics.get("previous_frame_elapsed_sec")
         self.robust_background_score = metrics.get("robust_background_score")
         self.candidate_reasons = metrics.get("candidate_reasons")
+        self.mesh_decision = metrics.get("mesh_decision")
+        self.mesh_reason = metrics.get("mesh_reason")
+        self.mesh_active_cell_proportion = metrics.get("mesh_active_cell_proportion")
+        self.mesh_offset_agreement = metrics.get("mesh_offset_agreement")
+        self.mesh_global_synchrony = metrics.get("mesh_global_synchrony")
         self.roi_tracking = bool(metrics.get("roi_tracking"))
         self.roi_tracking_success = bool(metrics.get("roi_tracking_success"))
         self.roi_tracking_score = metrics.get("roi_tracking_score")
@@ -657,6 +724,11 @@ class TimelapseController:
         self.largest_blob_ratio = None
         self.small_blob_count = 0
         self.motion_type = "none"
+        self.mesh_decision = None
+        self.mesh_reason = None
+        self.mesh_active_cell_proportion = None
+        self.mesh_offset_agreement = None
+        self.mesh_global_synchrony = None
         self.roi_tracking_success = False
         self.roi_tracking_score = None
 

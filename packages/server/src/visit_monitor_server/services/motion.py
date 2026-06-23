@@ -7,6 +7,12 @@ from __future__ import annotations
 
 from typing import Optional
 
+from visit_monitor_server.services.mesh_motion import (
+    VISITATION_CANDIDATE,
+    analyze_mesh_motion,
+    compact_mesh_metrics,
+)
+
 
 def detect_motion(
     frame,
@@ -88,6 +94,18 @@ def detect_motion(
         "previous_frame_elapsed_sec": None,
         "robust_background_score": None,
         "candidate_reasons": "",
+        "mesh_decision": None,
+        "mesh_reason": None,
+        "mesh_layout": None,
+        "mesh_active_cell_proportion": None,
+        "mesh_largest_component_cells": None,
+        "mesh_concentration": None,
+        "mesh_offset_agreement": None,
+        "mesh_global_synchrony": None,
+        "mesh_transition_score": None,
+        "mesh_return_to_origin_score": None,
+        "mesh_centroid_x": None,
+        "mesh_centroid_y": None,
         "wind_like_motion": False,
         "num_blobs": 0,
         "largest_blob_area": 0,
@@ -116,6 +134,16 @@ def detect_motion(
         small_blob_count=blob_m["small_blob_count"],
         motion_ratio=motion_ratio,
     )
+    mesh_metrics = {}
+    if not roi_used and full_luminance.shape == background.shape:
+        mesh_metrics = compact_mesh_metrics(
+            analyze_mesh_motion(
+                full_luminance,
+                background,
+                pixel_difference=pixel_difference,
+                cell_size=max(24, min(full_luminance.shape) // 6),
+            )
+        )
     metrics.update(
         {
             "motion_score": changed_area_ratio,
@@ -129,10 +157,11 @@ def detect_motion(
             "wind_like_motion": motion_type == "wind_like_large_motion" or changed_area_ratio >= 0.20,
             **blob_m,
             "motion_type": motion_type,
-            "candidate_reasons": candidate_reasons(motion_type, changed_area_ratio, control_score, grid_metrics),
+            **mesh_metrics,
+            "candidate_reasons": candidate_reasons(motion_type, changed_area_ratio, control_score, grid_metrics, mesh_metrics),
         }
     )
-    detected = motion_type == "small_object_motion"
+    detected = motion_type == "small_object_motion" or mesh_metrics.get("mesh_decision") == VISITATION_CANDIDATE
     if not detected:
         background = (background * 0.9) + (luminance * 0.1)
     return metrics, detected, background
@@ -169,6 +198,7 @@ def candidate_reasons(
     floral_zone_score: float,
     control_score: Optional[float],
     grid_metrics: dict,
+    mesh_metrics: Optional[dict] = None,
 ) -> str:
     reasons = [motion_type]
     if control_score is not None:
@@ -177,6 +207,10 @@ def candidate_reasons(
         reasons.append("localized_change")
     if (grid_metrics.get("changed_cell_ratio") or 0) >= 0.5:
         reasons.append("broad_zone_change")
+    if mesh_metrics and mesh_metrics.get("mesh_decision"):
+        reasons.append(str(mesh_metrics["mesh_decision"]))
+        if mesh_metrics.get("mesh_reason"):
+            reasons.append(str(mesh_metrics["mesh_reason"]))
     return ";".join(reasons)
 
 

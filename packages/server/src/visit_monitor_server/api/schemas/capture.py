@@ -45,6 +45,11 @@ class StartRequest(BaseModel):
 
 class StatusResponse(BaseModel):
     running: bool
+    lifecycle_state: str = "stopped"
+    last_error: Optional[str] = None
+    preview_subscriber_count: int = 0
+    preview_latest_frame_age_sec: Optional[float] = None
+    preview_producer_state: str = "idle"
     interval_sec: Optional[float]
     capture_count: int
     last_capture_time: Optional[str]
@@ -109,6 +114,11 @@ class StatusResponse(BaseModel):
     previous_frame_elapsed_sec: Optional[float] = None
     robust_background_score: Optional[float] = None
     candidate_reasons: Optional[str] = None
+    mesh_decision: Optional[str] = None
+    mesh_reason: Optional[str] = None
+    mesh_active_cell_proportion: Optional[float] = None
+    mesh_offset_agreement: Optional[float] = None
+    mesh_global_synchrony: Optional[float] = None
     roi_tracking: bool
     roi_tracking_success: bool
     roi_tracking_score: Optional[float]

@@ -115,6 +115,10 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   const storage = useSignal('-');
   const power = useSignal('-');
   const buildDetails = useSignal('build unknown');
+  const connectionState = useSignal<'online' | 'degraded' | 'reconnecting' | 'offline' | 'stale'>('stale');
+  const pollDelayMs = useRef(5000);
+  const refreshInFlight = useRef(false);
+  const refreshGeneration = useRef(0);
 
   // ROI state
   const confirmedRoi = useSignal<RoiRect | null>(normalizeRoi(camera.roi));
@@ -251,9 +255,9 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     }
   }
 
-  async function refreshBuildInfo() {
+  async function refreshBuildInfo(signal?: AbortSignal) {
     try {
-      const device = await fetchDevice(camera);
+      const device = await fetchDevice(camera, { signal });
       camera.build_info = device.build_info;
       const info = device.build_info;
       const commit = info?.git_commit && info.git_commit !== 'unknown' ? info.git_commit : 'unknown';
@@ -266,39 +270,59 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   }
 
   async function refreshCamera() {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    const generation = ++refreshGeneration.current;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), document.hidden ? 9000 : 4500);
     try {
-      const st = await fetchStatus(camera) as StatusResponse;
+      connectionState.value = status.value ? 'reconnecting' : 'stale';
+      const st = await fetchStatus(camera, { signal: controller.signal }) as StatusResponse;
+      if (generation !== refreshGeneration.current) return;
       updateFromStatus(st);
-      await refreshBuildInfo();
+      await refreshBuildInfo(controller.signal);
       // system info
       try {
-        const sys = await fetchSystem(camera);
+        const sys = await fetchSystem(camera, { signal: controller.signal });
+        if (generation !== refreshGeneration.current) return;
         storage.value = `${formatBytes(sys.storage_free_bytes)} 空き`;
         power.value = sys.undervoltage_now ? '電圧低下中' : sys.undervoltage_occurred ? '電圧低下履歴' : '電圧OK';
       } catch (_) {
         storage.value = '-';
         power.value = '-';
       }
+      connectionState.value = 'online';
+      pollDelayMs.current = document.hidden ? 15000 : 5000;
     } catch (err: unknown) {
       // offline
       monitoring.value = false;
+      connectionState.value = status.value ? 'degraded' : 'offline';
+      pollDelayMs.current = Math.min(30000, Math.max(5000, Math.round(pollDelayMs.current * 1.7 + Math.random() * 500)));
       message.value = `接続できません: ${(err as Error).message}`;
+    } finally {
+      window.clearTimeout(timeout);
+      refreshInFlight.current = false;
     }
   }
 
   // Expose refresh to parent via prop callback
   useEffect(() => {
     let cancelled = false;
+    let timer = 0;
     async function tick() {
-      if (!cancelled) await refreshCamera();
+      if (cancelled) return;
+      await refreshCamera();
+      if (cancelled) return;
+      const delay = document.hidden ? Math.max(15000, pollDelayMs.current) : pollDelayMs.current;
+      timer = window.setTimeout(() => {
+        void tick();
+      }, delay);
     }
     void tick();
-    const id = window.setInterval(() => {
-      void tick();
-    }, 5000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
+      refreshGeneration.current += 1;
     };
   }, [camera.baseUrl]);
 
@@ -485,8 +509,18 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   })();
 
   const st = status.value;
-  const pillClass = !st ? s.pillOffline : st.running ? s.pillRunning : s.pillStopped;
-  const pillText = !st ? '確認中' : st.running ? '撮影中' : '停止中';
+  const pillClass = connectionState.value === 'offline' ? s.pillOffline : !st ? s.pillOffline : st.running ? s.pillRunning : s.pillStopped;
+  const pillText = connectionState.value === 'offline'
+    ? 'offline'
+    : !st
+    ? '確認中'
+    : st.lifecycle_state === 'stopping'
+    ? '停止処理中'
+    : st.lifecycle_state === 'error'
+    ? 'error'
+    : st.running
+    ? '撮影中'
+    : '停止中';
 
   const badges = [
     camera.is_ai_camera ? 'AI' : null,
@@ -545,7 +579,8 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       </div>
 
       {/* ROI Panel */}
-      <section class={s.roiPanel}>
+      <details class={s.roiPanel}>
+        <summary class={s.roiAdvancedSummary}>Advanced / Legacy ROI controls</summary>
         <div class={s.workflowStatus}>
           <span class={s.workflowStatusSpan}>
             画角: {angleConfirmed.value ? '確認済み' : '未確認'}
@@ -669,7 +704,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
             message={message.value}
           />
         )}
-      </section>
+      </details>
 
       {/* Metrics */}
       <dl class={s.metrics}>
@@ -696,6 +731,14 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
                 }`
               : 'OFF'}
           </dd>
+        </div>
+        <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>Mesh</dt>
+          <dd class={s.metricsDd}>{st?.mesh_decision || '-'}</dd>
+        </div>
+        <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>接続</dt>
+          <dd class={s.metricsDd}>{connectionState.value}</dd>
         </div>
         <div class={s.metricsCell}>
           <dt class={s.metricsDt}>保存容量</dt>
