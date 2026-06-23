@@ -34,5 +34,22 @@ class MeshFeatures:
     cell_size: int
     mesh_layout: str = "rectangular_offset_baseline"
 
+    # --- A/B cell-aggregation experiment (shadow-logged, NOT used by the active
+    #     decision yet). Active-cell proportion under different per-cell reducers
+    #     of the residual magnitude, after spatial common-mode subtraction.
+    #     `max`/`q90`/`q95` retain a tiny compact (low-SNR) target that the mean
+    #     can erase, at the cost of amplifying speckle noise — hence the A/B. ---
+    active_proportion_mean: Optional[float] = None
+    active_proportion_max: Optional[float] = None
+    active_proportion_q90: Optional[float] = None
+    active_proportion_q95: Optional[float] = None
+    concentration_max: Optional[float] = None
+
+    # --- trajectory features over the shadow track window (filled by the shadow
+    #     runner from a centroid ring buffer; NOT used by the active decision). ---
+    mean_step: Optional[float] = None
+    reversal_rate: Optional[float] = None
+    track_frames: int = 0
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

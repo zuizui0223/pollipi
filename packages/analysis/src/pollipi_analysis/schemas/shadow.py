@@ -20,12 +20,20 @@ from typing import Any, Optional
 from pollipi_analysis.schemas.decision import MeshDecision
 from pollipi_analysis.schemas.states import DecisionState
 
-SHADOW_LOG_VERSION = "shadow-1"
+SHADOW_LOG_VERSION = "shadow-2"
+
+# Default policy provenance until a simulation_informed policy artifact is loaded.
+DEFAULT_POLICY_NAME = "baseline_rule"
+DEFAULT_POLICY_VERSION = "0"
+DEFAULT_VALIDATION_STATUS = "synthetic_only"
 
 # Stable CSV column order. Append-only: never reorder or remove columns without
 # bumping SHADOW_LOG_VERSION, so historical shadow logs stay parseable.
 SHADOW_LOG_COLUMNS: tuple[str, ...] = (
     "schema_version",
+    "policy_name",
+    "policy_version",
+    "validation_status",
     "device_id",
     "frame_index",
     "captured_at",
@@ -51,6 +59,15 @@ SHADOW_LOG_COLUMNS: tuple[str, ...] = (
     "estimated_global_shift",
     "cell_size",
     "mesh_layout",
+    # --- shadow-2: A/B cell-aggregation + trajectory features (logged only) ---
+    "active_proportion_mean",
+    "active_proportion_max",
+    "active_proportion_q90",
+    "active_proportion_q95",
+    "concentration_max",
+    "mean_step",
+    "reversal_rate",
+    "track_frames",
 )
 
 
@@ -67,6 +84,11 @@ class ShadowDecisionRecord:
     # exists so the same record type can describe a future live-adaptive run.
     applied: bool = False
     schema_version: str = SHADOW_LOG_VERSION
+    # Policy provenance (Issue #21). validation_status stays "synthetic_only"
+    # until real Pi field data validates the thresholds.
+    policy_name: str = DEFAULT_POLICY_NAME
+    policy_version: str = DEFAULT_POLICY_VERSION
+    validation_status: str = DEFAULT_VALIDATION_STATUS
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_row(self) -> dict[str, Any]:
@@ -74,6 +96,9 @@ class ShadowDecisionRecord:
         f = self.decision.features
         row: dict[str, Any] = {
             "schema_version": self.schema_version,
+            "policy_name": self.policy_name,
+            "policy_version": self.policy_version,
+            "validation_status": self.validation_status,
             "device_id": self.device_id,
             "frame_index": self.frame_index,
             "captured_at": self.captured_at,
@@ -99,6 +124,14 @@ class ShadowDecisionRecord:
             "estimated_global_shift": f.estimated_global_shift,
             "cell_size": f.cell_size,
             "mesh_layout": f.mesh_layout,
+            "active_proportion_mean": f.active_proportion_mean,
+            "active_proportion_max": f.active_proportion_max,
+            "active_proportion_q90": f.active_proportion_q90,
+            "active_proportion_q95": f.active_proportion_q95,
+            "concentration_max": f.concentration_max,
+            "mean_step": f.mean_step,
+            "reversal_rate": f.reversal_rate,
+            "track_frames": f.track_frames,
         }
         return row
 

@@ -83,6 +83,48 @@ def hexagonal_cells(mask, *, cell_size: int) -> list[dict[str, Any]]:
     return cells
 
 
+CELL_REDUCERS = ("mean", "max", "q90", "q95")
+
+
+def aggregate_residual_grid(residual, *, cell_size: int, reducer: str = "mean", offset: bool = False):
+    """Reduce a residual-magnitude image into a (rows, cols) per-cell grid.
+
+    ``reducer`` is one of :data:`CELL_REDUCERS`. ``max``/``q90``/``q95`` keep a
+    small compact (low-SNR) target that a cell mean would average away; ``mean``
+    is the conservative, noise-robust baseline. Used for the shadow-only A/B
+    aggregation comparison — it does not change the active decision.
+    """
+    import numpy as np
+
+    arr = np.asarray(residual, dtype=np.float32)
+    if offset:
+        arr = np.roll(arr, (cell_size // 2, cell_size // 2), axis=(0, 1))
+    height, width = arr.shape
+    rows = max(1, height // cell_size)
+    cols = max(1, width // cell_size)
+    cropped = arr[: rows * cell_size, : cols * cell_size]
+    blocks = cropped.reshape(rows, cell_size, cols, cell_size).transpose(0, 2, 1, 3)
+    flat = blocks.reshape(rows, cols, cell_size * cell_size)
+    if reducer == "mean":
+        return flat.mean(axis=2)
+    if reducer == "max":
+        return flat.max(axis=2)
+    if reducer == "q90":
+        return np.quantile(flat, 0.90, axis=2)
+    if reducer == "q95":
+        return np.quantile(flat, 0.95, axis=2)
+    raise ValueError(f"unknown reducer: {reducer!r}")
+
+
+def grid_largest_component(mask) -> int:
+    """4-neighbour largest connected component over a boolean (rows, cols) grid."""
+    import numpy as np
+
+    m = np.asarray(mask, dtype=bool)
+    coords = {(int(r), int(c)) for r, c in zip(*np.nonzero(m))}
+    return largest_connected_component(coords)
+
+
 def active_coords(cells: list[dict[str, Any]], *, threshold: float) -> set[tuple[int, int]]:
     return {cell["coord"] for cell in cells if cell["score"] >= threshold}
 

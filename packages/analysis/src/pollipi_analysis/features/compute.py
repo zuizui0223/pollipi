@@ -18,7 +18,10 @@ from pollipi_analysis.features.preprocess import (
     to_gray,
 )
 from pollipi_analysis.mesh.grid import (
+    CELL_REDUCERS,
     active_coords,
+    aggregate_residual_grid,
+    grid_largest_component,
     largest_connected_component,
     rectangular_cells,
 )
@@ -96,6 +99,21 @@ def compute_features(
     direction_reversal = _return_to_origin(active, previous_active_cells)
     centroid_displacement = _displacement(centroid, previous_centroid)
 
+    # A/B cell-aggregation experiment (shadow-only; does NOT affect the decision).
+    # Reduce the residual magnitude per cell with each reducer, remove the spatial
+    # common-mode (per-frame median across cells), and threshold by pixel_difference.
+    agg_props: dict[str, float] = {}
+    max_grid = None
+    for reducer in CELL_REDUCERS:
+        grid = aggregate_residual_grid(residual, cell_size=cfg.cell_size, reducer=reducer)
+        resid = np.clip(grid - float(np.median(grid)), 0.0, None)
+        mask = resid >= cfg.pixel_difference
+        agg_props[reducer] = float(mask.mean())
+        if reducer == "max":
+            max_grid = mask
+    max_active = int(max_grid.sum()) if max_grid is not None else 0
+    concentration_max = (grid_largest_component(max_grid) / max_active) if max_active else 0.0
+
     features = MeshFeatures(
         active_cell_proportion=active_prop,
         largest_component_cells=largest,
@@ -112,6 +130,11 @@ def compute_features(
         global_synchrony=global_synchrony,
         estimated_global_shift=float(shift_mag),
         cell_size=cfg.cell_size,
+        active_proportion_mean=agg_props.get("mean"),
+        active_proportion_max=agg_props.get("max"),
+        active_proportion_q90=agg_props.get("q90"),
+        active_proportion_q95=agg_props.get("q95"),
+        concentration_max=concentration_max,
     )
     return features, active
 
