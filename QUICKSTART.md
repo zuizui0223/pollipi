@@ -1,5 +1,9 @@
 # PolliPi Quickstart
 
+> **Note:** The single-file `install.sh` / `setup_device.sh` flow has been removed.
+> Deploy the packaged artifact via [docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md) and
+> `tools/pollipi_fleet_deploy.py`. The camera-setup steps below remain useful.
+
 This guide gets one Raspberry Pi running PolliPi from scratch in about 15 minutes.
 For adding more devices to an existing fleet, see `DEVICE_ONBOARDING.md`.
 For troubleshooting, see `TROUBLESHOOTING.md`.

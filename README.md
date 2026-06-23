@@ -67,14 +67,16 @@ packages/
   web/          iPad PWA
   contracts/    Shared browser/API contracts during migration
 
-dist/           Generated deployable server artifact
-pollipi_api_server.py
-web/            Compatibility-only root-level deployment references
+dist/           Generated deployable server artifact (pollipi_api_server.py)
+tools/          Fleet deploy (pollipi_fleet_deploy.py) + pollipi.service.template
+docs/           Deployment and design docs (DEPLOY_TO_PI.md, FIELD_FLEET_DEPLOYMENT.md)
 ```
 
-New development belongs in `packages/`.
-
-The root `pollipi_api_server.py`, root `web/`, and `dist/` remain compatibility/deployment surfaces until all Raspberry Pi devices have moved to the packaged artifact. Do not add new feature logic there.
+New development belongs in `packages/`. The deployable server is the generated
+`dist/pollipi_api_server.py` (built from `packages/server`); deploy it with
+`tools/pollipi_fleet_deploy.py` per [docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md).
+The original root-level single-file server and `web/` assets have been removed now
+that all devices run the packaged artifact.
 
 ## Active API
 

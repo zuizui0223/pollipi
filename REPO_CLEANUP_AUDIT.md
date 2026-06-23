@@ -17,15 +17,21 @@
 
 These artifacts can be regenerated, but they remain part of the deployment workflow until all five Pi devices are known to run the same packaged artifact.
 
-## Legacy / compatibility
+## Removed first-generation surfaces
 
-- `pollipi_api_server.py`: root-level legacy server kept for compatibility.
-- `web/`: root-level legacy web assets kept for compatibility.
+All five field devices are confirmed to run the packaged `dist/` artifact, so the
+original single-file server and its bootstrap/deploy scripts have been removed:
+
+- `pollipi_api_server.py` (root single-file server) — removed; build `dist/pollipi_api_server.py` from `packages/server` instead.
+- `web/` (root single-file web assets) — removed; use `packages/web`.
+- `install.sh`, `setup_device.sh` (first-gen device bootstrap) — removed; use `tools/pollipi.service.template` + [docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md).
+- `deploy_pollipi_pi.ps1` (first-gen single-host deploy) — removed; use `tools/pollipi_fleet_deploy.py`.
+
+## Legacy / compatibility (retained)
+
 - `legacy/`: compatibility material, if present.
-- `deploy_pollipi_pi.ps1` and `imx500_detect_test.py`: old direct Pi deployment / IMX500 diagnostic path. Keep for field recovery only; active fleet updates should use `tools/pollipi_fleet_deploy.py`.
-- Historical root docs such as `MASTER_SPEC.md`, `TASKS.md`, `CHANGELOG_AI.md`, `FIELD_METHOD_ROADMAP.md`, `MIGRATION_PLAN.md`, and `REQUIREMENT_NOTES.md`: keep as archive/reference. Active behavior is now tracked in `ACTIVE_SYSTEM_AUDIT.md`, `docs/ISSUE14_MESH_SIMULATION.md`, and GitHub issues.
-
-Do not delete these until the five Pi devices are confirmed to use the packaged artifact and the compatibility path is intentionally retired.
+- Historical root docs such as `MASTER_SPEC.md`, `TASKS.md`, `CHANGELOG_AI.md`, `FIELD_METHOD_ROADMAP.md`, `MIGRATION_PLAN.md`, and `REQUIREMENT_NOTES.md`: keep as archive/reference. Active behavior is tracked in `ACTIVE_SYSTEM_AUDIT.md`, `ADAPTIVE_TIMELAPSE_METHOD.md`, `docs/ISSUE14_MESH_SIMULATION.md`, and GitHub issues.
+- `QUICKSTART.md`, `DEVICE_ONBOARDING.md`, `TROUBLESHOOTING.md`: retained for camera-setup and troubleshooting content, but their single-file install steps are superseded by the fleet/artifact deployment docs.
 
 ## Cache / local metadata
 

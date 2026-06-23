@@ -1,5 +1,10 @@
 # PolliPi Troubleshooting
 
+> **Note:** The single-file `install.sh` / `setup_device.sh` deployment is removed;
+> the service now runs the packaged `dist/pollipi_api_server.py` deployed via
+> `tools/pollipi_fleet_deploy.py`. Command references below that mention the old
+> single-file path are historical.
+
 ## Camera issues
 
 ### `Camera __init__ sequence did not complete`

@@ -1,5 +1,10 @@
 # PolliPi Device Onboarding Guide
 
+> **Note:** The single-file `install.sh` / `setup_device.sh` / `deploy_pollipi_pi.ps1`
+> flow has been removed. Use the packaged artifact + `tools/pollipi.service.template`
+> and `tools/pollipi_fleet_deploy.py` per [docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md)
+> and [docs/FIELD_FLEET_DEPLOYMENT.md](docs/FIELD_FLEET_DEPLOYMENT.md).
+
 This document describes how to add a new Raspberry Pi camera unit to the PolliPi field observer system.
 
 Use this when adding any new Pi — for example `pollipi2.local`, `pollipi3.local`, or any hostname you assign.
