@@ -3,11 +3,7 @@ import type {
   StatusResponse,
   SystemInfo,
   ImagesResponse,
-  EventsResponse,
-  EventInfo,
-  TrainingStatus,
   DeleteImagesResponse,
-  BulkDeleteEventsResponse,
   StartPayload,
   Camera,
   CoordinatorAuthResponse,
@@ -28,13 +24,9 @@ export function getCoordinatorAccessToken(): string {
 }
 
 export function setCoordinatorTokens(response: CoordinatorAuthResponse): void {
-  if (response.access_token) {
-    window.localStorage.setItem(ACCESS_TOKEN_KEY, response.access_token);
-  }
+  if (response.access_token) window.localStorage.setItem(ACCESS_TOKEN_KEY, response.access_token);
   const refreshToken = response.tokens?.['Token.Refresh'] || response.tokens?.Refresh;
-  if (refreshToken) {
-    window.localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-  }
+  if (refreshToken) window.localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
 }
 
 export function clearCoordinatorTokens(): void {
@@ -55,10 +47,9 @@ function baseUrlOf(target: ApiTarget): string {
 }
 
 export function apiPath(target: ApiTarget, path: string): string {
-  if (typeof target !== 'string' && target.apiPathPrefix) {
-    return `${target.apiPathPrefix}${path}`;
-  }
-  return path;
+  return typeof target !== 'string' && target.apiPathPrefix
+    ? `${target.apiPathPrefix}${path}`
+    : path;
 }
 
 export function deviceUrl(target: ApiTarget, path: string): string {
@@ -81,8 +72,7 @@ export function resolveBaseUrl(value: string): string {
   }
   const hostname = input.includes('@') ? input.split('@').pop()! : input;
   if (!hostname || /[/?#]/.test(hostname)) throw new Error('Invalid device name');
-  const localHostname = hostname.includes('.') ? hostname : `${hostname}.local`;
-  return `http://${localHostname}:8000`;
+  return `http://${hostname.includes('.') ? hostname : `${hostname}.local`}:8000`;
 }
 
 export async function apiRequest<T = unknown>(
@@ -96,10 +86,7 @@ export async function apiRequest<T = unknown>(
     const token = getCoordinatorAccessToken();
     if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
   }
-  const response = await fetch(`${baseUrlOf(target)}${requestPath}`, {
-    ...options,
-    headers,
-  });
+  const response = await fetch(`${baseUrlOf(target)}${requestPath}`, { ...options, headers });
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {
@@ -108,105 +95,60 @@ export async function apiRequest<T = unknown>(
     } catch (_) {}
     throw new Error(detail);
   }
-  const contentType = response.headers.get('content-type') || '';
-  return (
-    contentType.includes('application/json') ? response.json() : response.text()
-  ) as Promise<T>;
+  return ((response.headers.get('content-type') || '').includes('application/json')
+    ? response.json()
+    : response.text()) as Promise<T>;
 }
 
-export async function fetchDevice(baseUrl: ApiTarget, options: RequestInit = {}): Promise<DeviceInfo> {
-  return apiRequest<DeviceInfo>(baseUrl, '/device', options);
+export async function fetchDevice(target: ApiTarget, options: RequestInit = {}): Promise<DeviceInfo> {
+  return apiRequest<DeviceInfo>(target, '/device', options);
 }
 
-export async function fetchStatus(baseUrl: ApiTarget, options: RequestInit = {}): Promise<StatusResponse> {
-  return apiRequest<StatusResponse>(baseUrl, '/status', options);
+export async function fetchStatus(target: ApiTarget, options: RequestInit = {}): Promise<StatusResponse> {
+  return apiRequest<StatusResponse>(target, '/status', options);
 }
 
-export async function fetchSystem(baseUrl: ApiTarget, options: RequestInit = {}): Promise<SystemInfo> {
-  return apiRequest<SystemInfo>(baseUrl, '/system', options);
+export async function fetchSystem(target: ApiTarget, options: RequestInit = {}): Promise<SystemInfo> {
+  return apiRequest<SystemInfo>(target, '/system', options);
 }
 
-export async function postStart(baseUrl: ApiTarget, payload: StartPayload): Promise<StatusResponse> {
-  return apiRequest<StatusResponse>(baseUrl, '/start', {
+export async function postStart(target: ApiTarget, payload: StartPayload): Promise<StatusResponse> {
+  return apiRequest<StatusResponse>(target, '/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 }
 
-export async function postStop(baseUrl: ApiTarget): Promise<StatusResponse> {
-  return apiRequest<StatusResponse>(baseUrl, '/stop', { method: 'POST' });
+export async function postStop(target: ApiTarget): Promise<StatusResponse> {
+  return apiRequest<StatusResponse>(target, '/stop', { method: 'POST' });
 }
 
-export async function fetchImages(baseUrl: ApiTarget, collection: string): Promise<ImagesResponse> {
-  return apiRequest<ImagesResponse>(
-    baseUrl,
-    `/images?limit=40&collection=${encodeURIComponent(collection)}`,
-  );
+export async function fetchImages(target: ApiTarget, collection: string): Promise<ImagesResponse> {
+  return apiRequest<ImagesResponse>(target, `/images?limit=40&collection=${encodeURIComponent(collection)}`);
 }
 
-export async function deleteImage(baseUrl: ApiTarget, filename: string): Promise<void> {
-  return apiRequest<void>(baseUrl, `/images/${encodeURIComponent(filename)}`, {
-    method: 'DELETE',
-  });
+export async function deleteImage(target: ApiTarget, filename: string): Promise<void> {
+  return apiRequest<void>(target, `/images/${encodeURIComponent(filename)}`, { method: 'DELETE' });
 }
 
-export async function labelImage(
-  baseUrl: ApiTarget,
-  filename: string,
-  label: string,
-): Promise<void> {
-  return apiRequest<void>(baseUrl, `/images/${encodeURIComponent(filename)}/label`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label }),
-  });
-}
-
-export async function deleteAllImages(baseUrl: ApiTarget): Promise<DeleteImagesResponse> {
-  return apiRequest<DeleteImagesResponse>(baseUrl, '/images', {
+export async function deleteAllImages(target: ApiTarget): Promise<DeleteImagesResponse> {
+  return apiRequest<DeleteImagesResponse>(target, '/images', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ confirm: 'DELETE_ALL' }),
   });
 }
 
-export async function fetchEvents(baseUrl: ApiTarget, category: string): Promise<EventsResponse> {
-  return apiRequest<EventsResponse>(
-    baseUrl,
-    `/events?limit=80&category=${encodeURIComponent(category)}`,
-  );
-}
-
-export async function saveEventReview(
-  baseUrl: ApiTarget,
-  eventId: string,
-  payload: Partial<EventInfo>,
-): Promise<void> {
-  return apiRequest<void>(baseUrl, `/events/${encodeURIComponent(eventId)}/label`, {
+export async function bulkDeleteImages(target: ApiTarget, filenames: string[]): Promise<DeleteImagesResponse> {
+  return apiRequest<DeleteImagesResponse>(target, '/images/bulk-delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ filenames }),
   });
 }
 
-export async function fetchTrainingStatus(baseUrl: ApiTarget): Promise<TrainingStatus> {
-  return apiRequest<TrainingStatus>(baseUrl, '/training/status');
-}
-
-export async function startTraining(baseUrl: ApiTarget): Promise<void> {
-  return apiRequest<void>(baseUrl, '/training/start', { method: 'POST' });
-}
-
-export async function resetTrainingModel(baseUrl: ApiTarget): Promise<void> {
-  return apiRequest<void>(baseUrl, '/training/model', { method: 'DELETE' });
-}
-
-export async function coordinatorLogin(
-  baseUrl: string,
-  username: string,
-  password: string,
-): Promise<CoordinatorAuthResponse> {
+export async function coordinatorLogin(baseUrl: string, username: string, password: string): Promise<CoordinatorAuthResponse> {
   const result = await apiRequest<CoordinatorAuthResponse>(baseUrl, '/api/user/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -217,12 +159,7 @@ export async function coordinatorLogin(
   return result;
 }
 
-export async function coordinatorRegister(
-  baseUrl: string,
-  email: string,
-  username: string,
-  password: string,
-): Promise<void> {
+export async function coordinatorRegister(baseUrl: string, email: string, username: string, password: string): Promise<void> {
   await apiRequest(baseUrl, '/api/user/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -241,10 +178,7 @@ export async function fetchCoordinatorDevices(baseUrl: string): Promise<Coordina
   return response.devices;
 }
 
-export async function createCoordinatorDevice(
-  baseUrl: string,
-  payload: CoordinatorDeviceCreatePayload,
-): Promise<CoordinatorDevice> {
+export async function createCoordinatorDevice(baseUrl: string, payload: CoordinatorDeviceCreatePayload): Promise<CoordinatorDevice> {
   return apiRequest<CoordinatorDevice>(baseUrl, '/api/devices', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -261,30 +195,5 @@ export async function stopCoordinatorDevices(baseUrl: string, deviceIds: number[
 }
 
 export async function deleteCoordinatorDevice(baseUrl: string, deviceId: number): Promise<void> {
-  await apiRequest<void>(baseUrl, `/api/devices/${deviceId}`, {
-    method: 'DELETE',
-  });
-}
-
-export async function bulkDeleteImages(
-  baseUrl: ApiTarget,
-  filenames: string[],
-): Promise<DeleteImagesResponse> {
-  return apiRequest<DeleteImagesResponse>(baseUrl, '/images/bulk-delete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filenames }),
-  });
-}
-
-export async function bulkDeleteEvents(
-  baseUrl: ApiTarget,
-  eventIds: string[],
-  scope: string = 'event_only',
-): Promise<BulkDeleteEventsResponse> {
-  return apiRequest<BulkDeleteEventsResponse>(baseUrl, '/events/bulk-delete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event_ids: eventIds, scope }),
-  });
+  await apiRequest<void>(baseUrl, `/api/devices/${deviceId}`, { method: 'DELETE' });
 }
