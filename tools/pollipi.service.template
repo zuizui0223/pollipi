@@ -1,0 +1,41 @@
+[Unit]
+Description=PolliPi API Server - Device: DEVICE_ID
+After=network.target
+Documentation=https://github.com/zuizui0223/raspberry-pi-camera-project
+
+[Service]
+Type=simple
+User=%u
+ExecStart=/usr/bin/python3 POLLIPI_HOME/pollipi_api_server.py
+WorkingDirectory=POLLIPI_HOME
+Environment="PYTHONUNBUFFERED=1"
+Environment="POLLIPI_CONFIG=CONFIG_FILE"
+Restart=on-failure
+RestartSec=10
+
+# Runtime directories
+RuntimeDirectory=pollipi
+StateDirectory=pollipi
+
+# Security - restrict service capabilities
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=POLLIPI_HOME
+
+# Resource limits (adjust as needed for your Pi hardware)
+CPUQuota=75%
+MemoryLimit=512M
+
+# Logging to journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pollipi
+
+# Timeouts
+StartLimitInterval=600
+StartLimitBurst=3
+
+[Install]
+WantedBy=default.target
