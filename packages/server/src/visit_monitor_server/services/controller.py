@@ -1,4 +1,4 @@
-"""TimelapseController – orchestrates camera lifecycle and the capture thread."""
+"""Timelapse controller for the active scheduled-mesh runtime."""
 from __future__ import annotations
 
 import json
@@ -9,16 +9,15 @@ from pathlib import Path
 from typing import Generator, Optional
 
 from visit_monitor_server.config import (
-    AI_MONITOR_LABELS,
-    AI_MONITOR_MODEL,
-    AI_MONITOR_THRESHOLD,
     AUTONOMOUS_PATH,
-    DEVICE_ID, DEVICE_NAME,
-    CAMERA_LABEL, CAMERA_MODEL, CAMERA_PROFILE,
-    IS_AI_CAMERA, IS_NOIR, IS_WIDE,
-    MONITOR_SIZE,
-    MONITOR_FRAME_INTERVAL_SEC,
-    PREVIEW_PATH,
+    CAMERA_LABEL,
+    CAMERA_MODEL,
+    CAMERA_PROFILE,
+    DEVICE_ID,
+    DEVICE_NAME,
+    IS_AI_CAMERA,
+    IS_NOIR,
+    IS_WIDE,
     USE_FAKE_CAMERA,
 )
 
@@ -26,23 +25,23 @@ STOP_JOIN_TIMEOUT_SEC = 8.0
 
 
 class TimelapseController:
-    """Co-ordinates camera start/stop, capture threads, and preview streaming."""
+    """Own camera lifecycle and expose lightweight status/preview state.
+
+    Legacy ROI, ML, event-review, and training workflows are intentionally not
+    part of this controller's active execution path.
+    """
 
     def __init__(self, image_dir: Path) -> None:
         self.image_dir = image_dir
         self._lock = threading.Lock()
+        self._camera_lock = threading.Lock()
         self._stop_event: Optional[threading.Event] = None
         self._thread: Optional[threading.Thread] = None
         self._camera = None
-        self._camera_lock = threading.Lock()
         self._monitor_stop_event: Optional[threading.Event] = None
-        self._monitor_closed_event: Optional[threading.Event] = None
-        self._latest_preview_frame: Optional[bytes] = None
-        self._latest_preview_time: Optional[float] = None
         self._preview_subscriber_count = 0
         self._preview_producer_state = "idle"
 
-        # ---- Status fields ------------------------------------------------
         self.running = False
         self.lifecycle_state = "stopped"
         self.last_error: Optional[str] = None
@@ -53,13 +52,11 @@ class TimelapseController:
         self.last_capture_time: Optional[str] = None
         self.last_image: Optional[str] = None
         self.message = "Stopped."
-        self.auto_mode = False
-        self.motion_trigger_mode = False
-        self.hybrid_mode = False
-        self.ml_assist_mode = False
         self.autonomous_mode = False
         self.adaptive_timelapse_mode = False
         self.mesh_shadow_mode = True
+        self.interval_reason = "Scheduled interval."
+
         self.motion_score: Optional[float] = None
         self.changed_area_ratio: Optional[float] = None
         self.mean_brightness: Optional[float] = None
@@ -69,11 +66,11 @@ class TimelapseController:
         self.largest_blob_area = 0
         self.largest_blob_ratio: Optional[float] = None
         self.small_blob_count = 0
-        self.motion_type = "none"
+        self.motion_type = "mesh_three_state"
         self.insect_candidate = False
         self.detection_count = 0
         self.event_count = 0
-        self.interval_reason = "Manual interval."
+
         self.site_id: Optional[str] = None
         self.flower_id: Optional[str] = None
         self.plant_species: Optional[str] = None
@@ -82,63 +79,24 @@ class TimelapseController:
         self.comparison_session_id: Optional[str] = None
         self.camera_role: Optional[str] = None
         self.method_mode: Optional[str] = None
-        self.roi_used = False
-        self.roi_x: Optional[int] = None
-        self.roi_y: Optional[int] = None
-        self.roi_w: Optional[int] = None
-        self.roi_h: Optional[int] = None
-        self.roi_semantics = "floral_display_zone"
-        self.control_roi_used = False
-        self.control_roi_x: Optional[int] = None
-        self.control_roi_y: Optional[int] = None
-        self.control_roi_w: Optional[int] = None
-        self.control_roi_h: Optional[int] = None
-        self.floral_zone_score: Optional[float] = None
-        self.background_control_score: Optional[float] = None
-        self.zone_minus_control_score: Optional[float] = None
-        self.grid_rows = 4
-        self.grid_cols = 4
-        self.changed_cell_count = 0
-        self.changed_cell_ratio: Optional[float] = None
-        self.local_compactness: Optional[float] = None
-        self.whole_frame_change_score: Optional[float] = None
-        self.previous_frame_elapsed_sec: Optional[float] = None
-        self.robust_background_score: Optional[float] = None
-        self.candidate_reasons: Optional[str] = None
+
         self.mesh_decision: Optional[str] = None
         self.mesh_reason: Optional[str] = None
         self.mesh_active_cell_proportion: Optional[float] = None
         self.mesh_offset_agreement: Optional[float] = None
         self.mesh_global_synchrony: Optional[float] = None
-        self.roi_tracking = False
-        self.roi_tracking_success = False
-        self.roi_tracking_score: Optional[float] = None
-        self.roi_search_margin = 30
-        self.roi_tracking_min_score = 0.45
-        self.initial_roi_x: Optional[int] = None
-        self.initial_roi_y: Optional[int] = None
-        self.initial_roi_w: Optional[int] = None
-        self.initial_roi_h: Optional[int] = None
-        self.tracked_roi_x: Optional[int] = None
-        self.tracked_roi_y: Optional[int] = None
-        self.tracked_roi_w: Optional[int] = None
-        self.tracked_roi_h: Optional[int] = None
-        self.roi_shift_x: Optional[int] = None
-        self.roi_shift_y: Optional[int] = None
-
-    # ------------------------------------------------------------------
-    # Status
-    # ------------------------------------------------------------------
 
     def _build_status(self):
         from visit_monitor_server.api.schemas.capture import StatusResponse
 
+        # Fields retained below are compatibility values for the current schema.
+        # Active clients use lifecycle, scheduled-image, interval, and mesh fields.
         return StatusResponse(
             running=self.running,
             lifecycle_state=self.lifecycle_state,
             last_error=self.last_error,
             preview_subscriber_count=self._preview_subscriber_count,
-            preview_latest_frame_age_sec=self._preview_frame_age_unlocked(),
+            preview_latest_frame_age_sec=None,
             preview_producer_state=self._preview_producer_state,
             interval_sec=self.interval_sec,
             next_interval_sec=self.next_interval_sec,
@@ -146,10 +104,10 @@ class TimelapseController:
             last_capture_time=self.last_capture_time,
             last_image=self.last_image,
             message=self.message,
-            auto_mode=self.auto_mode,
-            motion_trigger_mode=self.motion_trigger_mode,
-            hybrid_mode=self.hybrid_mode,
-            ml_assist_mode=self.ml_assist_mode,
+            auto_mode=False,
+            motion_trigger_mode=False,
+            hybrid_mode=False,
+            ml_assist_mode=False,
             autonomous_mode=self.autonomous_mode,
             adaptive_timelapse_mode=self.adaptive_timelapse_mode,
             mesh_shadow_mode=self.mesh_shadow_mode,
@@ -183,49 +141,49 @@ class TimelapseController:
             comparison_session_id=self.comparison_session_id,
             camera_role=self.camera_role,
             method_mode=self.method_mode,
-            roi_used=self.roi_used,
-            roi_x=self.roi_x,
-            roi_y=self.roi_y,
-            roi_w=self.roi_w,
-            roi_h=self.roi_h,
-            roi_semantics=self.roi_semantics,
-            control_roi_used=self.control_roi_used,
-            control_roi_x=self.control_roi_x,
-            control_roi_y=self.control_roi_y,
-            control_roi_w=self.control_roi_w,
-            control_roi_h=self.control_roi_h,
-            floral_zone_score=self.floral_zone_score,
-            background_control_score=self.background_control_score,
-            zone_minus_control_score=self.zone_minus_control_score,
-            grid_rows=self.grid_rows,
-            grid_cols=self.grid_cols,
-            changed_cell_count=self.changed_cell_count,
-            changed_cell_ratio=self.changed_cell_ratio,
-            local_compactness=self.local_compactness,
-            whole_frame_change_score=self.whole_frame_change_score,
-            previous_frame_elapsed_sec=self.previous_frame_elapsed_sec,
-            robust_background_score=self.robust_background_score,
-            candidate_reasons=self.candidate_reasons,
+            roi_used=False,
+            roi_x=None,
+            roi_y=None,
+            roi_w=None,
+            roi_h=None,
+            roi_semantics="whole_frame_overlapping_mesh",
+            control_roi_used=False,
+            control_roi_x=None,
+            control_roi_y=None,
+            control_roi_w=None,
+            control_roi_h=None,
+            floral_zone_score=None,
+            background_control_score=None,
+            zone_minus_control_score=None,
+            grid_rows=0,
+            grid_cols=0,
+            changed_cell_count=0,
+            changed_cell_ratio=self.changed_area_ratio,
+            local_compactness=None,
+            whole_frame_change_score=self.mesh_global_synchrony,
+            previous_frame_elapsed_sec=None,
+            robust_background_score=None,
+            candidate_reasons=self.mesh_reason,
             mesh_decision=self.mesh_decision,
             mesh_reason=self.mesh_reason,
             mesh_active_cell_proportion=self.mesh_active_cell_proportion,
             mesh_offset_agreement=self.mesh_offset_agreement,
             mesh_global_synchrony=self.mesh_global_synchrony,
-            roi_tracking=self.roi_tracking,
-            roi_tracking_success=self.roi_tracking_success,
-            roi_tracking_score=self.roi_tracking_score,
-            roi_search_margin=self.roi_search_margin,
-            roi_tracking_min_score=self.roi_tracking_min_score,
-            initial_roi_x=self.initial_roi_x,
-            initial_roi_y=self.initial_roi_y,
-            initial_roi_w=self.initial_roi_w,
-            initial_roi_h=self.initial_roi_h,
-            tracked_roi_x=self.tracked_roi_x,
-            tracked_roi_y=self.tracked_roi_y,
-            tracked_roi_w=self.tracked_roi_w,
-            tracked_roi_h=self.tracked_roi_h,
-            roi_shift_x=self.roi_shift_x,
-            roi_shift_y=self.roi_shift_y,
+            roi_tracking=False,
+            roi_tracking_success=False,
+            roi_tracking_score=None,
+            roi_search_margin=0,
+            roi_tracking_min_score=0.0,
+            initial_roi_x=None,
+            initial_roi_y=None,
+            initial_roi_w=None,
+            initial_roi_h=None,
+            tracked_roi_x=None,
+            tracked_roi_y=None,
+            tracked_roi_w=None,
+            tracked_roi_h=None,
+            roi_shift_x=None,
+            roi_shift_y=None,
         )
 
     def status(self):
@@ -235,16 +193,13 @@ class TimelapseController:
     def status_unlocked(self):
         return self._build_status()
 
-    # ------------------------------------------------------------------
-    # Start / stop
-    # ------------------------------------------------------------------
-
     def start(self, request):
-        stopped_status = self.stop()
-        if stopped_status.lifecycle_state == "stopping":
+        stopped = self.stop()
+        if stopped.lifecycle_state == "stopping":
             with self._lock:
                 self.message = "Previous timelapse is still stopping; start was not duplicated."
                 return self.status_unlocked()
+
         if request.autonomous_mode:
             self._save_autonomous_request(request)
 
@@ -258,27 +213,18 @@ class TimelapseController:
             self.capture_count = 0
             self.last_capture_time = None
             self.last_image = None
-            self.message = "Starting timelapse."
-            self.auto_mode = request.auto_mode or request.motion_trigger_mode or request.hybrid_mode
-            self.motion_trigger_mode = request.motion_trigger_mode
-            self.hybrid_mode = request.hybrid_mode
-            self.ml_assist_mode = request.ml_assist_mode
+            self.message = "Starting scheduled timelapse."
             self.autonomous_mode = request.autonomous_mode
-            self.adaptive_timelapse_mode = request.adaptive_timelapse_mode
-            self.mesh_shadow_mode = request.mesh_shadow_mode
+            self.adaptive_timelapse_mode = False
+            self.mesh_shadow_mode = True
+            self.interval_reason = "Shadow mesh analysis; scheduled interval unchanged."
             self.motion_score = None
             self.changed_area_ratio = None
-            self.mean_brightness = None
-            self.brightness_delta = None
-            self.wind_like_motion = False
-            self.num_blobs = 0
-            self.largest_blob_area = 0
-            self.largest_blob_ratio = None
-            self.small_blob_count = 0
-            self.motion_type = "none"
-            self.insect_candidate = False
-            self.detection_count = 0
-            self.event_count = 0
+            self.mesh_decision = None
+            self.mesh_reason = None
+            self.mesh_active_cell_proportion = None
+            self.mesh_offset_agreement = None
+            self.mesh_global_synchrony = None
             self.site_id = request.site_id
             self.flower_id = request.flower_id
             self.plant_species = request.plant_species
@@ -287,50 +233,6 @@ class TimelapseController:
             self.comparison_session_id = request.comparison_session_id
             self.camera_role = request.camera_role
             self.method_mode = request.method_mode
-            _roi = self._roi_tuple(request)
-            self.roi_used = _roi is not None
-            self.roi_x = request.roi_x
-            self.roi_y = request.roi_y
-            self.roi_w = request.roi_w
-            self.roi_h = request.roi_h
-            self.roi_semantics = "floral_display_zone"
-            self.control_roi_used = None not in (
-                request.control_roi_x,
-                request.control_roi_y,
-                request.control_roi_w,
-                request.control_roi_h,
-            )
-            self.control_roi_x = request.control_roi_x
-            self.control_roi_y = request.control_roi_y
-            self.control_roi_w = request.control_roi_w
-            self.control_roi_h = request.control_roi_h
-            self.grid_rows = request.roi_grid_rows
-            self.grid_cols = request.roi_grid_cols
-            self.roi_tracking = bool(request.roi_tracking and self.roi_used)
-            self.roi_tracking_success = False
-            self.roi_tracking_score = None
-            self.roi_search_margin = request.roi_search_margin
-            self.roi_tracking_min_score = request.roi_tracking_min_score
-            self.initial_roi_x = request.roi_x if self.roi_tracking else None
-            self.initial_roi_y = request.roi_y if self.roi_tracking else None
-            self.initial_roi_w = request.roi_w if self.roi_tracking else None
-            self.initial_roi_h = request.roi_h if self.roi_tracking else None
-            self.tracked_roi_x = request.roi_x if self.roi_tracking else None
-            self.tracked_roi_y = request.roi_y if self.roi_tracking else None
-            self.tracked_roi_w = request.roi_w if self.roi_tracking else None
-            self.tracked_roi_h = request.roi_h if self.roi_tracking else None
-            self.roi_shift_x = 0 if self.roi_tracking else None
-            self.roi_shift_y = 0 if self.roi_tracking else None
-            if request.adaptive_timelapse_mode:
-                self.interval_reason = "Waiting for adaptive baseline."
-            elif request.hybrid_mode:
-                self.interval_reason = "Waiting for scheduled and motion baselines."
-            elif request.motion_trigger_mode:
-                self.interval_reason = "Waiting for motion-trigger baseline."
-            else:
-                self.interval_reason = (
-                    "Waiting for background baseline." if request.auto_mode else "Manual interval."
-                )
             self._stop_event = stop_event
             self._thread = threading.Thread(
                 target=self._run_loop,
@@ -348,10 +250,10 @@ class TimelapseController:
         with self._lock:
             stop_event = self._stop_event
             thread = self._thread
-            was_active = self.running or thread is not None
+            active = self.running or thread is not None
             if stop_event is not None:
                 stop_event.set()
-            if was_active:
+            if active:
                 self.lifecycle_state = "stopping"
 
         if thread is not None and thread is not threading.current_thread():
@@ -360,8 +262,8 @@ class TimelapseController:
         with self._lock:
             if thread is not None and thread.is_alive():
                 self.running = False
-                self.message = f"Stop requested; capture thread did not exit within {self.stop_timeout_sec:.0f}s."
                 self.lifecycle_state = "stopping"
+                self.message = f"Stop requested; capture thread did not exit within {self.stop_timeout_sec:.0f}s."
                 return self.status_unlocked()
             self.running = False
             self._stop_event = None
@@ -369,21 +271,15 @@ class TimelapseController:
             self.lifecycle_state = "stopped"
             if not preserve_autonomous:
                 self.autonomous_mode = False
-            if was_active:
+            if active:
                 self.message = "Timelapse stopped."
             status = self.status_unlocked()
         if not preserve_autonomous:
             self._clear_autonomous_request()
         return status
 
-    # ------------------------------------------------------------------
-    # Capture thread
-    # ------------------------------------------------------------------
-
     def _run_loop(self, stop_event: threading.Event, request) -> None:
-        from visit_monitor_server.services import get_trainer
         from visit_monitor_server.services.capture_loop import run_capture_loop
-
         try:
             run_capture_loop(
                 stop_event=stop_event,
@@ -392,8 +288,7 @@ class TimelapseController:
                 camera_lock=self._camera_lock,
                 set_camera=self._set_camera,
                 update_state=self._apply_state_update,
-                set_message=lambda m: self._set_message_locked(m),
-                trainer=get_trainer(),
+                set_message=self._set_message,
             )
         except Exception as exc:
             with self._lock:
@@ -406,7 +301,7 @@ class TimelapseController:
             with self._lock:
                 if self._thread is threading.current_thread() and self.lifecycle_state != "error":
                     self.running = False
-                    self.lifecycle_state = "stopped" if stop_event.is_set() else "stopped"
+                    self.lifecycle_state = "stopped"
 
     def _set_camera(self, camera) -> None:
         with self._lock:
@@ -416,27 +311,36 @@ class TimelapseController:
             else:
                 self.running = False
 
-    def _set_message_locked(self, msg: str) -> None:
+    def _set_message(self, message: str) -> None:
         with self._lock:
-            self.message = msg
+            self.message = message
 
     def _apply_state_update(self, state: dict) -> None:
         with self._lock:
             if "interval_sec" in state:
                 self.interval_sec = state["interval_sec"]
-                self.next_interval_sec = state["interval_sec"]
+            if "next_interval_sec" in state:
+                self.next_interval_sec = state["next_interval_sec"]
             if "message" in state:
                 self.message = state["message"]
             if "motion_score" in state:
                 self.motion_score = state["motion_score"]
-            if "metrics" in state and state["metrics"] is not None:
-                self._update_motion_metrics_unlocked(state["metrics"])
-            elif "metrics" in state and state["metrics"] is None:
-                self._clear_motion_metrics_unlocked()
             if "insect_candidate" in state:
-                self.insect_candidate = state["insect_candidate"]
+                self.insect_candidate = bool(state["insect_candidate"])
             if "interval_reason" in state:
                 self.interval_reason = state["interval_reason"]
+            metrics = state.get("metrics")
+            if metrics is not None:
+                self.changed_area_ratio = metrics.get("changed_area_ratio")
+                self.mean_brightness = metrics.get("mean_brightness")
+                self.brightness_delta = metrics.get("brightness_delta")
+                self.wind_like_motion = bool(metrics.get("wind_like_motion"))
+                self.motion_type = str(metrics.get("motion_type") or "mesh_three_state")
+                self.mesh_decision = metrics.get("mesh_decision")
+                self.mesh_reason = metrics.get("mesh_reason")
+                self.mesh_active_cell_proportion = metrics.get("mesh_active_cell_proportion")
+                self.mesh_offset_agreement = metrics.get("mesh_offset_agreement")
+                self.mesh_global_synchrony = metrics.get("mesh_global_synchrony")
             self.capture_count += state.get("capture_count_delta", 0)
             self.detection_count += state.get("detection_count_delta", 0)
             self.event_count += state.get("event_count_delta", 0)
@@ -444,10 +348,6 @@ class TimelapseController:
                 self.last_capture_time = state["last_capture_time"]
             if state.get("last_image") is not None:
                 self.last_image = state["last_image"]
-
-    # ------------------------------------------------------------------
-    # Preview / monitor
-    # ------------------------------------------------------------------
 
     def latest_image(self) -> Optional[Path]:
         with self._lock:
@@ -464,354 +364,81 @@ class TimelapseController:
                 self.last_capture_time = None
 
     def preview_frame(self) -> bytes:
-        with self._lock:
-            camera = self._camera
-            monitor_active = self._monitor_stop_event is not None
-            cached_frame = self._latest_preview_frame
-
-        if camera is not None:
-            with self._camera_lock:
-                try:
-                    camera.capture_file(str(PREVIEW_PATH))
-                except Exception:
-                    camera.capture_file(str(PREVIEW_PATH), name="lores")
-                frame = PREVIEW_PATH.read_bytes()
-                self._cache_preview_frame(frame)
-                return frame
-
-        if cached_frame:
-            return cached_frame
-
-        if monitor_active:
-            frame = self._wait_for_cached_preview(timeout=2.0)
-            if frame:
-                return frame
-            raise RuntimeError("Monitor is starting; preview frame is not ready yet.")
-
-        if USE_FAKE_CAMERA:
-            from visit_monitor_server.adapters.fake_camera import FakeCamera
-            fc = FakeCamera()
-            fc.start()
-            fc.capture_file(str(PREVIEW_PATH))
-            fc.stop()
-            fc.close()
-            frame = PREVIEW_PATH.read_bytes()
-            self._cache_preview_frame(frame)
-            return frame
-
-        from picamera2 import Picamera2  # type: ignore
-
-        with self._camera_lock:
-            preview_camera = Picamera2()
-            try:
-                preview_camera.configure(
-                    preview_camera.create_preview_configuration(main={"size": (1280, 720)})
-                )
-                preview_camera.start()
-                time.sleep(1)
-                preview_camera.capture_file(str(PREVIEW_PATH))
-                frame = PREVIEW_PATH.read_bytes()
-                self._cache_preview_frame(frame)
-                return frame
-            finally:
-                try:
-                    preview_camera.stop()
-                finally:
-                    preview_camera.close()
-
-    def _cache_preview_frame(self, frame: bytes) -> None:
-        if not frame:
-            return
-        with self._lock:
-            self._latest_preview_frame = frame
-            self._latest_preview_time = time.monotonic()
-
-    def _preview_frame_age_unlocked(self) -> Optional[float]:
-        if self._latest_preview_time is None:
-            return None
-        return max(0.0, time.monotonic() - self._latest_preview_time)
-
-    def _wait_for_cached_preview(self, timeout: float) -> Optional[bytes]:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            with self._lock:
-                frame = self._latest_preview_frame
-            if frame:
-                return frame
-            time.sleep(0.05)
-        return None
+        image = self.latest_image()
+        if image is None:
+            raise RuntimeError("No scheduled image is available for preview.")
+        return image.read_bytes()
 
     def stop_monitor(self) -> None:
         with self._lock:
-            stop_event = self._monitor_stop_event
-            closed_event = self._monitor_closed_event
-            if stop_event is not None:
-                stop_event.set()
-        if closed_event is not None:
-            closed_event.wait(timeout=5)
+            event = self._monitor_stop_event
+            if event is not None:
+                event.set()
 
     def monitor_frames(self, ai_detection: bool = False) -> Generator[bytes, None, None]:
+        """Explicit one-viewer stream from scheduled images only.
+
+        AI overlay is intentionally unsupported in the active runtime. The stream
+        never opens a second camera and never competes with scheduled capture.
+        """
+        if ai_detection:
+            raise RuntimeError("AI monitor is removed from the active workflow.")
         self.stop_monitor()
         stop_event = threading.Event()
-        closed_event = threading.Event()
-        temporary_camera = None
-        imx500 = None
-        intrinsics = None
         with self._lock:
             self._monitor_stop_event = stop_event
-            self._monitor_closed_event = closed_event
             self._preview_subscriber_count = 1
-            self._preview_producer_state = "starting"
-            timelapse_camera = self._camera
-
+            self._preview_producer_state = "scheduled-image"
         try:
-            if ai_detection and timelapse_camera is not None:
-                return
-            if timelapse_camera is None:
-                if USE_FAKE_CAMERA:
-                    from visit_monitor_server.adapters.fake_camera import FakeCamera
-                    temporary_camera = FakeCamera()
-                    temporary_camera.configure(
-                        temporary_camera.create_preview_configuration(main={"size": MONITOR_SIZE})
-                    )
-                    temporary_camera.start()
-                else:
-                    from picamera2 import Picamera2  # type: ignore
-                    with self._camera_lock:
-                        if ai_detection:
-                            from visit_monitor_server.adapters.imx500 import load_imx500
-                            imx500, intrinsics = load_imx500(AI_MONITOR_MODEL)
-                            temporary_camera = Picamera2(imx500.camera_num)
-                            temporary_camera.configure(
-                                temporary_camera.create_preview_configuration(
-                                    main={"size": MONITOR_SIZE, "format": "RGB888"},
-                                    controls={"FrameRate": intrinsics.inference_rate},
-                                    buffer_count=12,
-                                )
-                            )
-                            imx500.show_network_fw_progress_bar()
-                        else:
-                            temporary_camera = Picamera2()
-                            temporary_camera.configure(
-                                temporary_camera.create_preview_configuration(
-                                    main={"size": MONITOR_SIZE}
-                                )
-                            )
-                        temporary_camera.start()
-                if stop_event.wait(0.5):
-                    return
-
+            last_path = None
             while not stop_event.is_set():
-                with self._lock:
-                    self._preview_producer_state = "running"
-                with self._lock:
-                    active_camera = self._camera
-                camera = active_camera or temporary_camera
-                if camera is None:
-                    break
-                with self._camera_lock:
-                    if ai_detection and temporary_camera is not None and imx500 is not None:
-                        frame = self._ai_detection_frame(temporary_camera, imx500, intrinsics)
-                    elif active_camera is not None:
-                        camera.capture_file(str(PREVIEW_PATH), name="lores")
-                        frame = PREVIEW_PATH.read_bytes()
-                    else:
-                        camera.capture_file(str(PREVIEW_PATH))
-                        frame = PREVIEW_PATH.read_bytes()
-                self._cache_preview_frame(frame)
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n"
-                    + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
-                    + frame
-                    + b"\r\n"
-                )
-                if stop_event.wait(MONITOR_FRAME_INTERVAL_SEC):
+                image = self.latest_image()
+                if image is not None:
+                    path = str(image)
+                    if path != last_path or last_path is None:
+                        frame = image.read_bytes()
+                        last_path = path
+                        yield (
+                            b"--frame\r\n"
+                            b"Content-Type: image/jpeg\r\n"
+                            + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
+                            + frame
+                            + b"\r\n"
+                        )
+                if stop_event.wait(1.0):
                     break
         finally:
-            if temporary_camera is not None:
-                with self._camera_lock:
-                    try:
-                        temporary_camera.stop()
-                    finally:
-                        temporary_camera.close()
             with self._lock:
                 if self._monitor_stop_event is stop_event:
                     self._monitor_stop_event = None
-                    self._monitor_closed_event = None
                 self._preview_subscriber_count = 0
                 self._preview_producer_state = "idle"
-            closed_event.set()
-
-    @staticmethod
-    def _ai_detection_frame(camera, imx500, intrinsics) -> bytes:
-        from visit_monitor_server.adapters.imx500 import render_detections
-
-        request = camera.capture_request()
-        try:
-            metadata = request.get_metadata()
-            image = request.make_array("main")
-            outputs = imx500.get_outputs(metadata, add_batch=True)
-            return render_detections(
-                image, outputs, imx500, intrinsics, metadata,
-                AI_MONITOR_THRESHOLD, AI_MONITOR_LABELS,
-            )
-        finally:
-            request.release()
-
-    # ------------------------------------------------------------------
-    # Motion metrics helpers
-    # ------------------------------------------------------------------
-
-    def _update_motion_metrics_unlocked(self, metrics: dict) -> None:
-        self.motion_score = metrics.get("motion_score")
-        self.changed_area_ratio = metrics.get("changed_area_ratio")
-        self.mean_brightness = metrics.get("mean_brightness")
-        self.brightness_delta = metrics.get("brightness_delta")
-        self.wind_like_motion = bool(metrics.get("wind_like_motion"))
-        self.num_blobs = int(metrics.get("num_blobs") or 0)
-        self.largest_blob_area = int(metrics.get("largest_blob_area") or 0)
-        self.largest_blob_ratio = metrics.get("largest_blob_ratio")
-        self.small_blob_count = int(metrics.get("small_blob_count") or 0)
-        self.motion_type = str(metrics.get("motion_type") or "none")
-        self.roi_used = bool(metrics.get("roi_used"))
-        self.roi_x = metrics.get("roi_x")
-        self.roi_y = metrics.get("roi_y")
-        self.roi_w = metrics.get("roi_w")
-        self.roi_h = metrics.get("roi_h")
-        self.roi_semantics = str(metrics.get("roi_semantics") or "floral_display_zone")
-        self.control_roi_used = bool(metrics.get("control_roi_used"))
-        self.control_roi_x = metrics.get("control_roi_x")
-        self.control_roi_y = metrics.get("control_roi_y")
-        self.control_roi_w = metrics.get("control_roi_w")
-        self.control_roi_h = metrics.get("control_roi_h")
-        self.floral_zone_score = metrics.get("floral_zone_score")
-        self.background_control_score = metrics.get("background_control_score")
-        self.zone_minus_control_score = metrics.get("zone_minus_control_score")
-        self.grid_rows = int(metrics.get("grid_rows") or self.grid_rows)
-        self.grid_cols = int(metrics.get("grid_cols") or self.grid_cols)
-        self.changed_cell_count = int(metrics.get("changed_cell_count") or 0)
-        self.changed_cell_ratio = metrics.get("changed_cell_ratio")
-        self.local_compactness = metrics.get("local_compactness")
-        self.whole_frame_change_score = metrics.get("whole_frame_change_score")
-        self.previous_frame_elapsed_sec = metrics.get("previous_frame_elapsed_sec")
-        self.robust_background_score = metrics.get("robust_background_score")
-        self.candidate_reasons = metrics.get("candidate_reasons")
-        self.mesh_decision = metrics.get("mesh_decision")
-        self.mesh_reason = metrics.get("mesh_reason")
-        self.mesh_active_cell_proportion = metrics.get("mesh_active_cell_proportion")
-        self.mesh_offset_agreement = metrics.get("mesh_offset_agreement")
-        self.mesh_global_synchrony = metrics.get("mesh_global_synchrony")
-        self.roi_tracking = bool(metrics.get("roi_tracking"))
-        self.roi_tracking_success = bool(metrics.get("roi_tracking_success"))
-        self.roi_tracking_score = metrics.get("roi_tracking_score")
-        self.roi_search_margin = int(metrics.get("roi_search_margin") or self.roi_search_margin)
-        self.roi_tracking_min_score = float(
-            metrics.get("roi_tracking_min_score") or self.roi_tracking_min_score
-        )
-        self.initial_roi_x = metrics.get("initial_roi_x")
-        self.initial_roi_y = metrics.get("initial_roi_y")
-        self.initial_roi_w = metrics.get("initial_roi_w")
-        self.initial_roi_h = metrics.get("initial_roi_h")
-        self.tracked_roi_x = metrics.get("tracked_roi_x")
-        self.tracked_roi_y = metrics.get("tracked_roi_y")
-        self.tracked_roi_w = metrics.get("tracked_roi_w")
-        self.tracked_roi_h = metrics.get("tracked_roi_h")
-        self.roi_shift_x = metrics.get("roi_shift_x")
-        self.roi_shift_y = metrics.get("roi_shift_y")
-
-    def _clear_motion_metrics_unlocked(self) -> None:
-        self.motion_score = None
-        self.changed_area_ratio = None
-        self.mean_brightness = None
-        self.brightness_delta = None
-        self.wind_like_motion = False
-        self.num_blobs = 0
-        self.largest_blob_area = 0
-        self.largest_blob_ratio = None
-        self.small_blob_count = 0
-        self.motion_type = "none"
-        self.mesh_decision = None
-        self.mesh_reason = None
-        self.mesh_active_cell_proportion = None
-        self.mesh_offset_agreement = None
-        self.mesh_global_synchrony = None
-        self.roi_tracking_success = False
-        self.roi_tracking_score = None
-
-    # ------------------------------------------------------------------
-    # Label helpers (delegated to image_store)
-    # ------------------------------------------------------------------
-
-    def _label_index(self):
-        from visit_monitor_server.services.image_store import label_index
-        return label_index()
-
-    def _review_status(self, source):
-        from visit_monitor_server.services.image_store import review_status
-        return review_status(source)
-
-    def _register_label(self, image_path, label, source):
-        from visit_monitor_server.services.image_store import register_label
-        register_label(image_path, label, source)
-
-    def _remove_label(self, filename: str) -> None:
-        from visit_monitor_server.services.image_store import remove_label
-        remove_label(filename)
-
-    def migrate_legacy_candidates(self) -> None:
-        from visit_monitor_server.config import IMAGE_DIR, LEGACY_CANDIDATE_DIR
-        from visit_monitor_server.services.image_store import register_label
-
-        if not LEGACY_CANDIDATE_DIR.is_dir():
-            return
-        for candidate_path in LEGACY_CANDIDATE_DIR.iterdir():
-            original_path = IMAGE_DIR / candidate_path.name
-            if candidate_path.suffix.lower() in {".jpg", ".jpeg"} and original_path.is_file():
-                register_label(original_path, "positive", "legacy_motion_candidate")
-
-    # ------------------------------------------------------------------
-    # Autonomous session helpers
-    # ------------------------------------------------------------------
 
     def _save_autonomous_request(self, request) -> None:
-        from visit_monitor_server.api.schemas.capture import StartRequest  # noqa: F401
-
         AUTONOMOUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        if hasattr(request, "model_dump_json"):
-            payload = request.model_dump_json(indent=2)
-        else:
-            payload = request.json(indent=2)
-        AUTONOMOUS_PATH.write_text(payload, encoding="utf-8")
+        data = request.model_dump() if hasattr(request, "model_dump") else request.dict()
+        AUTONOMOUS_PATH.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
-    @staticmethod
-    def _clear_autonomous_request() -> None:
-        if AUTONOMOUS_PATH.exists():
-            AUTONOMOUS_PATH.unlink()
+    def _clear_autonomous_request(self) -> None:
+        try:
+            AUTONOMOUS_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def resume_autonomous(self) -> None:
         if not AUTONOMOUS_PATH.is_file():
             return
         try:
             from visit_monitor_server.api.schemas.capture import StartRequest
-
-            payload = json.loads(AUTONOMOUS_PATH.read_text(encoding="utf-8"))
-            if hasattr(StartRequest, "model_validate"):
-                request = StartRequest.model_validate(payload)
-            else:
-                request = StartRequest.parse_obj(payload)
+            data = json.loads(AUTONOMOUS_PATH.read_text(encoding="utf-8"))
+            request = StartRequest(**data)
             if request.autonomous_mode:
                 self.start(request)
         except Exception as exc:
             with self._lock:
-                self.message = f"Autonomous resume error: {exc}"
+                self.last_error = f"Autonomous resume failed: {exc}"
+                self.message = self.last_error
 
-    # ------------------------------------------------------------------
-    # Private utilities
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _roi_tuple(request) -> Optional[tuple[int, int, int, int]]:
-        if None in (request.roi_x, request.roi_y, request.roi_w, request.roi_h):
-            return None
-        return (int(request.roi_x), int(request.roi_y), int(request.roi_w), int(request.roi_h))
+    def migrate_legacy_candidates(self) -> None:
+        """Compatibility hook retained for app startup; active runtime has no events."""
+        return None
