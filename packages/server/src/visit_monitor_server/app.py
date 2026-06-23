@@ -10,8 +10,8 @@ from fastapi.staticfiles import StaticFiles
 
 from visit_monitor_server import __version__
 from visit_monitor_server.api.router import router
-from visit_monitor_server.config import IMAGE_DIR, WEB_DIR
-from visit_monitor_server.services import TimelapseController, _trainer_singleton
+from visit_monitor_server.config import ENABLE_LEGACY_ROUTES, IMAGE_DIR, WEB_DIR
+from visit_monitor_server.services import TimelapseController
 import visit_monitor_server.services as _services
 
 
@@ -25,7 +25,8 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        controller.migrate_legacy_candidates()
+        if ENABLE_LEGACY_ROUTES:
+            controller.migrate_legacy_candidates()
         controller.resume_autonomous()
         yield
         controller.stop(preserve_autonomous=True)

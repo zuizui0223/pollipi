@@ -23,6 +23,7 @@ from visit_monitor_server.config import (
     USE_FAKE_CAMERA,
 )
 from visit_monitor_server.services.motion import detect_motion
+from pollipi_analysis.policy import decide_next_interval
 from visit_monitor_server.services.roi_tracking import (
     new_roi_tracker,
     tracking_roi_for_frame,
@@ -468,15 +469,13 @@ def run_capture_loop(
                 with camera_lock:
                     camera.capture_file(str(image_path))
                 
-                predicted_label = trainer.predict(image_path) if request.ml_assist_mode and MODEL_PATH.is_file() else None
                 mesh_decision = metrics.get("mesh_decision")
-                visit_likeness = 1.0 if predicted_label == "visit" else 0.7 if mesh_decision == "visitation_candidate" else 0.5 if insect_candidate else 0.0
-                noise_likeness = 1.0 if predicted_label == "noise" else 0.8 if mesh_decision == "environmental_noise" else 0.0 if insect_candidate else 0.5
+                visit_likeness = 0.7 if mesh_decision == "visitation_candidate" else 0.5 if insect_candidate else 0.0
+                noise_likeness = 0.8 if mesh_decision == "environmental_noise" else 0.0 if insect_candidate else 0.5
                 if insect_candidate:
                     candidate_time = _time.monotonic()
                     _adaptive_candidates.append(candidate_time)
                     _adaptive_visit_scores.append((candidate_time, visit_likeness))
-                    _write_event_log(captured_at, image_path, metrics, request)
                     interval_reason = "Motion candidate evidence updated future scheduled interval."
                 else:
                     interval_reason = "No candidate; adaptive timelapse continuing."
@@ -491,19 +490,20 @@ def run_capture_loop(
                     else 0.0
                 )
                 mean_noise_likeness = 1.0 - mean_visit_likeness if _adaptive_candidates else 0.0
-                activity_score = max(
-                    0.0,
-                    min(1.0, (0.55 * candidate_rate) + (0.35 * mean_visit_likeness) - (0.20 * mean_noise_likeness)),
+                decision = decide_next_interval(
+                    baseline_interval_sec=request.interval_sec,
+                    min_interval_sec=request.adaptive_min_interval_sec,
+                    max_interval_sec=request.adaptive_max_interval_sec,
+                    current_interval_sec=current_adaptive_interval,
+                    candidate_rate=candidate_rate,
+                    visit_likeness=mean_visit_likeness,
+                    noise_likeness=mean_noise_likeness,
                 )
-                target_interval = request.interval_sec - activity_score * (request.interval_sec - request.adaptive_min_interval_sec)
-                next_interval = (0.7 * current_adaptive_interval) + (0.3 * target_interval)
+                next_interval = decision.next_interval_sec
                 previous_interval = current_adaptive_interval
                 current_adaptive_interval = next_interval
-                interval_reason = (
-                    f"Adaptive scheduled interval from activity_score={activity_score:.3f}, "
-                    f"candidate_rate={candidate_rate:.3f}, visit_like={mean_visit_likeness:.3f}, "
-                    f"noise_like={mean_noise_likeness:.3f}."
-                )
+                activity_score = decision.activity_score
+                interval_reason = decision.reason
                 _write_adaptive_decision(
                     captured_at,
                     previous_interval,
@@ -519,11 +519,6 @@ def run_capture_loop(
                     captured_at, image_path, next_interval,
                     score, metrics, insect_candidate, interval_reason, request,
                 )
-                _label_captured_image(
-                    image_path,
-                    "positive" if insect_candidate else "negative",
-                    request.ml_assist_mode, trainer,
-                )
                 update_state({
                     "capture_count_delta": 1,
                     "interval_sec": next_interval,
@@ -534,7 +529,7 @@ def run_capture_loop(
                     "metrics": metrics,
                     "insect_candidate": insect_candidate,
                     "detection_count_delta": 1 if insect_candidate else 0,
-                    "event_count_delta": 1 if insect_candidate else 0,
+                    "event_count_delta": 0,
                     "interval_reason": interval_reason,
                 })
                 if stop_event.wait(next_interval):
@@ -585,8 +580,6 @@ def run_capture_loop(
                     request.interval_sec, request.detection_interval_sec,
                     score, metrics, insect_candidate, interval_reason, request,
                 )
-                if insect_candidate:
-                    _write_event_log(captured_at, image_path, metrics, request)
                 if image_path is not None:
                     _label_captured_image(
                         image_path,
@@ -667,7 +660,7 @@ def run_capture_loop(
             insect_candidate = False
             interval_reason = "Manual interval."
             metrics_val: dict = {}
-            if request.auto_mode:
+            if request.auto_mode or request.mesh_shadow_mode:
                 with camera_lock:
                     frame = camera.capture_array("lores")
                 metrics_val, insect_candidate, background = _detect_motion_with_tracking(
@@ -676,7 +669,13 @@ def run_capture_loop(
                     roi, roi_tracker, request,
                 )
                 score = metrics_val["motion_score"]
-                if score is None:
+                if request.mesh_shadow_mode and not request.auto_mode:
+                    interval_reason = (
+                        f"Mesh shadow mode: {metrics_val.get('mesh_decision') or 'baseline'}; "
+                        f"{metrics_val.get('mesh_reason') or 'waiting_for_background'}."
+                    )
+                    next_interval = request.interval_sec
+                elif score is None:
                     next_interval = request.idle_interval_sec
                     interval_reason = "Background baseline captured."
                 elif insect_candidate:
@@ -689,13 +688,14 @@ def run_capture_loop(
                     captured_at, image_path, next_interval,
                     score, metrics_val, insect_candidate, interval_reason, request,
                 )
-                if insect_candidate:
+                if request.auto_mode and insect_candidate:
                     _write_event_log(captured_at, image_path, metrics_val, request)
-                _label_captured_image(
-                    image_path,
-                    "positive" if insect_candidate else "negative",
-                    request.ml_assist_mode, trainer,
-                )
+                if request.auto_mode:
+                    _label_captured_image(
+                        image_path,
+                        "positive" if insect_candidate else "negative",
+                        request.ml_assist_mode, trainer,
+                    )
             elif request.ml_assist_mode and MODEL_PATH.is_file():
                 _label_captured_image(image_path, "negative", True, trainer)
 

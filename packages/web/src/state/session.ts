@@ -8,6 +8,7 @@ export const autonomousMode = signal<boolean>(false);
 export const mlAssistMode = signal<boolean>(false);
 export const adaptiveTimelapseMode = signal<boolean>(false);
 export const adaptiveMinIntervalSec = signal<number>(15);
+export const adaptiveMaxIntervalSec = signal<number>(3600);
 export const adaptiveWindowSec = signal<number>(300);
 export const idleIntervalSec = signal<number>(60);
 export const detectionIntervalSec = signal<number>(3);

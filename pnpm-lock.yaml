@@ -8,6 +8,8 @@ importers:
 
   .: {}
 
+  packages/analysis: {}
+
   packages/contracts:
     devDependencies:
       typescript:

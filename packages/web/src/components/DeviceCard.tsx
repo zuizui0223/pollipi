@@ -20,6 +20,7 @@ import {
   getSessionMetadata,
   adaptiveTimelapseMode,
   adaptiveMinIntervalSec,
+  adaptiveMaxIntervalSec,
   adaptiveWindowSec,
 } from '../state/session';
 import { deviceUrl, postStart, postStop, fetchStatus, fetchSystem, fetchDevice, deleteCoordinatorDevice } from '../api/client';
@@ -39,6 +40,25 @@ function getStartPayload(camera: Camera) {
     alert('撮影間隔は 1 秒以上 3600 秒以下で入力してください。');
     return null;
   }
+  const activeAdaptive = adaptiveTimelapseMode.value;
+  return {
+    interval_sec: interval,
+    auto_mode: false,
+    motion_trigger_mode: false,
+    hybrid_mode: false,
+    ml_assist_mode: false,
+    autonomous_mode: autonomousMode.value,
+    adaptive_timelapse_mode: activeAdaptive,
+    mesh_shadow_mode: !activeAdaptive,
+    adaptive_min_interval_sec: adaptiveMinIntervalSec.value,
+    adaptive_max_interval_sec: adaptiveMaxIntervalSec.value,
+    adaptive_window_sec: adaptiveWindowSec.value,
+    idle_interval_sec: interval,
+    detection_interval_sec: interval,
+    pixel_difference: 30,
+    motion_ratio: 0.01,
+    ...getSessionMetadata(),
+  };
   const idle = idleIntervalSec.value;
   const detection = detectionIntervalSec.value;
   const pd = pixelDifference.value;
@@ -61,7 +81,7 @@ function getStartPayload(camera: Camera) {
     alert('撮影前に画角を確認してください。');
     return null;
   }
-  const drawnRoi = normalizeRoi(camera.roi);
+  const drawnRoi = normalizeRoi(camera.roi)!;
   if (camera.roiStale && drawnRoi) {
     alert('画角を再調整したため、ROIをもう一度指定してください。');
     return null;
@@ -280,17 +300,8 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       const st = await fetchStatus(camera, { signal: controller.signal }) as StatusResponse;
       if (generation !== refreshGeneration.current) return;
       updateFromStatus(st);
-      await refreshBuildInfo(controller.signal);
-      // system info
-      try {
-        const sys = await fetchSystem(camera, { signal: controller.signal });
-        if (generation !== refreshGeneration.current) return;
-        storage.value = `${formatBytes(sys.storage_free_bytes)} 空き`;
-        power.value = sys.undervoltage_now ? '電圧低下中' : sys.undervoltage_occurred ? '電圧低下履歴' : '電圧OK';
-      } catch (_) {
-        storage.value = '-';
-        power.value = '-';
-      }
+      storage.value = '-';
+      power.value = '-';
       connectionState.value = 'online';
       pollDelayMs.current = document.hidden ? 15000 : 5000;
     } catch (err: unknown) {
@@ -578,8 +589,8 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         )}
       </div>
 
-      {/* ROI Panel */}
-      <details class={s.roiPanel}>
+      {/* Legacy ROI controls intentionally excluded from the active Issue #15 UI. */}
+      {false && <details class={s.roiPanel}>
         <summary class={s.roiAdvancedSummary}>Advanced / Legacy ROI controls</summary>
         <div class={s.workflowStatus}>
           <span class={s.workflowStatusSpan}>
@@ -704,7 +715,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
             message={message.value}
           />
         )}
-      </details>
+      </details>}
 
       {/* Metrics */}
       <dl class={s.metrics}>

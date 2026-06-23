@@ -18,6 +18,7 @@ def _clear_server_modules() -> None:
 def _client(monkeypatch, tmp_path: Path) -> TestClient:
     monkeypatch.setenv("POLLIPI_FAKE_CAMERA", "1")
     monkeypatch.setenv("POLLIPI_IMAGE_DIR", str(tmp_path / "images"))
+    monkeypatch.setenv("POLLIPI_ENABLE_LEGACY_ROUTES", "1")
     _clear_server_modules()
     app_module = importlib.import_module("visit_monitor_server.app")
     return TestClient(app_module.create_app())
@@ -35,11 +36,11 @@ def test_candidate_review_uses_visit_noise_unclear_and_training_counts(monkeypat
             writer.writerow({"event_id": "e2", "timestamp": "2026-06-22T12:00:01+09:00", "image_filename": "e2.jpg"})
             writer.writerow({"event_id": "e3", "timestamp": "2026-06-22T12:00:02+09:00", "image_filename": "e3.jpg"})
 
-        assert client.post("/events/e1/label", json={"manual_label": "visit"}).status_code == 200
-        assert client.post("/events/e2/label", json={"manual_label": "noise", "false_positive_reason": "wind"}).status_code == 200
-        assert client.post("/events/e3/label", json={"manual_label": "unclear"}).status_code == 200
+        assert client.post("/compat/events/e1/label", json={"manual_label": "visit"}).status_code == 200
+        assert client.post("/compat/events/e2/label", json={"manual_label": "noise", "false_positive_reason": "wind"}).status_code == 200
+        assert client.post("/compat/events/e3/label", json={"manual_label": "unclear"}).status_code == 200
 
-        events = {row["event_id"]: row for row in client.get("/events", params={"category": "all"}).json()["events"]}
+        events = {row["event_id"]: row for row in client.get("/compat/events", params={"category": "all"}).json()["events"]}
         assert events["e1"]["review_label"] == "visit"
         assert events["e1"]["final_category"] == "positive"
         assert events["e2"]["review_label"] == "noise"
@@ -47,7 +48,7 @@ def test_candidate_review_uses_visit_noise_unclear_and_training_counts(monkeypat
         assert events["e3"]["review_label"] == "unclear"
         assert events["e3"]["final_category"] == "unclear"
 
-        training = client.get("/training/status").json()
+        training = client.get("/compat/training/status").json()
         assert training["positive_count"] == 1
         assert training["negative_count"] == 1
         assert training["reviewed_count"] == 2

@@ -36,7 +36,9 @@ class StartRequest(BaseModel):
     autonomous_mode: bool = False
     adaptive_timelapse_mode: bool = False
     adaptive_min_interval_sec: float = Field(default=15, ge=1, le=3600)
+    adaptive_max_interval_sec: float = Field(default=3600, ge=1, le=3600)
     adaptive_window_sec: float = Field(default=300, ge=60, le=3600)
+    mesh_shadow_mode: bool = True
     idle_interval_sec: float = Field(default=60, ge=1, le=3600)
     detection_interval_sec: float = Field(default=3, ge=1, le=3600)
     pixel_difference: int = Field(default=30, ge=1, le=255)
@@ -51,6 +53,7 @@ class StatusResponse(BaseModel):
     preview_latest_frame_age_sec: Optional[float] = None
     preview_producer_state: str = "idle"
     interval_sec: Optional[float]
+    next_interval_sec: Optional[float] = None
     capture_count: int
     last_capture_time: Optional[str]
     last_image: Optional[str]
@@ -61,6 +64,7 @@ class StatusResponse(BaseModel):
     ml_assist_mode: bool
     autonomous_mode: bool
     adaptive_timelapse_mode: bool = False
+    mesh_shadow_mode: bool = True
     motion_score: Optional[float]
     changed_area_ratio: Optional[float]
     mean_brightness: Optional[float]

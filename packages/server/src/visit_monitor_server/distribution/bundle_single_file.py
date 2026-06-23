@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 PACKAGE_NAME = "visit_monitor_server"
+ANALYSIS_PACKAGE_NAME = "pollipi_analysis"
 BUILD_INFO_MODULE = f"{PACKAGE_NAME}.build_info"
 
 
@@ -22,7 +23,7 @@ def _package_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def collect_sources(package_root: Path) -> dict[str, str]:
+def collect_sources(package_root: Path, package_name: str = PACKAGE_NAME) -> dict[str, str]:
     """Return ``{module_name: source}`` for every Python file in the package."""
     sources: dict[str, str] = {}
     for path in sorted(package_root.rglob("*.py")):
@@ -32,11 +33,19 @@ def collect_sources(package_root: Path) -> dict[str, str]:
         if relative.name == "__pycache__":
             continue
         if relative.name == "__init__.py":
-            module_parts = (PACKAGE_NAME, *relative.parent.parts)
+            module_parts = (package_name, *relative.parent.parts)
         else:
-            module_parts = (PACKAGE_NAME, *relative.with_suffix("").parts)
+            module_parts = (package_name, *relative.with_suffix("").parts)
         module_name = ".".join(part for part in module_parts if part)
         sources[module_name] = path.read_text(encoding="utf-8")
+    return sources
+
+
+def collect_bundle_sources(package_root: Path) -> dict[str, str]:
+    sources = collect_sources(package_root, PACKAGE_NAME)
+    analysis_root = _repo_root() / "packages" / "analysis" / "src" / ANALYSIS_PACKAGE_NAME
+    if analysis_root.is_dir():
+        sources.update(collect_sources(analysis_root, ANALYSIS_PACKAGE_NAME))
     return sources
 
 
@@ -122,7 +131,7 @@ def apply_build_metadata(
 
 def render_bundle(sources: dict[str, str]) -> str:
     """Render the Python source for the deployable single-file artifact."""
-    package_names = {PACKAGE_NAME}
+    package_names = {PACKAGE_NAME, ANALYSIS_PACKAGE_NAME}
     for name in sources:
         parts = name.split(".")
         for index in range(1, len(parts)):
@@ -217,7 +226,7 @@ def build(
         metadata_timestamp,
     )
     sources = apply_build_metadata(
-        collect_sources(root),
+        collect_bundle_sources(root),
         git_commit=metadata_commit,
         build_timestamp=metadata_timestamp,
         web_build_id=metadata_web_build_id,

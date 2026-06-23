@@ -90,6 +90,7 @@ export interface StatusResponse {
   autonomous_mode: boolean;
   ml_assist_mode: boolean;
   adaptive_timelapse_mode: boolean;
+  mesh_shadow_mode?: boolean;
   motion_score: number | null;
   motion_type: string | null;
   interval_reason: string | null;
@@ -273,7 +274,9 @@ export interface StartPayload {
   ml_assist_mode: boolean;
   autonomous_mode: boolean;
   adaptive_timelapse_mode: boolean;
+  mesh_shadow_mode?: boolean;
   adaptive_min_interval_sec?: number;
+  adaptive_max_interval_sec?: number;
   adaptive_window_sec?: number;
   idle_interval_sec: number;
   detection_interval_sec: number;

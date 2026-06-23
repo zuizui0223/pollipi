@@ -3,19 +3,16 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "visit-monitor-server"
+name = "pollipi-analysis"
 version = "0.1.0"
-description = "FastAPI backend for the Raspberry Pi visit monitoring system"
+description = "Pure PolliPi mesh analysis, simulation, and interval policy"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi>=0.115,<1.0",
-  "uvicorn[standard]>=0.30,<1.0"
+  "numpy>=1.26,<3"
 ]
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.27,<1.0",
-  "numpy>=1.26,<3",
   "pytest>=8,<9",
 ]
 
@@ -26,5 +23,5 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "../analysis/src"]
+pythonpath = ["src"]
 testpaths = ["tests"]

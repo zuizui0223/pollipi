@@ -18,7 +18,7 @@ def _clear_server_modules() -> None:
             sys.modules.pop(name)
 
 
-def _client(monkeypatch, tmp_path: Path, *, device_secret: str | None = None) -> TestClient:
+def _client(monkeypatch, tmp_path: Path, *, device_secret: str | None = None, legacy_routes: bool = False) -> TestClient:
     monkeypatch.setenv("POLLIPI_FAKE_CAMERA", "1")
     monkeypatch.setenv("POLLIPI_IMAGE_DIR", str(tmp_path / "images"))
     monkeypatch.setenv("POLLIPI_DEVICE_ID", "test-pollipi")
@@ -31,13 +31,17 @@ def _client(monkeypatch, tmp_path: Path, *, device_secret: str | None = None) ->
         monkeypatch.delenv("POLLIPI_DEVICE_SECRET", raising=False)
     else:
         monkeypatch.setenv("POLLIPI_DEVICE_SECRET", device_secret)
+    if legacy_routes:
+        monkeypatch.setenv("POLLIPI_ENABLE_LEGACY_ROUTES", "1")
+    else:
+        monkeypatch.delenv("POLLIPI_ENABLE_LEGACY_ROUTES", raising=False)
     _clear_server_modules()
     app_module = importlib.import_module("visit_monitor_server.app")
     return TestClient(app_module.create_app())
 
 
 def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
-    with _client(monkeypatch, tmp_path) as client:
+    with _client(monkeypatch, tmp_path, legacy_routes=True) as client:
         device = client.get("/device")
         assert device.status_code == 200
         assert device.json()["device_id"] == "test-pollipi"
@@ -95,7 +99,7 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
                 "insect_candidate": "true",
             })
 
-        events = client.get("/events")
+        events = client.get("/compat/events")
         assert events.status_code == 200
         event_payload = events.json()
         assert event_payload["event_count"] == 1
@@ -103,10 +107,10 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
         assert event_id.startswith("fallback-")
         assert event_payload["events"][0]["review_status"] == "motion_candidate"
 
-        bulk_del_ev = client.post("/events/bulk-delete", json={"event_ids": [event_id], "scope": "event_only"})
+        bulk_del_ev = client.post("/compat/events/bulk-delete", json={"event_ids": [event_id], "scope": "event_only"})
         assert bulk_del_ev.status_code == 200
         assert bulk_del_ev.json()["deleted_count"] == 1
-        assert client.get("/events").json()["event_count"] == 0
+        assert client.get("/compat/events").json()["event_count"] == 0
 
         baseline_image = tmp_path / "images" / "baseline.jpg"
         baseline_image.write_bytes(b"baseline")
@@ -128,7 +132,7 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
                 "image_filename": baseline_image.name,
             })
         unsafe_delete = client.post(
-            "/events/bulk-delete",
+            "/compat/events/bulk-delete",
             json={"event_ids": ["event_unsafe_baseline"], "scope": "event_and_event_image"},
         )
         assert unsafe_delete.status_code == 200
@@ -137,7 +141,7 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
         assert unsafe_payload["image_deleted_count"] == 0
         assert unsafe_payload["failed"][0]["event_id"] == "event_unsafe_baseline"
         assert baseline_image.is_file()
-        assert client.get("/events").json()["event_count"] == 0
+        assert client.get("/compat/events").json()["event_count"] == 0
 
         event_image = tmp_path / "images" / "event_only.jpg"
         unknown_image = tmp_path / "images" / "unknown.jpg"
@@ -184,7 +188,7 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
                 },
             ])
         selective_delete = client.post(
-            "/events/bulk-delete",
+            "/compat/events/bulk-delete",
             json={
                 "event_ids": ["event_only", "unknown_provenance", "scheduled_event", "missing_filename"],
                 "scope": "event_and_event_image",
@@ -201,9 +205,9 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
         assert not event_image.exists()
         assert unknown_image.is_file()
         assert scheduled_event_image.is_file()
-        assert client.get("/events").json()["event_count"] == 0
+        assert client.get("/compat/events").json()["event_count"] == 0
 
-        training = client.get("/training/status")
+        training = client.get("/compat/training/status")
         assert training.status_code == 200
         assert "model_available" in training.json()
 
@@ -213,7 +217,7 @@ def test_fake_camera_exchange_smoke(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_device_secret_protects_configured_endpoints(monkeypatch, tmp_path: Path) -> None:
-    with _client(monkeypatch, tmp_path, device_secret="field-secret") as client:
+    with _client(monkeypatch, tmp_path, device_secret="field-secret", legacy_routes=True) as client:
         assert client.get("/device").status_code == 200
         assert client.get("/status").status_code == 200
         assert client.get("/preview").status_code == 200
@@ -222,9 +226,9 @@ def test_device_secret_protects_configured_endpoints(monkeypatch, tmp_path: Path
             ("post", "/start", {"json": {"interval_sec": 1}}),
             ("post", "/stop", {}),
             ("get", "/images", {}),
-            ("get", "/events", {}),
+            ("get", "/compat/events", {}),
             ("get", "/exports/images.zip", {}),
-            ("get", "/training/status", {}),
+            ("get", "/compat/training/status", {}),
             ("get", "/mjpeg", {}),
         ]
         for method, path, kwargs in protected_requests:
@@ -235,6 +239,17 @@ def test_device_secret_protects_configured_endpoints(monkeypatch, tmp_path: Path
         started = client.post("/start", json={"interval_sec": 1}, headers=headers)
         assert started.status_code == 200
         assert client.get("/images", headers=headers).status_code == 200
-        assert client.get("/events", headers=headers).status_code == 200
-        assert client.get("/training/status", headers=headers).status_code == 200
+        assert client.get("/compat/events", headers=headers).status_code == 200
+        assert client.get("/compat/training/status", headers=headers).status_code == 200
         assert client.post("/stop", headers=headers).status_code == 200
+
+
+def test_active_default_excludes_legacy_candidate_training_and_roi(monkeypatch, tmp_path: Path) -> None:
+    with _client(monkeypatch, tmp_path) as client:
+        assert client.get("/status").status_code == 200
+        assert client.get("/events").status_code == 404
+        assert client.get("/training/status").status_code == 404
+        assert client.get("/roi/suggest").status_code == 404
+        assert client.get("/compat/events").status_code == 404
+        rejected = client.post("/start", json={"interval_sec": 1, "roi_x": 0, "roi_y": 0, "roi_w": 10, "roi_h": 10})
+        assert rejected.status_code == 410

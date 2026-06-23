@@ -1,0 +1,7 @@
+{
+  "name": "@pollipi/analysis",
+  "private": true,
+  "scripts": {
+    "test": "python -m pytest -q"
+  }
+}

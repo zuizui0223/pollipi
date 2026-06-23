@@ -57,6 +57,7 @@ IS_NOIR = env_bool("POLLIPI_IS_NOIR")
 IS_WIDE = env_bool("POLLIPI_IS_WIDE")
 USE_FAKE_CAMERA = env_bool("POLLIPI_FAKE_CAMERA")
 DEVICE_SECRET = os.getenv("POLLIPI_DEVICE_SECRET", "").strip()
+ENABLE_LEGACY_ROUTES = env_bool("POLLIPI_ENABLE_LEGACY_ROUTES")
 
 # ---------------------------------------------------------------------------
 # Monitor / vision

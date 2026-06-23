@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from visit_monitor_server.api.auth import require_device_secret
 from visit_monitor_server.api.schemas.capture import StartRequest, StatusResponse
-from visit_monitor_server.config import MONITOR_SIZE
+from visit_monitor_server.config import ENABLE_LEGACY_ROUTES, MONITOR_SIZE
 from visit_monitor_server.services import get_controller
 
 router = APIRouter(tags=["capture"])
@@ -32,8 +32,27 @@ def _validate_roi(request: StartRequest) -> None:
         )
 
 
+def _validate_active_start(request: StartRequest) -> None:
+    if ENABLE_LEGACY_ROUTES:
+        return
+    if request.auto_mode or request.motion_trigger_mode or request.hybrid_mode or request.ml_assist_mode:
+        raise HTTPException(
+            status_code=410,
+            detail="Legacy auto, motion-trigger, hybrid, and ML modes are removed from the active workflow.",
+        )
+    if request.roi_tracking or any(
+        value is not None
+        for value in (
+            request.roi_x, request.roi_y, request.roi_w, request.roi_h,
+            request.control_roi_x, request.control_roi_y, request.control_roi_w, request.control_roi_h,
+        )
+    ):
+        raise HTTPException(status_code=410, detail="Manual ROI configuration is not part of the active workflow.")
+
+
 @router.post("/start", response_model=StatusResponse, dependencies=[Depends(require_device_secret)])
 def start_timelapse(request: StartRequest) -> StatusResponse:
+    _validate_active_start(request)
     selected_modes = sum((request.auto_mode, request.motion_trigger_mode, request.hybrid_mode))
     if selected_modes > 1:
         raise HTTPException(

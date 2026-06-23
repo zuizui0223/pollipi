@@ -48,6 +48,7 @@ class TimelapseController:
         self.last_error: Optional[str] = None
         self.stop_timeout_sec = STOP_JOIN_TIMEOUT_SEC
         self.interval_sec: Optional[float] = None
+        self.next_interval_sec: Optional[float] = None
         self.capture_count = 0
         self.last_capture_time: Optional[str] = None
         self.last_image: Optional[str] = None
@@ -58,6 +59,7 @@ class TimelapseController:
         self.ml_assist_mode = False
         self.autonomous_mode = False
         self.adaptive_timelapse_mode = False
+        self.mesh_shadow_mode = True
         self.motion_score: Optional[float] = None
         self.changed_area_ratio: Optional[float] = None
         self.mean_brightness: Optional[float] = None
@@ -139,6 +141,7 @@ class TimelapseController:
             preview_latest_frame_age_sec=self._preview_frame_age_unlocked(),
             preview_producer_state=self._preview_producer_state,
             interval_sec=self.interval_sec,
+            next_interval_sec=self.next_interval_sec,
             capture_count=self.capture_count,
             last_capture_time=self.last_capture_time,
             last_image=self.last_image,
@@ -149,6 +152,7 @@ class TimelapseController:
             ml_assist_mode=self.ml_assist_mode,
             autonomous_mode=self.autonomous_mode,
             adaptive_timelapse_mode=self.adaptive_timelapse_mode,
+            mesh_shadow_mode=self.mesh_shadow_mode,
             motion_score=self.motion_score,
             changed_area_ratio=self.changed_area_ratio,
             mean_brightness=self.mean_brightness,
@@ -250,6 +254,7 @@ class TimelapseController:
             self.lifecycle_state = "starting"
             self.last_error = None
             self.interval_sec = request.interval_sec
+            self.next_interval_sec = request.interval_sec
             self.capture_count = 0
             self.last_capture_time = None
             self.last_image = None
@@ -260,6 +265,7 @@ class TimelapseController:
             self.ml_assist_mode = request.ml_assist_mode
             self.autonomous_mode = request.autonomous_mode
             self.adaptive_timelapse_mode = request.adaptive_timelapse_mode
+            self.mesh_shadow_mode = request.mesh_shadow_mode
             self.motion_score = None
             self.changed_area_ratio = None
             self.mean_brightness = None
@@ -418,6 +424,7 @@ class TimelapseController:
         with self._lock:
             if "interval_sec" in state:
                 self.interval_sec = state["interval_sec"]
+                self.next_interval_sec = state["interval_sec"]
             if "message" in state:
                 self.message = state["message"]
             if "motion_score" in state:
