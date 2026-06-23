@@ -53,7 +53,7 @@ def _git_commit() -> str:
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short=12", "HEAD"],
-            cwd=Path(__file__).resolve().parents[4],
+            cwd=_repo_root(),
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
@@ -65,7 +65,7 @@ def _git_timestamp() -> str:
     try:
         return subprocess.check_output(
             ["git", "show", "-s", "--format=%cI", "HEAD"],
-            cwd=Path(__file__).resolve().parents[4],
+            cwd=_repo_root(),
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
@@ -74,7 +74,7 @@ def _git_timestamp() -> str:
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[5]
 
 
 def _web_build_id(commit: str, timestamp: str) -> str:
@@ -158,7 +158,7 @@ _POLLIPI_SOURCES = {source_json}
 
 class _PolliPiBundleLoader(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname not in _POLLIPI_SOURCES:
+        if fullname not in _POLLIPI_SOURCES and fullname not in _POLLIPI_PACKAGES:
             return None
         return importlib.machinery.ModuleSpec(
             fullname,
@@ -170,13 +170,15 @@ class _PolliPiBundleLoader(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         return None
 
     def exec_module(self, module):
-        source = _POLLIPI_SOURCES[module.__name__]
         module.__file__ = f"<pollipi-bundle>/{{module.__name__.replace('.', '/')}}.py"
         if module.__name__ in _POLLIPI_PACKAGES:
             module.__path__ = [f"<pollipi-bundle>/{{module.__name__.replace('.', '/')}}"]
             module.__package__ = module.__name__
         else:
             module.__package__ = module.__name__.rpartition(".")[0]
+        source = _POLLIPI_SOURCES.get(module.__name__)
+        if source is None:
+            return
         exec(compile(source, module.__file__, "exec"), module.__dict__)
 
 

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from visit_monitor_server.distribution.bundle_single_file import _web_build_id, apply_build_metadata, collect_sources
+import subprocess
+import sys
+
+from visit_monitor_server.distribution.bundle_single_file import (
+    _web_build_id,
+    apply_build_metadata,
+    build,
+    collect_sources,
+)
 
 
 def test_bundle_metadata_is_embedded() -> None:
@@ -23,3 +31,29 @@ def test_bundle_metadata_is_embedded() -> None:
 
 def test_web_build_id_is_deterministic_from_commit_timestamp() -> None:
     assert _web_build_id("abc123", "2026-06-22T12:34:56+09:00") == "abc123-20260622-123456"
+
+
+def test_bundle_imports_analysis_package(tmp_path: Path) -> None:
+    output = tmp_path / "pollipi_api_server.py"
+    build(
+        output,
+        git_commit="abc123",
+        build_timestamp="2026-06-22T00:00:00+00:00",
+        web_build_id="web-42",
+    )
+
+    probe = (
+        "import pollipi_api_server; "
+        "import pollipi_analysis.pipeline; "
+        "print(pollipi_api_server.app.title)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=tmp_path,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stdout
+    assert "PolliPi" in result.stdout
