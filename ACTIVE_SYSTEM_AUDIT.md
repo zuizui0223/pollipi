@@ -92,3 +92,32 @@ Compatibility route set, only when `POLLIPI_ENABLE_LEGACY_ROUTES=1`:
 - No active mode uses ML prediction or model training.
 - Manual ROI and ROI tracking are rejected from `/start` unless legacy mode is
   explicitly enabled.
+
+## Three-State Analysis Update (Issue #14/#15 active design)
+
+The pure analysis package `packages/analysis` now implements the canonical
+three-state decision vocabulary directly (`pollipi_analysis.schemas.states`):
+`environmental_noise`, `uncertain_local_activity`, `strong_visitation_candidate`
+(plus the resting `no_activity`). This is the source of truth for the active
+design; see:
+
+- [ADAPTIVE_TIMELAPSE_METHOD.md](ADAPTIVE_TIMELAPSE_METHOD.md) — method, pipeline,
+  state policy, simulation conclusion, and what still needs real-Pi validation.
+- [docs/SHADOW_MODE_LOGGING_CONTRACT.md](docs/SHADOW_MODE_LOGGING_CONTRACT.md) —
+  the shadow-mode logging contract (`ShadowDecisionRecord`, never `applied`, no
+  per-motion image, advisory interval only).
+- [docs/LEGACY_REMOVAL_PLAN.md](docs/LEGACY_REMOVAL_PLAN.md) — file-by-file
+  retain/replace/compat/delete classification and the staged cutover.
+
+Module layout (pure Python; no FastAPI / Picamera2 / required filesystem):
+`mesh/` (rectangular baseline + half-cell offset, hex for comparison),
+`features/` (registration, brightness normalization, residual, explainable
+features), `policy/` (state-driven interval policy), `simulation/` (reproducible
+scenarios + parameter search + CSV/plot), `schemas/` (states, features, decision,
+shadow contract), `pipeline.py`, `shadow.py`.
+
+Status of the active server runtime: the legacy two-state `analyze_mesh_motion`
+and the activity-score `decide_next_interval` remain in place as documented compat
+for `visit_monitor_server`; the three-state pipeline and shadow logging are the
+target the server `motion`/`capture_loop` paths migrate onto per the removal plan.
+Live adaptive interval control is **not** enabled — shadow mode logs only.
