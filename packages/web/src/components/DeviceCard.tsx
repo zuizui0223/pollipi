@@ -8,6 +8,7 @@ import {
   deviceUrl,
   fetchDevice,
   fetchStatus,
+  getMjpegStreamUrl,
   postStart,
   postStop,
 } from '../api/client';
@@ -261,6 +262,11 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     onUpdated();
   }
 
+  function handleMonitor() {
+    const streamUrl = getMjpegStreamUrl(camera);
+    window.open(streamUrl, 'mjpeg-monitor', 'width=800,height=600');
+  }
+
   const current = status.value;
   const build = camera.build_info;
   const pillClass = connectionState.value === 'offline'
@@ -352,6 +358,9 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         </button>
         <button class={s.btnSecondary} type="button" onClick={() => void refresh()} disabled={busy.value}>
           Refresh
+        </button>
+        <button class={s.btnSecondary} type="button" onClick={handleMonitor} disabled={busy.value}>
+          Monitor
         </button>
         <button class={s.btnRemoveCamera} type="button" onClick={() => void handleRemove()} disabled={busy.value}>
           Remove
