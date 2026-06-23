@@ -146,42 +146,6 @@ def _write_shadow_record(
         ])
 
 
-def _metrics_from_decision(decision) -> dict:
-    """Map pure-analysis output to the controller's temporary status fields."""
-    features = decision.features
-    return {
-        "motion_score": features.global_synchrony,
-        "changed_area_ratio": features.active_cell_proportion,
-        "mean_brightness": None,
-        "brightness_delta": None,
-        "wind_like_motion": decision.state == "environmental_noise",
-        "num_blobs": 0,
-        "largest_blob_area": 0,
-        "largest_blob_ratio": None,
-        "small_blob_count": 0,
-        "motion_type": "mesh_three_state",
-        "roi_used": False,
-        "roi_semantics": "whole_frame_overlapping_mesh",
-        "control_roi_used": False,
-        "grid_rows": 0,
-        "grid_cols": 0,
-        "changed_cell_count": features.largest_component_cells,
-        "changed_cell_ratio": features.active_cell_proportion,
-        "local_compactness": features.spatial_concentration,
-        "whole_frame_change_score": features.global_synchrony,
-        "previous_frame_elapsed_sec": None,
-        "robust_background_score": None,
-        "candidate_reasons": decision.reason,
-        "mesh_decision": decision.state,
-        "mesh_reason": decision.reason,
-        "mesh_active_cell_proportion": features.active_cell_proportion,
-        "mesh_offset_agreement": features.offset_agreement,
-        "mesh_global_synchrony": features.global_synchrony,
-        "roi_tracking": False,
-        "roi_tracking_success": False,
-    }
-
-
 def run_capture_loop(
     stop_event: threading.Event,
     request,
@@ -235,21 +199,15 @@ def run_capture_loop(
                 frame = camera.capture_array("lores")
 
             if previous_frame is None:
-                metrics = {
-                    "motion_score": None,
-                    "motion_type": "mesh_baseline",
+                would_be_next = request.interval_sec
+                reason = "Mesh shadow mode: reference frame captured; scheduled interval unchanged."
+                mesh_state: dict = {
                     "mesh_decision": "no_activity",
                     "mesh_reason": "waiting_for_reference_frame",
                     "mesh_active_cell_proportion": 0.0,
                     "mesh_offset_agreement": 0.0,
                     "mesh_global_synchrony": 0.0,
-                    "roi_used": False,
-                    "roi_tracking": False,
-                    "roi_tracking_success": False,
                 }
-                would_be_next = request.interval_sec
-                reason = "Mesh shadow mode: reference frame captured; scheduled interval unchanged."
-                insect_candidate = False
             else:
                 decision = analyze(
                     frame,
@@ -263,9 +221,14 @@ def run_capture_loop(
                     current_interval_sec=request.interval_sec,
                 )
                 would_be_next = plan.next_interval_sec
-                metrics = _metrics_from_decision(decision)
                 reason = f"Mesh shadow mode: {decision.state}; {decision.reason}; scheduled interval unchanged."
-                insect_candidate = decision.state == "strong_visitation_candidate"
+                mesh_state = {
+                    "mesh_decision": decision.state,
+                    "mesh_reason": decision.reason,
+                    "mesh_active_cell_proportion": decision.features.active_cell_proportion,
+                    "mesh_offset_agreement": decision.features.offset_agreement,
+                    "mesh_global_synchrony": decision.features.global_synchrony,
+                }
                 _write_shadow_record(
                     captured_at,
                     image_path,
@@ -286,12 +249,8 @@ def run_capture_loop(
                 "last_capture_time": captured_at.isoformat(timespec="seconds"),
                 "last_image": str(image_path),
                 "message": "Scheduled timelapse running; shadow mesh analysis only.",
-                "motion_score": metrics.get("motion_score"),
-                "metrics": metrics,
-                "insect_candidate": insect_candidate,
                 "interval_reason": reason,
-                "detection_count_delta": 0,
-                "event_count_delta": 0,
+                **mesh_state,
             })
 
             # Adaptive control remains intentionally disabled until real Pi shadow

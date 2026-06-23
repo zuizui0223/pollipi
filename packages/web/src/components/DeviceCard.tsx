@@ -358,11 +358,11 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         </button>
       </div>
 
-      <details class={s.roiAdvanced}>
-        <summary class={s.roiAdvancedSummary}>Connection details</summary>
-        <p class={s.roiStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
-        <p class={s.roiStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
-        <p class={s.roiStatus}>
+      <details class={s.debugDetails}>
+        <summary class={s.debugDetailsSummary}>Connection details</summary>
+        <p class={s.debugStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
+        <p class={s.debugStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
+        <p class={s.debugStatus}>
           Live monitor is kept conservative during field validation. Normal cards use the latest scheduled image.
         </p>
       </details>

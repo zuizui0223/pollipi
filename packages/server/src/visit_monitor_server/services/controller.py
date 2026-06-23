@@ -62,20 +62,6 @@ class TimelapseController:
         self.mesh_shadow_mode = True
         self.interval_reason = "Scheduled interval."
 
-        self.motion_score: Optional[float] = None
-        self.changed_area_ratio: Optional[float] = None
-        self.mean_brightness: Optional[float] = None
-        self.brightness_delta: Optional[float] = None
-        self.wind_like_motion = False
-        self.num_blobs = 0
-        self.largest_blob_area = 0
-        self.largest_blob_ratio: Optional[float] = None
-        self.small_blob_count = 0
-        self.motion_type = "mesh_three_state"
-        self.insect_candidate = False
-        self.detection_count = 0
-        self.event_count = 0
-
         self.site_id: Optional[str] = None
         self.flower_id: Optional[str] = None
         self.plant_species: Optional[str] = None
@@ -94,8 +80,6 @@ class TimelapseController:
     def _build_status(self):
         from visit_monitor_server.api.schemas.capture import StatusResponse
 
-        # Fields retained below are compatibility values for the current schema.
-        # Active clients use lifecycle, scheduled-image, interval, and mesh fields.
         return StatusResponse(
             running=self.running,
             lifecycle_state=self.lifecycle_state,
@@ -109,26 +93,9 @@ class TimelapseController:
             last_capture_time=self.last_capture_time,
             last_image=self.last_image,
             message=self.message,
-            auto_mode=False,
-            motion_trigger_mode=False,
-            hybrid_mode=False,
-            ml_assist_mode=False,
             autonomous_mode=self.autonomous_mode,
             adaptive_timelapse_mode=self.adaptive_timelapse_mode,
             mesh_shadow_mode=self.mesh_shadow_mode,
-            motion_score=self.motion_score,
-            changed_area_ratio=self.changed_area_ratio,
-            mean_brightness=self.mean_brightness,
-            brightness_delta=self.brightness_delta,
-            wind_like_motion=self.wind_like_motion,
-            num_blobs=self.num_blobs,
-            largest_blob_area=self.largest_blob_area,
-            largest_blob_ratio=self.largest_blob_ratio,
-            small_blob_count=self.small_blob_count,
-            motion_type=self.motion_type,
-            insect_candidate=self.insect_candidate,
-            detection_count=self.detection_count,
-            event_count=self.event_count,
             interval_reason=self.interval_reason,
             device_id=DEVICE_ID,
             device_name=DEVICE_NAME,
@@ -146,49 +113,11 @@ class TimelapseController:
             comparison_session_id=self.comparison_session_id,
             camera_role=self.camera_role,
             method_mode=self.method_mode,
-            roi_used=False,
-            roi_x=None,
-            roi_y=None,
-            roi_w=None,
-            roi_h=None,
-            roi_semantics="whole_frame_overlapping_mesh",
-            control_roi_used=False,
-            control_roi_x=None,
-            control_roi_y=None,
-            control_roi_w=None,
-            control_roi_h=None,
-            floral_zone_score=None,
-            background_control_score=None,
-            zone_minus_control_score=None,
-            grid_rows=0,
-            grid_cols=0,
-            changed_cell_count=0,
-            changed_cell_ratio=self.changed_area_ratio,
-            local_compactness=None,
-            whole_frame_change_score=self.mesh_global_synchrony,
-            previous_frame_elapsed_sec=None,
-            robust_background_score=None,
-            candidate_reasons=self.mesh_reason,
             mesh_decision=self.mesh_decision,
             mesh_reason=self.mesh_reason,
             mesh_active_cell_proportion=self.mesh_active_cell_proportion,
             mesh_offset_agreement=self.mesh_offset_agreement,
             mesh_global_synchrony=self.mesh_global_synchrony,
-            roi_tracking=False,
-            roi_tracking_success=False,
-            roi_tracking_score=None,
-            roi_search_margin=0,
-            roi_tracking_min_score=0.0,
-            initial_roi_x=None,
-            initial_roi_y=None,
-            initial_roi_w=None,
-            initial_roi_h=None,
-            tracked_roi_x=None,
-            tracked_roi_y=None,
-            tracked_roi_w=None,
-            tracked_roi_h=None,
-            roi_shift_x=None,
-            roi_shift_y=None,
         )
 
     def status(self):
@@ -223,8 +152,6 @@ class TimelapseController:
             self.adaptive_timelapse_mode = False
             self.mesh_shadow_mode = True
             self.interval_reason = "Shadow mesh analysis; scheduled interval unchanged."
-            self.motion_score = None
-            self.changed_area_ratio = None
             self.mesh_decision = None
             self.mesh_reason = None
             self.mesh_active_cell_proportion = None
@@ -329,27 +256,19 @@ class TimelapseController:
                 self.next_interval_sec = state["next_interval_sec"]
             if "message" in state:
                 self.message = state["message"]
-            if "motion_score" in state:
-                self.motion_score = state["motion_score"]
-            if "insect_candidate" in state:
-                self.insect_candidate = bool(state["insect_candidate"])
             if "interval_reason" in state:
                 self.interval_reason = state["interval_reason"]
-            metrics = state.get("metrics")
-            if metrics is not None:
-                self.changed_area_ratio = metrics.get("changed_area_ratio")
-                self.mean_brightness = metrics.get("mean_brightness")
-                self.brightness_delta = metrics.get("brightness_delta")
-                self.wind_like_motion = bool(metrics.get("wind_like_motion"))
-                self.motion_type = str(metrics.get("motion_type") or "mesh_three_state")
-                self.mesh_decision = metrics.get("mesh_decision")
-                self.mesh_reason = metrics.get("mesh_reason")
-                self.mesh_active_cell_proportion = metrics.get("mesh_active_cell_proportion")
-                self.mesh_offset_agreement = metrics.get("mesh_offset_agreement")
-                self.mesh_global_synchrony = metrics.get("mesh_global_synchrony")
+            if "mesh_decision" in state:
+                self.mesh_decision = state["mesh_decision"]
+            if "mesh_reason" in state:
+                self.mesh_reason = state["mesh_reason"]
+            if "mesh_active_cell_proportion" in state:
+                self.mesh_active_cell_proportion = state["mesh_active_cell_proportion"]
+            if "mesh_offset_agreement" in state:
+                self.mesh_offset_agreement = state["mesh_offset_agreement"]
+            if "mesh_global_synchrony" in state:
+                self.mesh_global_synchrony = state["mesh_global_synchrony"]
             self.capture_count += state.get("capture_count_delta", 0)
-            self.detection_count += state.get("detection_count_delta", 0)
-            self.event_count += state.get("event_count_delta", 0)
             if state.get("last_capture_time") is not None:
                 self.last_capture_time = state["last_capture_time"]
             if state.get("last_image") is not None:
