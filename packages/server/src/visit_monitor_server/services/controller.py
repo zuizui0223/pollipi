@@ -79,8 +79,14 @@ class TimelapseController:
 
     def _build_status(self):
         from visit_monitor_server.api.schemas.capture import StatusResponse
+        from visit_monitor_server.services.policy_runtime import get_active_policy
+
+        _policy_config, _policy_meta = get_active_policy()
 
         return StatusResponse(
+            policy_name=_policy_meta.policy_name,
+            policy_version=_policy_meta.policy_version,
+            validation_status=_policy_meta.validation_status,
             running=self.running,
             lifecycle_state=self.lifecycle_state,
             last_error=self.last_error,

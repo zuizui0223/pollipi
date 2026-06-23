@@ -65,6 +65,9 @@ SHADOW_COLUMNS = [
     "comparison_session_id",
     "camera_role",
     "method_mode",
+    "policy_name",
+    "policy_version",
+    "validation_status",
 ]
 
 
@@ -83,6 +86,7 @@ def _write_shadow_record(
     would_be_next_interval_sec: float,
     decision,
     request,
+    policy_meta=None,
 ) -> None:
     """Append compact scheduled-image metadata.  No candidate-event image exists."""
     write_header = not METRICS_PATH.exists()
@@ -122,6 +126,9 @@ def _write_shadow_record(
             request.comparison_session_id or "",
             request.camera_role or "",
             request.method_mode or "",
+            getattr(policy_meta, "policy_name", "baseline_rule"),
+            getattr(policy_meta, "policy_version", "0"),
+            getattr(policy_meta, "validation_status", "synthetic_only"),
         ])
 
     decision_header = not ADAPTIVE_DECISION_LOG_PATH.exists()
@@ -189,6 +196,12 @@ def run_capture_loop(
             max_interval_sec=request.adaptive_max_interval_sec,
         )
 
+        # Issue #21: load the (simulation-informed) policy artifact once. The Pi
+        # only consumes numeric thresholds here — no simulation/search runs.
+        from visit_monitor_server.services.policy_runtime import get_active_policy
+
+        policy_config, policy_meta = get_active_policy()
+
         while not stop_event.is_set():
             captured_at = datetime.now().astimezone()
             filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
@@ -212,6 +225,7 @@ def run_capture_loop(
                 decision = analyze(
                     frame,
                     previous_frame,
+                    config=policy_config,
                     previous_active_cells=previous_active_cells,
                     previous_centroid=previous_centroid,
                 )
@@ -236,6 +250,7 @@ def run_capture_loop(
                     would_be_next,
                     decision,
                     request,
+                    policy_meta,
                 )
                 previous_active_cells = set(decision.active_cells)
                 if decision.features.centroid_x is not None and decision.features.centroid_y is not None:

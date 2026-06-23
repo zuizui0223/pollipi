@@ -30,6 +30,13 @@ METRICS_PATH = IMAGE_DIR / "adaptive_metrics.csv"
 ADAPTIVE_DECISION_LOG_PATH = IMAGE_DIR / "adaptive_decisions.csv"
 AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
 
+# Versioned mesh policy artifact loaded at startup (Issue #21). When present the
+# Pi builds its analysis configuration from this JSON; otherwise a built-in
+# baseline rule config is used. The Pi never runs the simulation/search itself.
+POLICY_PATH = Path(
+    os.getenv("POLLIPI_POLICY_PATH", str(IMAGE_DIR.parent / "simulation_informed_policy.json"))
+).expanduser()
+
 WEB_DIR = Path(
     os.getenv("POLLIPI_WEB_DIR", str(Path.home() / "pollipi_timelapse" / "web"))
 ).expanduser()

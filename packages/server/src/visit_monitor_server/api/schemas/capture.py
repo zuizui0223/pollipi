@@ -74,3 +74,9 @@ class StatusResponse(BaseModel):
     mesh_active_cell_proportion: Optional[float] = None
     mesh_offset_agreement: Optional[float] = None
     mesh_global_synchrony: Optional[float] = None
+
+    # Active mesh policy provenance (Issue #21). validation_status stays
+    # "synthetic_only" until real Pi field data validates the thresholds.
+    policy_name: str = "baseline_rule"
+    policy_version: str = "0"
+    validation_status: str = "synthetic_only"
