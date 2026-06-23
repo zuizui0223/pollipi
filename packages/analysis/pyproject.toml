@@ -4,16 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pollipi-analysis"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pure PolliPi mesh analysis, simulation, and interval policy"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.26,<3"
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8,<9",
+  "pytest>=8,<10",
+]
+# Plotting for the simulation runner is optional; CSV output works without it.
+plot = [
+  "matplotlib>=3.7",
 ]
 
 [tool.setuptools]
