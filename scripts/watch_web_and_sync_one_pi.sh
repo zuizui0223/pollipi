@@ -1,22 +1,22 @@
 #!/bin/bash
-# Watch and auto-sync web UI changes to Raspberry Pi
+# Watch and auto-sync web UI changes to a SINGLE Raspberry Pi (dev helper).
+#
+# For fleet deployment, use pollipi_fleet_deploy.py instead:
+#   python3 tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --web-only --execute --confirm-live-deploy
 #
 # Usage:
-#   ./scripts/watch_web_and_sync.sh [-h HOST] [-u USER] [-p PORT]
+#   ./scripts/watch_web_and_sync_one_pi.sh -h HOST -u USER [-p PORT]
 #
 # Examples:
-#   ./scripts/watch_web_and_sync.sh -h pollipi1.local -u pi
-#   PI_HOST=192.168.1.100 ./scripts/watch_web_and_sync.sh
+#   ./scripts/watch_web_and_sync_one_pi.sh -h zuizui.local -u zuizui0223
+#   ./scripts/watch_web_and_sync_one_pi.sh -h 192.168.11.10 -u zuizui0223 -p 22
 #
-# Environment:
-#   PI_HOST - Raspberry Pi hostname or IP (default: pollipi1.local)
-#   PI_USER - SSH username (default: pi)
-#   PI_PORT - SSH port (default: 22)
+# Both -h and -u are REQUIRED. There are no defaults.
 
 set -eu
 
-PI_HOST="${PI_HOST:-pollipi1.local}"
-PI_USER="${PI_USER:-pi}"
+PI_HOST=""
+PI_USER=""
 PI_PORT="${PI_PORT:-22}"
 
 # Parse arguments
@@ -26,20 +26,53 @@ while getopts "h:u:p:" opt; do
         u) PI_USER="$OPTARG" ;;
         p) PI_PORT="$OPTARG" ;;
         *)
-            echo "Usage: $0 [-h HOST] [-u USER] [-p PORT]"
+            echo "Usage: $0 -h HOST -u USER [-p PORT]"
             exit 1
             ;;
     esac
 done
 
+if [ -z "$PI_HOST" ] || [ -z "$PI_USER" ]; then
+    echo "ERROR: Both -h HOST and -u USER are required."
+    echo "Usage: $0 -h HOST -u USER [-p PORT]"
+    echo ""
+    echo "For fleet deployment, use:"
+    echo "  python3 tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --web-only --execute --confirm-live-deploy"
+    exit 1
+fi
+
 REMOTE_SSH="${PI_USER}@${PI_HOST}"
-REMOTE_PATH="~/pollipi_timelapse/web/dist/"
+REMOTE_PATH="/home/${PI_USER}/pollipi_timelapse/web/"
+
+# ── Safety guard: reject dangerous rsync --delete targets ──
+validate_rsync_target() {
+    local target="$1"
+    if [ -z "$target" ]; then
+        echo "ERROR: Remote path is empty. Aborting."
+        exit 1
+    fi
+    case "$target" in
+        /|/home|/home/|"$HOME"|"$HOME/")
+            echo "ERROR: Remote path '$target' is a system directory. Aborting."
+            exit 1
+            ;;
+    esac
+    # Must be inside pollipi_timelapse
+    if ! echo "$target" | grep -q "pollipi_timelapse"; then
+        echo "ERROR: Remote path '$target' is outside the PolliPi web directory. Aborting."
+        exit 1
+    fi
+}
+
+validate_rsync_target "$REMOTE_PATH"
 
 echo "=========================================="
 echo "PolliPi Web UI Auto-Sync Monitor"
 echo "=========================================="
 echo "Target: $REMOTE_SSH:$REMOTE_PATH"
 echo "Watching: packages/web/src/"
+echo ""
+echo "rsync --delete will sync to: $REMOTE_SSH:$REMOTE_PATH"
 echo ""
 echo "Press Ctrl+C to stop"
 echo "=========================================="

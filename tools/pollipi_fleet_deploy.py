@@ -150,9 +150,9 @@ def pc_on_subnet(subnet: str, probe_host: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def local_artifacts_ok(device: Device) -> tuple[bool, list[str]]:
+def local_artifacts_ok(device: Device, *, web_only: bool = False) -> tuple[bool, list[str]]:
     errors: list[str] = []
-    if not Path(device.server_artifact).is_file():
+    if not web_only and not Path(device.server_artifact).is_file():
         errors.append(f"missing server artifact: {device.server_artifact}")
     if not Path(device.web_build_dir).is_dir():
         errors.append(f"missing web build dir: {device.web_build_dir}")
@@ -174,11 +174,11 @@ def expected_git_commit() -> str:
     return output.strip() if ok else ""
 
 
-def preflight_device(device: Device, *, subnet: str, dry_run: bool) -> dict[str, Any]:
+def preflight_device(device: Device, *, subnet: str, dry_run: bool, web_only: bool = False) -> dict[str, Any]:
     steps: list[dict[str, str]] = []
     ok = True
 
-    artifact_ok, artifact_errors = local_artifacts_ok(device)
+    artifact_ok, artifact_errors = local_artifacts_ok(device, web_only=web_only)
     ok = ok and artifact_ok
     steps.append({
         "step": "local artifacts",
@@ -239,8 +239,68 @@ def deploy_plan(device: Device, stamp: str) -> dict[str, Any]:
     return {"steps": steps, "rollback": rollback}
 
 
-def verify_post_deploy(device: Device, *, expected_commit: str, expected_web_build_id: str) -> tuple[bool, str]:
-    ok, payload = http_get_json(f"{device.base_url}/device")
+def web_only_deploy_plan(device: Device, stamp: str) -> dict[str, Any]:
+    """Deploy plan that only uploads web assets — no server artifact, no service restart."""
+    remote_web = f"{device.remote_dir}/{device.web_remote_dir}"
+    backup_web = f"{remote_web}.bak-{stamp}"
+    steps = [
+        ("prepare remote directory", ssh_cmd(device, f"mkdir -p {remote_web}")),
+        ("backup current web build", ssh_cmd(device, f"test ! -d {remote_web} || cp -a {remote_web} {backup_web}")),
+        ("upload web build", scp_cmd(device, f"{device.web_build_dir}/.", remote_web, recursive=True)),
+    ]
+    rollback = [
+        ("restore web backup", ssh_cmd(device, f"if test -d {backup_web}; then rm -rf {remote_web}; cp -a {backup_web} {remote_web}; fi")),
+    ]
+    return {"steps": steps, "rollback": rollback}
+
+
+def http_get_status(url: str) -> tuple[bool, int]:
+    """Return (ok, status_code) for a URL.  ok is True when status is 200."""
+    try:
+        with urllib.request.urlopen(url, timeout=8) as response:
+            return response.status == 200, response.status
+    except Exception:
+        return False, 0
+
+
+def verify_web_app(device: Device) -> tuple[bool, str]:
+    """GET /app/ and check at least one referenced asset is reachable."""
+    app_url = f"{device.base_url}/"
+    try:
+        with urllib.request.urlopen(app_url, timeout=8) as response:
+            if response.status != 200:
+                return False, f"GET {app_url} returned {response.status}"
+            html = response.read(32768).decode("utf-8", errors="replace")
+    except Exception as exc:
+        return False, f"GET {app_url} failed: {exc}"
+
+    # Find at least one built asset (JS or CSS) referenced in the HTML
+    import re
+    asset_refs = re.findall(r'(?:src|href)=["\']([^"\']+\.(?:js|css))', html)
+    if not asset_refs:
+        return True, f"GET {app_url} 200 (no JS/CSS asset refs found to verify)"
+
+    # Verify at least one asset
+    for ref in asset_refs[:3]:
+        if ref.startswith("http"):
+            asset_url = ref
+        elif ref.startswith("/"):
+            base = device.post_deploy_base_url.format(host=device.host).split("/app")[0]
+            asset_url = f"{base}{ref}"
+        else:
+            asset_url = f"{app_url}{ref}"
+        asset_ok, status = http_get_status(asset_url)
+        if asset_ok:
+            return True, f"GET {app_url} 200, asset {ref} 200"
+
+    return False, f"GET {app_url} 200, but asset(s) {asset_refs[:3]} unreachable"
+
+
+def verify_post_deploy(device: Device, *, expected_commit: str, expected_web_build_id: str, web_only: bool = False) -> tuple[bool, str]:
+    base = device.post_deploy_base_url.format(host=device.host).rstrip("/")
+    # For web-only, /device is at the server root, not under /app/
+    device_url = base.split("/app")[0] + "/device" if "/app" in base else f"{base}/device"
+    ok, payload = http_get_json(device_url)
     if not ok or not isinstance(payload, dict):
         return False, str(payload)
     build_info = payload.get("build_info") or {}
@@ -248,7 +308,7 @@ def verify_post_deploy(device: Device, *, expected_commit: str, expected_web_bui
     web_build_id = str(build_info.get("web_build_id", ""))
     mode = str(build_info.get("deployment_mode", ""))
     mismatches = []
-    if mode != "packaged_artifact":
+    if not web_only and mode != "packaged_artifact":
         mismatches.append(f"deployment_mode={mode}")
     if expected_commit and commit != expected_commit:
         mismatches.append(f"git_commit={commit}, expected={expected_commit}")
@@ -256,7 +316,7 @@ def verify_post_deploy(device: Device, *, expected_commit: str, expected_web_bui
         mismatches.append(f"web_build_id={web_build_id}, expected={expected_web_build_id}")
     if mismatches:
         return False, "; ".join(mismatches)
-    return True, f"{mode} / {commit or 'unknown'} / {web_build_id or 'unknown'}"
+    return True, f"{mode or 'unknown'} / {commit or 'unknown'} / {web_build_id or 'unknown'}"
 
 
 def run_rollback(device: Device, rollback_steps: list[tuple[str, list[str]]]) -> list[dict[str, str]]:
@@ -274,12 +334,13 @@ def deploy_device(
     dry_run: bool,
     expected_commit: str = "",
     expected_web_build_id: str = "",
+    web_only: bool = False,
 ) -> dict[str, Any]:
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    plan = deploy_plan(device, stamp)
+    plan = web_only_deploy_plan(device, stamp) if web_only else deploy_plan(device, stamp)
     result: dict[str, Any] = {"device": device.name, "host": device.host, "status": "ok", "steps": []}
 
-    preflight = preflight_device(device, subnet=subnet, dry_run=dry_run)
+    preflight = preflight_device(device, subnet=subnet, dry_run=dry_run, web_only=web_only)
     result["steps"].extend(preflight["steps"])
     if preflight["status"] != "ok":
         result["status"] = "failed"
@@ -297,17 +358,34 @@ def deploy_device(
             return result
 
     if dry_run:
+        verify_label = "web app verification" if web_only else "post-deploy version check"
         result["steps"].append({
-            "step": "post-deploy version check",
+            "step": verify_label,
             "status": "dry-run",
-            "command": f"GET {device.base_url}/device and compare commit/web_build_id",
+            "command": f"GET {device.base_url}/ and verify assets" if web_only
+            else f"GET {device.base_url}/device and compare commit/web_build_id",
         })
         return result
 
+    # Web app verification: GET /app/ returns 200 and at least one asset works
+    if web_only:
+        web_ok, web_output = verify_web_app(device)
+        result["steps"].append({
+            "step": "web app verification (GET /app/ + asset)",
+            "status": "ok" if web_ok else "failed",
+            "output": web_output,
+        })
+        if not web_ok:
+            result["status"] = "failed"
+            result["rollback"] = run_rollback(device, plan["rollback"])
+            return result
+
+    # Post-deploy version/build-id check (both full and web-only)
     verify_ok, verify_output = verify_post_deploy(
         device,
-        expected_commit=expected_commit,
+        expected_commit=expected_commit if not web_only else "",
         expected_web_build_id=expected_web_build_id,
+        web_only=web_only,
     )
     result["steps"].append({
         "step": "post-deploy version check",
@@ -325,6 +403,7 @@ def main() -> int:
     parser.add_argument("--config", type=Path, default=Path("tools/fleet.example.json"))
     parser.add_argument("--execute", action="store_true", help="Prepare for live execution. Requires --confirm-live-deploy too.")
     parser.add_argument("--confirm-live-deploy", action="store_true", help="Required with --execute to touch real Pis.")
+    parser.add_argument("--web-only", action="store_true", help="Deploy only web UI assets. No server artifact upload, no service restart.")
     parser.add_argument("--expected-git-commit", default="")
     parser.add_argument("--expected-web-build-id", default="")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON results.")
@@ -340,6 +419,21 @@ def main() -> int:
     if args.execute and not args.confirm_live_deploy:
         print("--execute requires --confirm-live-deploy; running dry-run only.", file=sys.stderr)
 
+    if args.web_only:
+        # For web-only, ensure web build exists or offer to build
+        web_dir = Path(fleet.devices[0].web_build_dir)
+        if not web_dir.is_dir():
+            print(f"Web build not found at {web_dir}. Building...", file=sys.stderr)
+            build_ok, build_output = run_cmd(["pnpm", "check:web"])
+            if not build_ok:
+                print(f"pnpm check:web failed:\n{build_output}", file=sys.stderr)
+                return 2
+            build_ok, build_output = run_cmd(["pnpm", "build:web"])
+            if not build_ok:
+                print(f"pnpm build:web failed:\n{build_output}", file=sys.stderr)
+                return 2
+            print("Web build complete.", file=sys.stderr)
+
     expected_commit = args.expected_git_commit or expected_git_commit()
     expected_web_build_id = args.expected_web_build_id or read_web_build_id(fleet.devices[0].web_build_dir)
     results = []
@@ -350,6 +444,7 @@ def main() -> int:
             dry_run=dry_run,
             expected_commit=expected_commit,
             expected_web_build_id=expected_web_build_id,
+            web_only=args.web_only,
         )
         results.append(result)
         if result["status"] != "ok":

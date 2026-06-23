@@ -9,7 +9,7 @@
     "server_filename": "pollipi_api_server.py",
     "web_remote_dir": "web",
     "service_name": "pollipi.service",
-    "post_deploy_base_url": "http://{host}:8000"
+    "post_deploy_base_url": "http://{host}:8000/app"
   },
   "devices": [
     { "name": "zuizui",  "host": "zuizui.local" },
