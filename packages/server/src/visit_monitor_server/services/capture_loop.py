@@ -1,37 +1,21 @@
-"""Scheduled timelapse runtime with mesh shadow-mode metadata logging.
-
-The active runtime saves scheduled timelapse images.  It uses the shared pure
-``pollipi_analysis`` package to calculate an explainable three-state mesh decision
-from low-resolution frames, but never claims a confirmed visit and never writes an
-image-per-motion-event stream.
-"""
+"""Scheduled timelapse runtime with mesh shadow-mode metadata logging."""
 from __future__ import annotations
 
 import csv
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
 
 from pollipi_analysis.pipeline import analyze
 from pollipi_analysis.policy.state_policy import IntervalBounds, plan_next_interval
 from visit_monitor_server.config import (
     ADAPTIVE_DECISION_LOG_PATH,
-    CAMERA_LABEL,
-    CAMERA_MODEL,
-    CAMERA_PROFILE,
     DEVICE_ID,
     DEVICE_NAME,
-    IS_AI_CAMERA,
-    IS_NOIR,
-    IS_WIDE,
     METRICS_PATH,
     MONITOR_SIZE,
     USE_FAKE_CAMERA,
 )
-
-if TYPE_CHECKING:
-    from visit_monitor_server.api.schemas.capture import StartRequest
 
 
 SHADOW_COLUMNS = [
@@ -71,8 +55,10 @@ SHADOW_COLUMNS = [
 def _open_camera():
     if USE_FAKE_CAMERA:
         from visit_monitor_server.adapters.fake_camera import FakeCamera
+
         return FakeCamera()
     from picamera2 import Picamera2  # type: ignore
+
     return Picamera2()
 
 
@@ -84,9 +70,9 @@ def _write_shadow_record(
     decision,
     request,
 ) -> None:
-    """Append compact scheduled-image metadata.  No candidate-event image exists."""
-    write_header = not METRICS_PATH.exists()
+    """Append metadata for a scheduled image; no candidate image is created."""
     features = decision.features
+    write_header = not METRICS_PATH.exists()
     with METRICS_PATH.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         if write_header:
@@ -146,39 +132,15 @@ def _write_shadow_record(
         ])
 
 
-def _metrics_from_decision(decision) -> dict:
-    """Map pure-analysis output to the controller's temporary status fields."""
+def _status_metrics(decision) -> dict:
+    """Map shared analysis output to the active, compact status surface."""
     features = decision.features
     return {
-        "motion_score": features.global_synchrony,
-        "changed_area_ratio": features.active_cell_proportion,
-        "mean_brightness": None,
-        "brightness_delta": None,
-        "wind_like_motion": decision.state == "environmental_noise",
-        "num_blobs": 0,
-        "largest_blob_area": 0,
-        "largest_blob_ratio": None,
-        "small_blob_count": 0,
-        "motion_type": "mesh_three_state",
-        "roi_used": False,
-        "roi_semantics": "whole_frame_overlapping_mesh",
-        "control_roi_used": False,
-        "grid_rows": 0,
-        "grid_cols": 0,
-        "changed_cell_count": features.largest_component_cells,
-        "changed_cell_ratio": features.active_cell_proportion,
-        "local_compactness": features.spatial_concentration,
-        "whole_frame_change_score": features.global_synchrony,
-        "previous_frame_elapsed_sec": None,
-        "robust_background_score": None,
-        "candidate_reasons": decision.reason,
         "mesh_decision": decision.state,
         "mesh_reason": decision.reason,
         "mesh_active_cell_proportion": features.active_cell_proportion,
         "mesh_offset_agreement": features.offset_agreement,
         "mesh_global_synchrony": features.global_synchrony,
-        "roi_tracking": False,
-        "roi_tracking_success": False,
     }
 
 
@@ -190,14 +152,8 @@ def run_capture_loop(
     set_camera,
     update_state,
     set_message,
-    trainer=None,
 ) -> None:
-    """Run scheduled capture and shadow-mode mesh analysis.
-
-    ``trainer`` remains a no-op compatibility argument while older controller
-    construction code is being removed.  The active runtime does not use ML.
-    """
-    del trainer
+    """Capture scheduled images and write three-state mesh shadow metadata."""
     camera = None
     previous_frame = None
     previous_active_cells = None
@@ -208,9 +164,7 @@ def run_capture_loop(
         with camera_lock:
             camera = _open_camera()
             camera.configure(
-                camera.create_still_configuration(
-                    lores={"size": MONITOR_SIZE, "format": "YUV420"}
-                )
+                camera.create_still_configuration(lores={"size": MONITOR_SIZE, "format": "YUV420"})
             )
             camera.start()
         set_camera(camera)
@@ -227,8 +181,7 @@ def run_capture_loop(
 
         while not stop_event.is_set():
             captured_at = datetime.now().astimezone()
-            filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
-            image_path = image_dir / filename
+            image_path = image_dir / captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
 
             with camera_lock:
                 camera.capture_file(str(image_path))
@@ -236,20 +189,14 @@ def run_capture_loop(
 
             if previous_frame is None:
                 metrics = {
-                    "motion_score": None,
-                    "motion_type": "mesh_baseline",
                     "mesh_decision": "no_activity",
                     "mesh_reason": "waiting_for_reference_frame",
                     "mesh_active_cell_proportion": 0.0,
                     "mesh_offset_agreement": 0.0,
                     "mesh_global_synchrony": 0.0,
-                    "roi_used": False,
-                    "roi_tracking": False,
-                    "roi_tracking_success": False,
                 }
                 would_be_next = request.interval_sec
                 reason = "Mesh shadow mode: reference frame captured; scheduled interval unchanged."
-                insect_candidate = False
             else:
                 decision = analyze(
                     frame,
@@ -263,9 +210,8 @@ def run_capture_loop(
                     current_interval_sec=request.interval_sec,
                 )
                 would_be_next = plan.next_interval_sec
-                metrics = _metrics_from_decision(decision)
+                metrics = _status_metrics(decision)
                 reason = f"Mesh shadow mode: {decision.state}; {decision.reason}; scheduled interval unchanged."
-                insect_candidate = decision.state == "strong_visitation_candidate"
                 _write_shadow_record(
                     captured_at,
                     image_path,
@@ -286,16 +232,11 @@ def run_capture_loop(
                 "last_capture_time": captured_at.isoformat(timespec="seconds"),
                 "last_image": str(image_path),
                 "message": "Scheduled timelapse running; shadow mesh analysis only.",
-                "motion_score": metrics.get("motion_score"),
                 "metrics": metrics,
-                "insect_candidate": insect_candidate,
                 "interval_reason": reason,
-                "detection_count_delta": 0,
-                "event_count_delta": 0,
             })
 
-            # Adaptive control remains intentionally disabled until real Pi shadow
-            # validation is complete.  The policy result is logged as would-be only.
+            # The policy result remains advisory until it is validated with real Pi imagery.
             if stop_event.wait(request.interval_sec):
                 break
 
