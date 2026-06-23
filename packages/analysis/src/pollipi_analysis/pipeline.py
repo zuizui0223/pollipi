@@ -59,14 +59,21 @@ def classify_features(features: MeshFeatures, cfg: ClassifierConfig) -> tuple[De
     """Apply the explainable rule cascade to a feature vector.
 
     Returns ``(state, reason)`` where ``reason`` is a stable token naming the
-    branch that fired. Order is intentional: resting -> common-mode rejection ->
-    strong localised candidate -> uncertain residual.
+    branch that fired. Order is intentional: broad-common-mode guard -> resting
+    -> remaining common-mode rejection -> strong localised candidate -> uncertain
+    residual.
     """
     f = features
     n_cells_component_gate = max(4, int(round((1.0 / max(cfg.broad_component_fraction, 1e-6)))))
 
-    # 1. resting state
-    if f.global_synchrony < cfg.quiet_synchrony or f.active_cell_proportion < cfg.quiet_active_proportion:
+    # 1. resting state — only when there is no broad common-mode signal.
+    # A full-frame illumination change has global_synchrony ≥ broad_synchrony
+    # even though brightness normalisation zeroes out active_cell_proportion;
+    # skipping this gate for such frames lets the broad-synchrony rule below fire.
+    if (
+        f.global_synchrony < cfg.quiet_synchrony
+        or f.active_cell_proportion < cfg.quiet_active_proportion
+    ) and f.global_synchrony < cfg.broad_synchrony:
         return NO_ACTIVITY, "below_active_cell_threshold"
 
     # 2. broad / common-mode motion -> environmental noise
