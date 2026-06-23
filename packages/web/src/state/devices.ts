@@ -2,22 +2,10 @@ import { signal, computed } from '@preact/signals';
 import { fetchCoordinatorDevices } from '../api/client';
 import type { Camera, CoordinatorDevice } from '../api/types';
 import { loadCameras, saveCameras } from '../lib/storage';
-import { normalizeRoi } from '../lib/roi';
 import { selectedGalleryCamera } from './gallery';
 
-function syncWorkflowAliases(camera: Camera): Camera {
-  const confirmedROI = normalizeRoi(camera.roi);
-  const editingROI = normalizeRoi(camera.editing_roi);
-  camera.angleConfirmed = Boolean(camera.angle_confirmed);
-  camera.confirmedROI = confirmedROI;
-  camera.editingROI = editingROI;
-  camera.roiStale = Boolean(camera.roi_stale);
-  camera.roiConfirmed = Boolean(confirmedROI && !camera.roiStale);
-  return camera;
-}
-
 function initCamera(raw: Partial<Camera>): Camera {
-  const camera: Camera = {
+  return {
     address: raw.address || '',
     baseUrl: raw.baseUrl || '',
     apiPathPrefix: raw.apiPathPrefix,
@@ -31,31 +19,15 @@ function initCamera(raw: Partial<Camera>): Camera {
     is_ai_camera: Boolean(raw.is_ai_camera),
     is_noir: Boolean(raw.is_noir),
     is_wide: Boolean(raw.is_wide),
-    roi: normalizeRoi(raw.roi),
-    editing_roi: null,
-    angle_confirmed: Boolean(raw.angle_confirmed),
-    roi_stale: Boolean(raw.roi_stale),
-    roi_pending: false,
-    roi_tracking: Boolean(raw.roi_tracking),
-    roi_search_margin: raw.roi_search_margin || 30,
-    roi_tracking_min_score: raw.roi_tracking_min_score || 0.45,
-    // runtime
-    angleConfirmed: false,
-    confirmedROI: null,
-    editingROI: null,
-    roiStale: false,
-    roiConfirmed: false,
-    status: null,
-    previousImage: null,
-    monitoring: false,
-    aiMonitoring: false,
-    manualPreview: false,
+    status: raw.status || null,
+    previousImage: raw.previousImage || null,
+    build_info: raw.build_info,
+    camera_role: raw.camera_role || null,
+    comparison_session_id: raw.comparison_session_id || null,
   };
-  syncWorkflowAliases(camera);
-  return camera;
 }
 
-const _cameras = signal<Camera[]>(loadCameras().map((c) => initCamera(c)));
+const _cameras = signal<Camera[]>(loadCameras().map((camera) => initCamera(camera)));
 
 export const cameras = computed(() => _cameras.value);
 
@@ -70,19 +42,15 @@ export function setCameras(list: Camera[]): void {
 
 export function updateCamera(index: number, patch: Partial<Camera>): void {
   const list = [..._cameras.value];
-  const camera = { ...list[index], ...patch };
-  syncWorkflowAliases(camera);
-  list[index] = camera;
+  list[index] = initCamera({ ...list[index], ...patch });
   _cameras.value = list;
 }
 
 export function updateCameraRef(camera: Camera): void {
-  const list = _cameras.value;
-  const index = list.indexOf(camera);
+  const index = _cameras.value.indexOf(camera);
   if (index >= 0) {
-    const next = [...list];
-    syncWorkflowAliases(camera);
-    next[index] = { ...camera };
+    const next = [..._cameras.value];
+    next[index] = initCamera(camera);
     _cameras.value = next;
   }
 }
@@ -95,20 +63,19 @@ export function addOrReplaceCamera(camera: Camera): void {
       item.baseUrl === camera.baseUrl ||
       item.device_id === camera.device_id,
   );
-  syncWorkflowAliases(camera);
-  if (existing >= 0) list[existing] = camera;
-  else list.push(camera);
+  if (existing >= 0) list[existing] = initCamera(camera);
+  else list.push(initCamera(camera));
   _cameras.value = list;
   saveCameras(list);
 }
 
 export function removeCamera(cameraOrBaseUrl: Camera | string): void {
-  const list = _cameras.value.filter((c) => {
-    if (typeof cameraOrBaseUrl === 'string') return c.baseUrl !== cameraOrBaseUrl;
+  const list = _cameras.value.filter((camera) => {
+    if (typeof cameraOrBaseUrl === 'string') return camera.baseUrl !== cameraOrBaseUrl;
     if (cameraOrBaseUrl.coordinator_device_id) {
-      return c.coordinator_device_id !== cameraOrBaseUrl.coordinator_device_id;
+      return camera.coordinator_device_id !== cameraOrBaseUrl.coordinator_device_id;
     }
-    return c.baseUrl !== cameraOrBaseUrl.baseUrl;
+    return camera.baseUrl !== cameraOrBaseUrl.baseUrl;
   });
   _cameras.value = list;
   saveCameras(list);
@@ -147,12 +114,10 @@ export function coordinatorDeviceToCamera(
     is_ai_camera: device.is_ai_camera,
     is_noir: device.is_noir,
     is_wide: device.is_wide,
-    roi: previous?.roi || null,
-    angle_confirmed: Boolean(previous?.angle_confirmed),
-    roi_stale: Boolean(previous?.roi_stale || previous?.roi_pending),
-    roi_tracking: Boolean(previous?.roi_tracking),
-    roi_search_margin: previous?.roi_search_margin || 30,
-    roi_tracking_min_score: previous?.roi_tracking_min_score || 0.45,
+    previousImage: previous?.previousImage || null,
+    build_info: previous?.build_info,
+    camera_role: previous?.camera_role || null,
+    comparison_session_id: previous?.comparison_session_id || null,
   });
 }
 
@@ -181,4 +146,4 @@ export async function syncDevices(baseUrl: string): Promise<number> {
   return coordinatorCameras.length;
 }
 
-export { syncWorkflowAliases, initCamera };
+export { initCamera };
