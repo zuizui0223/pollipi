@@ -28,15 +28,6 @@ IMAGE_DIR = Path(
 
 METRICS_PATH = IMAGE_DIR / "adaptive_metrics.csv"
 ADAPTIVE_DECISION_LOG_PATH = IMAGE_DIR / "adaptive_decisions.csv"
-OBSERVATION_LOG_PATH = IMAGE_DIR / "observation_events.csv"
-EVENT_LOG_PATH = IMAGE_DIR / "event_log.csv"
-LABEL_LOG_PATH = IMAGE_DIR / "image_labels.csv"
-POSITIVE_DIR = IMAGE_DIR / "positive"
-NEGATIVE_DIR = IMAGE_DIR / "negative"
-LEGACY_CANDIDATE_DIR = IMAGE_DIR / "candidates"
-MODEL_DIR = IMAGE_DIR.parent / "models"
-MODEL_PATH = MODEL_DIR / "insect_presence_svm.xml"
-MODEL_INFO_PATH = MODEL_DIR / "insect_presence_model.json"
 AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
 
 WEB_DIR = Path(
@@ -67,8 +58,6 @@ ENABLE_LEGACY_ROUTES = env_bool("POLLIPI_ENABLE_LEGACY_ROUTES")
 MONITOR_SIZE = (640, 360)
 MONITOR_FRAME_INTERVAL_SEC = 0.25
 
-FLOWER_ROI_MODEL = os.getenv("POLLIPI_FLOWER_ROI_MODEL", "")
-
 AI_MONITOR_MODEL = "/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk"
 AI_MONITOR_THRESHOLD = 0.55
 AI_MONITOR_LABELS = [
@@ -84,49 +73,3 @@ AI_MONITOR_LABELS = [
     "microwave", "oven", "toaster", "sink", "refrigerator", "-", "book", "clock", "vase",
     "scissors", "teddy bear", "hair drier", "toothbrush",
 ]
-
-# ---------------------------------------------------------------------------
-# Event / label metadata
-# ---------------------------------------------------------------------------
-FALSE_POSITIVE_REASONS = {
-    "",
-    "wind",
-    "shadow",
-    "flower_movement",
-    "camera_shake",
-    "non_insect_object",
-    "lighting_change",
-    "unclear",
-    "other",
-}
-
-EVENT_LOG_COLUMNS = [
-    "event_id", "timestamp", "image_filename",
-    "device_id", "device_name", "camera_label", "camera_model", "camera_profile",
-    "is_ai_camera", "is_noir", "is_wide",
-    "site_id", "flower_id", "plant_species", "observer", "notes",
-    "comparison_session_id", "camera_role", "method_mode",
-    "motion_score", "changed_area_ratio", "mean_brightness", "brightness_delta",
-    "wind_like_motion", "num_blobs", "largest_blob_area", "largest_blob_ratio",
-    "small_blob_count", "motion_type", "roi_used", "roi_semantics", "roi_x", "roi_y", "roi_w", "roi_h",
-    "control_roi_used", "control_roi_x", "control_roi_y", "control_roi_w", "control_roi_h",
-    "floral_zone_score", "background_control_score", "zone_minus_control_score",
-    "grid_rows", "grid_cols", "changed_cell_count", "changed_cell_ratio", "local_compactness",
-    "whole_frame_change_score", "previous_frame_elapsed_sec", "robust_background_score", "candidate_reasons",
-    "mesh_decision", "mesh_reason", "mesh_layout", "mesh_active_cell_proportion",
-    "mesh_largest_component_cells", "mesh_concentration", "mesh_offset_agreement",
-    "mesh_global_synchrony", "mesh_transition_score", "mesh_return_to_origin_score",
-    "mesh_centroid_x", "mesh_centroid_y",
-    "roi_tracking", "roi_tracking_success", "roi_tracking_score", "roi_search_margin",
-    "roi_tracking_min_score", "initial_roi_x", "initial_roi_y", "initial_roi_w", "initial_roi_h",
-    "tracked_roi_x", "tracked_roi_y", "tracked_roi_w", "tracked_roi_h", "roi_shift_x", "roi_shift_y",
-    "manual_label", "review_label", "manual_taxon", "false_positive_reason", "manual_notes", "reviewed_at",
-]
-
-DERIVED_EVENT_COLUMNS = {
-    "auto_category",
-    "final_category",
-    "category_source",
-    "review_status",
-    "final_label",
-}
