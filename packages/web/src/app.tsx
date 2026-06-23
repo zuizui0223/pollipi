@@ -9,6 +9,7 @@ import { CoordinatorPanel } from './components/CoordinatorPanel';
 import { DeviceForm } from './components/DeviceForm';
 import { DeviceGrid } from './components/DeviceGrid';
 import { FieldControls } from './components/FieldControls';
+import { Gallery } from './components/Gallery';
 import { getCameras } from './state/devices';
 import { selectedGalleryCamera } from './state/gallery';
 import {
@@ -94,6 +95,7 @@ export function App() {
         <CoordinatorPanel />
         <DeviceForm onCameraAdded={refreshWorkspace} />
         <DeviceGrid onRefresh={refreshWorkspace} />
+        <Gallery />
       </main>
       <footer class={s.footerLayout}>
         <span>PolliPi active mesh runtime</span>
