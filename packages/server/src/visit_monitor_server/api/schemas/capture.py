@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class StartRequest(BaseModel):
     """Minimal active request for scheduled timelapse and mesh shadow mode."""
+
+    model_config = ConfigDict(extra="forbid")
 
     interval_sec: float = Field(..., ge=1, le=3600)
     autonomous_mode: bool = False
