@@ -1,3 +1,11 @@
+from pollipi_analysis.policy.artifact import (
+    POLICY_SCHEMA_VERSION,
+    PolicyMeta,
+    build_policy,
+    load_policy,
+    policy_to_pipeline_config,
+    write_policy,
+)
 from pollipi_analysis.policy.interval import IntervalDecision, decide_next_interval
 from pollipi_analysis.policy.state_policy import (
     IntervalBounds,
@@ -13,4 +21,11 @@ __all__ = [
     "IntervalBounds",
     "IntervalPlan",
     "plan_next_interval",
+    # Versioned, Pi-loadable policy artifact (Issue #21).
+    "POLICY_SCHEMA_VERSION",
+    "PolicyMeta",
+    "build_policy",
+    "load_policy",
+    "write_policy",
+    "policy_to_pipeline_config",
 ]

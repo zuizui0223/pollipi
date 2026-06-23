@@ -21,11 +21,15 @@ import csv
 from pathlib import Path
 from typing import Any, Sequence
 
-from pollipi_analysis.pipeline import analyze
+from datetime import datetime, timezone
+
+from pollipi_analysis.features.compute import FeatureConfig
+from pollipi_analysis.pipeline import ClassifierConfig, PipelineConfig, analyze
+from pollipi_analysis.policy.artifact import PolicyMeta, write_policy
 from pollipi_analysis.policy.state_policy import IntervalBounds
 from pollipi_analysis.shadow import run_shadow_mode
 from pollipi_analysis.simulation.scenarios import LABELED_SCENARIOS
-from pollipi_analysis.simulation.search import pareto_front, run_search
+from pollipi_analysis.simulation.search import pareto_front, run_search, select_policy
 from pollipi_analysis.simulation.synthetic import simulate_pair, simulate_sequence
 
 SEQUENCE_SCENARIOS = ("target_traverse", "local_sway", "moving_shadow", "broad_wind", "quiet")
@@ -120,6 +124,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     _write_csv(out_dir / "parameter_search.csv", search_rows)
     _write_csv(out_dir / "pareto_front.csv", pareto_front(search_rows))
 
+    # Phase D: select the lowest field-cost config and export a Pi-loadable policy.
+    best = select_policy(search_rows)
+    chosen_config = PipelineConfig(
+        features=FeatureConfig(cell_size=best["cell_size"], pixel_difference=best["pixel_difference"]),
+        classifier=ClassifierConfig(strong_spatial_concentration=best["strong_spatial_concentration"]),
+    )
+    policy_path = write_policy(
+        out_dir / "simulation_informed_policy.json",
+        chosen_config,
+        PolicyMeta(
+            policy_name="simulation_informed",
+            policy_version="1",
+            validation_status="synthetic_only",
+            seed=args.seed,
+            generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            notes="cost-weighted selection over synthetic labelled scenarios; not field-validated",
+        ),
+    )
+
     for scenario in SEQUENCE_SCENARIOS:
         _write_csv(out_dir / f"shadow_{scenario}.csv", _shadow_rows(scenario, args.seed))
 
@@ -129,6 +152,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"seed={args.seed} out_dir={out_dir}")
     print(f"scenario accuracy: {correct}/{len(scenario_rows)}")
     print(f"search configs: {len(search_rows)}; pareto front: {len(pareto_front(search_rows))}")
+    print(f"selected policy cost={best['cost']:.2f} recall={best['candidate_recall']:.2f} "
+          f"false_trigger={best['false_trigger_rate']:.2f} -> {policy_path}")
     print(plot_msg)
     return 0
 

@@ -30,13 +30,32 @@ class SearchGrid:
     strong_spatial: tuple[float, ...] = (0.55, 0.70, 0.85)
 
 
-def evaluate_config(config: PipelineConfig, *, seed: int = 7) -> dict[str, Any]:
+@dataclass(frozen=True)
+class CostWeights:
+    """Field-cost weights for policy selection.
+
+    A ``false_strong`` (environment wrongly called ``strong_visitation_candidate``)
+    shortens the next interval, costing power, storage, and review burden — so it
+    is penalised most heavily. A missed target loses evidence (moderate). An
+    environment frame logged as ``uncertain`` is cheap (metadata only).
+    """
+
+    false_strong: float = 10.0
+    target_miss: float = 3.0
+    false_uncertain: float = 0.5
+
+
+def evaluate_config(
+    config: PipelineConfig, *, seed: int = 7, weights: CostWeights | None = None
+) -> dict[str, Any]:
+    weights = weights or CostWeights()
     rows = []
     correct = 0
     target_total = 0
     target_hit = 0
     env_total = 0
     env_false = 0
+    cost = 0.0
     for scenario in LABELED_SCENARIOS:
         background, frame = simulate_pair(scenario.name, seed=seed)
         decision = analyze(frame, background, config=config)
@@ -45,10 +64,17 @@ def evaluate_config(config: PipelineConfig, *, seed: int = 7) -> dict[str, Any]:
         correct += int(is_correct)
         if scenario.family == "target":
             target_total += 1
-            target_hit += int(predicted == STRONG_VISITATION_CANDIDATE)
+            if predicted == STRONG_VISITATION_CANDIDATE:
+                target_hit += 1
+            else:
+                cost += weights.target_miss
         elif scenario.family == "environment":
             env_total += 1
-            env_false += int(predicted == STRONG_VISITATION_CANDIDATE)
+            if predicted == STRONG_VISITATION_CANDIDATE:
+                env_false += 1
+                cost += weights.false_strong
+            elif predicted == "uncertain_local_activity":
+                cost += weights.false_uncertain
         rows.append(
             {
                 "scenario": scenario.name,
@@ -63,12 +89,16 @@ def evaluate_config(config: PipelineConfig, *, seed: int = 7) -> dict[str, Any]:
         "accuracy": correct / max(1, len(LABELED_SCENARIOS)),
         "candidate_recall": target_hit / max(1, target_total),
         "false_trigger_rate": env_false / max(1, env_total),
+        "cost": cost,
         "rows": rows,
     }
 
 
-def run_search(grid: SearchGrid | None = None, *, seed: int = 7) -> list[dict[str, Any]]:
+def run_search(
+    grid: SearchGrid | None = None, *, seed: int = 7, weights: CostWeights | None = None
+) -> list[dict[str, Any]]:
     grid = grid or SearchGrid()
+    weights = weights or CostWeights()
     results: list[dict[str, Any]] = []
     for cell_size in grid.cell_sizes:
         for pixel_difference in grid.pixel_differences:
@@ -76,7 +106,7 @@ def run_search(grid: SearchGrid | None = None, *, seed: int = 7) -> list[dict[st
                 features = FeatureConfig(cell_size=cell_size, pixel_difference=pixel_difference)
                 classifier = ClassifierConfig(strong_spatial_concentration=strong_spatial)
                 config = PipelineConfig(features=features, classifier=classifier)
-                summary = evaluate_config(config, seed=seed)
+                summary = evaluate_config(config, seed=seed, weights=weights)
                 results.append(
                     {
                         "cell_size": cell_size,
@@ -85,9 +115,30 @@ def run_search(grid: SearchGrid | None = None, *, seed: int = 7) -> list[dict[st
                         "accuracy": summary["accuracy"],
                         "candidate_recall": summary["candidate_recall"],
                         "false_trigger_rate": summary["false_trigger_rate"],
+                        "cost": summary["cost"],
                     }
                 )
     return results
+
+
+def select_policy(results: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Pick the lowest-cost configuration.
+
+    Ties are broken by higher candidate recall, then lower false-trigger rate,
+    then a smaller cell size (cheaper to compute). Returns the chosen row.
+    """
+    rows = list(results)
+    if not rows:
+        raise ValueError("no search results to select from")
+    return min(
+        rows,
+        key=lambda r: (
+            r["cost"],
+            -r["candidate_recall"],
+            r["false_trigger_rate"],
+            r["cell_size"],
+        ),
+    )
 
 
 def pareto_front(results: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
