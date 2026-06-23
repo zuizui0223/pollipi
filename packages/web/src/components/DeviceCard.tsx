@@ -2,10 +2,11 @@ import { h } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 
-import type { Camera, StatusResponse } from '../api/types';
+import type { Camera, DeviceInfo, StatusResponse } from '../api/types';
 import {
   deleteCoordinatorDevice,
   deviceUrl,
+  fetchDevice,
   fetchStatus,
   postStart,
   postStop,
@@ -35,7 +36,7 @@ type ConnectionState = 'online' | 'degraded' | 'reconnecting' | 'offline' | 'sta
 function buildStartPayload() {
   const interval = intervalSec.value;
   if (!Number.isFinite(interval) || interval < 1 || interval > 3600) {
-    alert('撮影間隔は1秒以上3600秒以下で入力してください。');
+    alert('Capture interval must be between 1 and 3600 seconds.');
     return null;
   }
 
@@ -54,12 +55,10 @@ function buildStartPayload() {
       windowSec < 60 ||
       windowSec > 3600)
   ) {
-    alert('適応型タイムラプスの設定値を確認してください。');
+    alert('Check the adaptive timelapse interval settings.');
     return null;
   }
 
-  // Active intent. The fixed legacy fields below are temporary server-compatibility
-  // values and are not exposed as active UI controls.
   return {
     interval_sec: interval,
     autonomous_mode: autonomousMode.value,
@@ -81,19 +80,51 @@ function buildStartPayload() {
   };
 }
 
+function applyDeviceInfo(camera: Camera, device: DeviceInfo) {
+  Object.assign(camera, {
+    device_id: device.device_id || camera.device_id,
+    device_name: device.device_name || camera.device_name,
+    camera_label: device.camera_label || camera.camera_label,
+    camera_model: device.camera_model || camera.camera_model,
+    camera_profile: device.camera_profile || camera.camera_profile,
+    is_ai_camera: Boolean(device.is_ai_camera),
+    is_noir: Boolean(device.is_noir),
+    is_wide: Boolean(device.is_wide),
+    build_info: device.build_info || camera.build_info,
+  });
+}
+
+function applyStatus(camera: Camera, next: StatusResponse) {
+  Object.assign(camera, {
+    device_id: next.device_id || camera.device_id,
+    device_name: next.device_name || camera.device_name,
+    camera_label: next.camera_label || camera.camera_label,
+    camera_model: next.camera_model || camera.camera_model,
+    camera_profile: next.camera_profile || camera.camera_profile,
+    is_ai_camera: Boolean(next.is_ai_camera),
+    is_noir: Boolean(next.is_noir),
+    is_wide: Boolean(next.is_wide),
+  });
+}
+
 function meshDecisionLabel(status: StatusResponse | null): string {
   const state = (status as any)?.mesh_decision;
-  if (state === 'strong_visitation_candidate') return '強い局所活動';
-  if (state === 'uncertain_local_activity') return '局所活動・保留';
-  if (state === 'environmental_noise') return '環境ノイズ';
-  if (state === 'no_activity') return '活動なし';
-  return '判定待ち';
+  if (state === 'strong_visitation_candidate') return 'strong activity';
+  if (state === 'uncertain_local_activity') return 'uncertain activity';
+  if (state === 'environmental_noise') return 'environmental noise';
+  if (state === 'no_activity') return 'no activity';
+  return 'waiting';
+}
+
+function shortCommit(value?: string | null): string {
+  if (!value) return 'unknown';
+  return value.length > 12 ? value.slice(0, 12) : value;
 }
 
 export function DeviceCard({ camera, index, onUpdated }: Props) {
   const busy = useSignal(false);
   const status = useSignal<StatusResponse | null>(null);
-  const message = useSignal('状態を読み込み中...');
+  const message = useSignal('Reading status...');
   const connectionState = useSignal<ConnectionState>('stale');
   const imageReady = useSignal(false);
   const hasImage = useSignal(false);
@@ -105,18 +136,9 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
 
   function updateFromStatus(next: StatusResponse) {
     status.value = next;
-    Object.assign(camera, {
-      device_id: next.device_id || camera.device_id,
-      device_name: next.device_name || camera.device_name,
-      camera_label: next.camera_label || camera.camera_label,
-      camera_model: next.camera_model || camera.camera_model,
-      camera_profile: next.camera_profile || camera.camera_profile,
-      is_ai_camera: Boolean(next.is_ai_camera),
-      is_noir: Boolean(next.is_noir),
-      is_wide: Boolean(next.is_wide),
-    });
+    applyStatus(camera, next);
 
-    message.value = next.mesh_reason || next.interval_reason || next.message || '状態を更新しました。';
+    message.value = next.mesh_reason || next.interval_reason || next.message || 'Status updated.';
 
     if (next.last_image && next.last_image !== (camera as any).previousImage) {
       const image = imageRef.current;
@@ -154,11 +176,13 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
 
     try {
       connectionState.value = status.value ? 'reconnecting' : 'stale';
-      const next = (await fetchStatus(camera, {
-        signal: controller.signal,
-      })) as StatusResponse;
+      const [device, next] = await Promise.all([
+        fetchDevice(camera, { signal: controller.signal }).catch(() => null),
+        fetchStatus(camera, { signal: controller.signal }),
+      ]);
       if (generation !== refreshGeneration.current) return;
 
+      if (device) applyDeviceInfo(camera, device);
       updateFromStatus(next);
       connectionState.value = 'online';
       pollDelayMs.current = document.hidden ? 15000 : 5000;
@@ -168,7 +192,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         30000,
         Math.max(5000, Math.round(pollDelayMs.current * 1.7 + Math.random() * 500)),
       );
-      message.value = `接続できません: ${(error as Error).message}`;
+      message.value = `Connection failed: ${(error as Error).message}`;
     } finally {
       window.clearTimeout(timeout);
       refreshInFlight.current = false;
@@ -206,7 +230,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       updateFromStatus((await postStart(camera, payload as any)) as StatusResponse);
       onUpdated();
     } catch (error: unknown) {
-      message.value = `開始できません: ${(error as Error).message}`;
+      message.value = `Start failed: ${(error as Error).message}`;
     } finally {
       busy.value = false;
     }
@@ -218,14 +242,14 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       updateFromStatus((await postStop(camera)) as StatusResponse);
       onUpdated();
     } catch (error: unknown) {
-      message.value = `停止できません: ${(error as Error).message}`;
+      message.value = `Stop failed: ${(error as Error).message}`;
     } finally {
       busy.value = false;
     }
   }
 
   async function handleRemove() {
-    if (!confirm(`${camera.camera_label} の登録をこのiPadから削除しますか？\n撮影画像はRaspberry Piに残ります。`)) {
+    if (!confirm(`${camera.camera_label || camera.baseUrl} will be removed from this iPad. Captured images stay on the Raspberry Pi.`)) {
       return;
     }
 
@@ -236,7 +260,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         try {
           await deleteCoordinatorDevice(coordinatorUrl, legacyCamera.coordinator_device_id);
         } catch (error: unknown) {
-          alert(`Coordinatorでの削除に失敗しました: ${(error as Error).message}`);
+          alert(`Coordinator removal failed: ${(error as Error).message}`);
           return;
         }
       }
@@ -247,6 +271,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   }
 
   const current = status.value;
+  const build = camera.build_info;
   const pillClass = connectionState.value === 'offline'
     ? s.pillOffline
     : !current
@@ -257,14 +282,14 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   const pillText = connectionState.value === 'offline'
     ? 'offline'
     : !current
-      ? '確認中'
+      ? 'checking'
       : current.lifecycle_state === 'stopping'
-        ? '停止処理中'
+        ? 'stopping'
         : current.lifecycle_state === 'error'
           ? 'error'
           : current.running
-            ? '撮影中'
-            : '停止中';
+            ? 'capturing'
+            : 'stopped';
 
   return (
     <article class={`${s.cameraCard}${camera.is_noir ? ` ${s.cameraCardNoir}` : ''}`}>
@@ -277,6 +302,9 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
           <p class={s.sensor}>
             {camera.camera_model || '-'} / {camera.camera_profile || 'unspecified'} / {camera.baseUrl}
           </p>
+          <p class={s.sensor}>
+            {(build?.deployment_mode || 'unknown')} / commit {shortCommit(build?.git_commit)} / web {build?.web_build_id || 'unknown'}
+          </p>
         </div>
         <span class={`${s.pill} ${pillClass}`}>{pillText}</span>
       </div>
@@ -285,27 +313,27 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <img
           ref={imageRef}
           class={`${s.imageFrameImg}${imageReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
-          alt="最新タイムラプス画像"
+          alt="Latest scheduled timelapse frame"
           draggable={false}
         />
-        {!hasImage.value && <p class={s.imageFrameEmpty}>最新画像を待っています</p>}
+        {!hasImage.value && <p class={s.imageFrameEmpty}>Waiting for latest image</p>}
       </div>
 
       <dl class={s.metrics}>
         <div class={s.metricsCell}>
-          <dt class={s.metricsDt}>状態</dt>
+          <dt class={s.metricsDt}>State</dt>
           <dd class={s.metricsDd}>{meshDecisionLabel(current)}</dd>
         </div>
         <div class={s.metricsCell}>
-          <dt class={s.metricsDt}>次回間隔</dt>
-          <dd class={s.metricsDd}>{(current as any)?.next_interval_sec ?? '-'} 秒</dd>
+          <dt class={s.metricsDt}>Next interval</dt>
+          <dd class={s.metricsDd}>{(current as any)?.next_interval_sec ?? '-'} sec</dd>
         </div>
         <div class={s.metricsCell}>
-          <dt class={s.metricsDt}>最終撮影</dt>
+          <dt class={s.metricsDt}>Last capture</dt>
           <dd class={s.metricsDd}>{formatCaptureTime(current?.last_capture_time)}</dd>
         </div>
         <div class={s.metricsCell}>
-          <dt class={s.metricsDt}>接続</dt>
+          <dt class={s.metricsDt}>Connection</dt>
           <dd class={s.metricsDd}>{connectionState.value}</dd>
         </div>
       </dl>
@@ -321,7 +349,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
           onClick={handleStart}
           disabled={busy.value || Boolean(current?.running)}
         >
-          {busy.value ? '処理中...' : '開始'}
+          {busy.value ? 'Working...' : 'Start'}
         </button>
         <button
           class={s.btnSecondary}
@@ -329,22 +357,22 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
           onClick={handleStop}
           disabled={busy.value || !current?.running}
         >
-          停止
+          Stop
         </button>
         <button class={s.btnSecondary} type="button" onClick={() => void refresh()} disabled={busy.value}>
-          更新
+          Refresh
         </button>
         <button class={s.btnRemoveCamera} type="button" onClick={() => void handleRemove()} disabled={busy.value}>
-          削除
+          Remove
         </button>
       </div>
 
       <details class={s.roiAdvanced}>
-        <summary class={s.roiAdvancedSummary}>接続・ビルド詳細</summary>
+        <summary class={s.roiAdvancedSummary}>Connection details</summary>
         <p class={s.roiStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
         <p class={s.roiStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
         <p class={s.roiStatus}>
-          ライブモニターは安定性検証まで保留中です。通常のカードはMJPEGを開きません。
+          Live monitor is kept conservative during field validation. Normal cards use the latest scheduled image.
         </p>
       </details>
     </article>

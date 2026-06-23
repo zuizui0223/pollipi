@@ -1,153 +1,159 @@
+# PolliPi Deployment Script for Windows/WSL
+# 
+# This script deploys PolliPi from a development machine to a Raspberry Pi.
+# It copies the necessary files and runs the installation scripts via SSH/SCP.
+#
+# Prerequisites:
+#   - SSH access to the Raspberry Pi (ssh-key or password auth configured)
+#   - SCP available (usually comes with OpenSSH)
+#   - Build artifact: dist/pollipi_api_server.py (run: pnpm build:server)
+#
+# Usage examples:
+#   .\deploy_pollipi_pi.ps1 -HostName pi@pollipi1.local
+#   .\deploy_pollipi_pi.ps1 -HostName pi@pollipi2.local -DeviceId pollipi2
+#   .\deploy_pollipi_pi.ps1 -HostName 192.168.1.25 -User pi -DeviceId pollipi1
+
 param(
-  [Parameter(Mandatory = $true)]
-  [string]$HostName,
-
-  [string]$User = "pi",
-
-  [ValidateSet("module3-wide", "module3-noir-wide", "ai-camera")]
-  [string]$Preset = "module3-wide",
-
-  [string]$RemoteDir = "",
-
-  [string]$DeviceId = "",
-
-  [switch]$InstallDependencies
+    [Parameter(Mandatory=$true, HelpMessage="SSH target (e.g., pi@pollipi1.local or user@192.168.1.25)")]
+    [string]$HostName,
+    
+    [Parameter(Mandatory=$false, HelpMessage="Username if not included in HostName")]
+    [string]$User,
+    
+    [Parameter(Mandatory=$false, HelpMessage="Device ID to configure (optional)")]
+    [string]$DeviceId,
+    
+    [Parameter(Mandatory=$false, HelpMessage="Path to dist directory")]
+    [string]$DistDir = "dist",
+    
+    [Parameter(Mandatory=$false, HelpMessage="Suppress SCP prompts")]
+    [switch]$Force
 )
 
+# Configuration
 $ErrorActionPreference = "Stop"
+$PSDefaultParameterValues['Out-Default:OutVariable'] = 'null'
 
-if (-not $RemoteDir) {
-  $RemoteDir = "/home/$User/pollipi_timelapse"
+Write-Host "=== PolliPi Deployment Script ===" -ForegroundColor Cyan
+Write-Host ""
+
+# Parse SSH target
+$SshTarget = $HostName
+if ($User -and -not $HostName.Contains("@")) {
+    $SshTarget = "$User@$HostName"
 }
 
-$profiles = @{
-  "module3-wide" = @{
-    DeviceName = "Site Module 3"
-    CameraLabel = "Module 3 Wide"
-    CameraModel = "imx708_wide"
-    CameraProfile = "module3_wide_daylight"
-    IsAi = "false"
-    IsNoir = "false"
-    IsWide = "true"
-  }
-  "module3-noir-wide" = @{
-    DeviceName = "Site NoIR"
-    CameraLabel = "Module 3 NoIR Wide"
-    CameraModel = "imx708_noir_wide"
-    CameraProfile = "module3_noir_wide_ir"
-    IsAi = "false"
-    IsNoir = "true"
-    IsWide = "true"
-  }
-  "ai-camera" = @{
-    DeviceName = "Site AI Camera"
-    CameraLabel = "AI Camera"
-    CameraModel = "imx500"
-    CameraProfile = "ai_camera_daylight"
-    IsAi = "true"
-    IsNoir = "false"
-    IsWide = "false"
-  }
+Write-Host "Target: $SshTarget" -ForegroundColor White
+if ($DeviceId) {
+    Write-Host "Device ID: $DeviceId" -ForegroundColor Gray
+}
+Write-Host ""
+
+# Validate build artifact exists
+$DistArtifact = Join-Path $DistDir "pollipi_api_server.py"
+if (-not (Test-Path $DistArtifact)) {
+    Write-Host "ERROR: Build artifact not found at: $DistArtifact" -ForegroundColor Red
+    Write-Host "Please build first with: pnpm build:server" -ForegroundColor Yellow
+    exit 1
 }
 
-if (-not $env:POLLIPI_DEPLOY_PASSWORD) {
-  throw "Set POLLIPI_DEPLOY_PASSWORD before running this script, or configure SSH keys and adapt the script."
+Write-Host "✓ Found build artifact: $DistArtifact" -ForegroundColor Green
+
+# Validate deployment scripts exist
+$InstallScript = "install.sh"
+$SetupScript = "setup_device.sh"
+
+if (-not (Test-Path $InstallScript)) {
+    Write-Host "ERROR: $InstallScript not found" -ForegroundColor Red
+    exit 1
 }
 
-$profile = $profiles[$Preset]
-$resolvedDeviceId = $DeviceId.Trim()
-if (-not $resolvedDeviceId) {
-  $resolvedDeviceId = ($HostName -replace "\.local$", "")
+if (-not (Test-Path $SetupScript)) {
+    Write-Host "ERROR: $SetupScript not found" -ForegroundColor Red
+    exit 1
 }
-$target = "$User@$HostName"
-$sourceFiles = @(
-  ".\pollipi_api_server.py",
-  ".\README.md",
-  ".\QUICKSTART.md",
-  ".\DEVICE_ONBOARDING.md",
-  ".\TROUBLESHOOTING.md",
-  ".\install.sh",
-  ".\setup_device.sh",
-  ".\imx500_detect_test.py",
-  ".\web"
+
+Write-Host "✓ Found deployment scripts" -ForegroundColor Green
+Write-Host ""
+
+# Copy files to remote
+Write-Host "Copying files to $SshTarget..." -ForegroundColor Cyan
+
+$Files = @(
+    @{ Local = $DistArtifact; Remote = "pollipi_api_server.py" },
+    @{ Local = $InstallScript; Remote = "install.sh" },
+    @{ Local = $SetupScript; Remote = "setup_device.sh" }
 )
 
-foreach ($path in $sourceFiles) {
-  if (-not (Test-Path -LiteralPath $path)) {
-    throw "Missing source path: $path"
-  }
+foreach ($file in $Files) {
+    $local = $file.Local
+    $remote = $file.Remote
+    
+    Write-Host "  Copying $remote..." -ForegroundColor Gray
+    
+    $scpCmd = @("scp", "-r", $local, "$($SshTarget):~/$remote")
+    
+    try {
+        & $scpCmd.Item(0) $scpCmd[1..($scpCmd.Length-1)] 2>&1 | Out-Null
+    }
+    catch {
+        Write-Host "  ERROR: Failed to copy $remote" -ForegroundColor Red
+        Write-Host "  Make sure SSH key is configured or password auth is available" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  ERROR: SCP failed with exit code $LASTEXITCODE" -ForegroundColor Red
+        exit 1
+    }
 }
 
-$askpass = Join-Path $env:TEMP ("pollipi_askpass_" + [guid]::NewGuid().ToString("N") + ".cmd")
-$serviceFile = Join-Path $env:TEMP ("pollipi_service_" + [guid]::NewGuid().ToString("N") + ".service")
-$profileFile = Join-Path $env:TEMP ("pollipi_camera_profile_" + [guid]::NewGuid().ToString("N") + ".conf")
-$oldAskpass = $env:SSH_ASKPASS
-$oldAskpassRequire = $env:SSH_ASKPASS_REQUIRE
-$oldDisplay = $env:DISPLAY
+Write-Host "✓ Files copied successfully" -ForegroundColor Green
+Write-Host ""
 
+# Run install script
+Write-Host "Running install.sh on the Pi..." -ForegroundColor Cyan
+
+$sshCmd = @("ssh", $SshTarget, "bash ~/install.sh")
 try {
-  Set-Content -LiteralPath $askpass -Value "@echo off`r`necho %POLLIPI_DEPLOY_PASSWORD%" -Encoding ASCII
-  Set-Content -LiteralPath $serviceFile -Encoding ASCII -Value @"
-[Unit]
-Description=PolliPi Field Observer API
-After=network.target
-
-[Service]
-User=$User
-WorkingDirectory=$RemoteDir
-ExecStart=/usr/bin/python3 -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-"@
-  Set-Content -LiteralPath $profileFile -Encoding ASCII -Value @"
-[Service]
-Environment=POLLIPI_DEVICE_ID=$resolvedDeviceId
-Environment="POLLIPI_DEVICE_NAME=$($profile.DeviceName)"
-Environment="POLLIPI_CAMERA_LABEL=$($profile.CameraLabel)"
-Environment=POLLIPI_CAMERA_MODEL=$($profile.CameraModel)
-Environment=POLLIPI_CAMERA_PROFILE=$($profile.CameraProfile)
-Environment=POLLIPI_IS_AI_CAMERA=$($profile.IsAi)
-Environment=POLLIPI_IS_NOIR=$($profile.IsNoir)
-Environment=POLLIPI_IS_WIDE=$($profile.IsWide)
-"@
-  $env:SSH_ASKPASS = $askpass
-  $env:SSH_ASKPASS_REQUIRE = "force"
-  $env:DISPLAY = "pollipi"
-
-  & ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no $target "mkdir -p '$RemoteDir'"
-  if ($LASTEXITCODE -ne 0) { throw "remote directory creation failed with exit code $LASTEXITCODE" }
-
-  & scp -r -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new @sourceFiles "${target}:${RemoteDir}/"
-  if ($LASTEXITCODE -ne 0) { throw "scp failed with exit code $LASTEXITCODE" }
-  & scp -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new $serviceFile "${target}:${RemoteDir}/pollipi.service"
-  if ($LASTEXITCODE -ne 0) { throw "service scp failed with exit code $LASTEXITCODE" }
-  & scp -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new $profileFile "${target}:${RemoteDir}/camera-profile.conf"
-  if ($LASTEXITCODE -ne 0) { throw "profile scp failed with exit code $LASTEXITCODE" }
-
-  $escapedPassword = $env:POLLIPI_DEPLOY_PASSWORD -replace "'", "'\''"
-  $installCommand = ""
-  if ($InstallDependencies) {
-    $installCommand = "printf '%s\n' '$escapedPassword' | sudo -S -p '' apt-get update && printf '%s\n' '$escapedPassword' | sudo -S -p '' apt-get install -y python3-fastapi python3-uvicorn &&"
-  }
-  $remote = "$installCommand cd '$RemoteDir' && python3 -m py_compile pollipi_api_server.py imx500_detect_test.py && printf '%s\n' '$escapedPassword' | sudo -S -p '' mkdir -p /etc/systemd/system/pollipi.service.d && printf '%s\n' '$escapedPassword' | sudo -S -p '' cp '$RemoteDir/pollipi.service' /etc/systemd/system/pollipi.service && printf '%s\n' '$escapedPassword' | sudo -S -p '' cp '$RemoteDir/camera-profile.conf' /etc/systemd/system/pollipi.service.d/camera-profile.conf && printf '%s\n' '$escapedPassword' | sudo -S -p '' systemctl daemon-reload && printf '%s\n' '$escapedPassword' | sudo -S -p '' systemctl enable --now pollipi.service && printf '%s\n' '$escapedPassword' | sudo -S -p '' systemctl restart pollipi.service && sleep 2 && curl -sS http://127.0.0.1:8000/device"
-
-  & ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no $target $remote
-  if ($LASTEXITCODE -ne 0) { throw "remote setup failed with exit code $LASTEXITCODE" }
+    & $sshCmd.Item(0) $sshCmd[1..($sshCmd.Length-1)]
 }
-finally {
-  if (Test-Path -LiteralPath $askpass) {
-    Remove-Item -LiteralPath $askpass -Force
-  }
-  if (Test-Path -LiteralPath $serviceFile) {
-    Remove-Item -LiteralPath $serviceFile -Force
-  }
-  if (Test-Path -LiteralPath $profileFile) {
-    Remove-Item -LiteralPath $profileFile -Force
-  }
-  $env:SSH_ASKPASS = $oldAskpass
-  $env:SSH_ASKPASS_REQUIRE = $oldAskpassRequire
-  $env:DISPLAY = $oldDisplay
+catch {
+    Write-Host "ERROR: SSH command failed" -ForegroundColor Red
+    exit 1
 }
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: install.sh failed" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "✓ Installation script completed" -ForegroundColor Green
+Write-Host ""
+
+# Run setup script if device ID provided
+if ($DeviceId) {
+    Write-Host "Running setup_device.sh with device ID: $DeviceId" -ForegroundColor Cyan
+    
+    $setupCmd = @("ssh", $SshTarget, "bash ~/setup_device.sh $DeviceId")
+    try {
+        & $setupCmd.Item(0) $setupCmd[1..($setupCmd.Length-1)]
+    }
+    catch {
+        Write-Host "WARNING: setup_device.sh may need manual interaction" -ForegroundColor Yellow
+        Write-Host "SSH to the Pi and run: bash ~/setup_device.sh $DeviceId" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "Next step: Configure the device profile" -ForegroundColor Yellow
+    Write-Host "  ssh $SshTarget 'bash ~/setup_device.sh [device_id]'" -ForegroundColor Gray
+}
+
+Write-Host ""
+Write-Host "=== Deployment Complete ===" -ForegroundColor Green
+Write-Host ""
+Write-Host "Verify installation:" -ForegroundColor Gray
+Write-Host "  ssh $SshTarget 'curl http://localhost:8000/device'" -ForegroundColor Gray
+Write-Host "  ssh $SshTarget 'curl http://localhost:8000/status'" -ForegroundColor Gray
+Write-Host ""
+Write-Host "View service logs:" -ForegroundColor Gray
+Write-Host "  ssh $SshTarget 'journalctl --user -u pollipi.service -f'" -ForegroundColor Gray

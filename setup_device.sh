@@ -1,102 +1,173 @@
 #!/bin/bash
-# PolliPi device setup script
-# Run this on the Raspberry Pi after install.sh.
+set -eu
+
+# PolliPi Device Configuration Script
+# Sets up camera profile, configuration, and systemd service for a Raspberry Pi.
+#
 # Usage: bash setup_device.sh [device_id]
-#   device_id: optional, defaults to hostname (e.g. pollipi1)
-set -e
+#
+# If device_id is not provided, it will be derived from the hostname.
+# The script will prompt for camera type selection.
 
-DEVICE_ID="${1:-$(hostname)}"
-INSTALL_DIR="${POLLIPI_INSTALL_DIR:-${HOME}/pollipi_timelapse}"
-SERVICE_D="/etc/systemd/system/pollipi.service.d"
-USER_NAME="$(whoami)"
+DEVICE_ID="${1:-}"
+POLLIPI_HOME="${HOME}/pollipi_timelapse"
+CONFIG_DIR="${HOME}/.config/pollipi"
+SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 
-echo "=== PolliPi device setup ==="
-echo "Device ID will be: ${DEVICE_ID}"
+# Ensure required directories exist
+mkdir -p "$CONFIG_DIR"
+mkdir -p "$SYSTEMD_USER_DIR"
+
+echo "=== PolliPi Device Configuration ==="
 echo ""
 
-echo "Select camera type:"
-echo "  1) Camera Module 3 Wide (imx708_wide)      — standard daylight"
-echo "  2) Camera Module 3 NoIR Wide (imx708_noir_wide) — IR-capable"
-echo "  3) Raspberry Pi AI Camera (imx500)"
-read -rp "Choice [1-3]: " choice
+# Determine device ID
+if [ -z "$DEVICE_ID" ]; then
+    DEVICE_ID=$(hostname)
+    echo "Device ID not provided, using hostname: $DEVICE_ID"
+else
+    echo "Device ID: $DEVICE_ID"
+fi
 
-case "$choice" in
-  1)
-    CAMERA_LABEL="Module 3 Wide"
-    CAMERA_MODEL="imx708_wide"
-    CAMERA_PROFILE="module3_wide_daylight"
-    IS_AI="false"; IS_NOIR="false"; IS_WIDE="true"
-    ;;
-  2)
-    CAMERA_LABEL="Module 3 NoIR Wide"
-    CAMERA_MODEL="imx708_noir_wide"
-    CAMERA_PROFILE="module3_noir_wide_ir"
-    IS_AI="false"; IS_NOIR="true"; IS_WIDE="true"
-    ;;
-  3)
-    CAMERA_LABEL="AI Camera"
-    CAMERA_MODEL="imx500"
-    CAMERA_PROFILE="ai_camera_daylight"
-    IS_AI="true"; IS_NOIR="false"; IS_WIDE="false"
-    ;;
-  *)
-    echo "Invalid choice. Exiting."
-    exit 1
-    ;;
-esac
+# Select camera profile
+echo ""
+echo "Select your camera module:"
+echo "  1. Camera Module 3 Wide"
+echo "  2. Camera Module 3 NoIR Wide"
+echo "  3. Raspberry Pi AI Camera"
+echo ""
 
-read -rp "Device display name shown in PWA [${DEVICE_ID}]: " DEVICE_NAME
-DEVICE_NAME="${DEVICE_NAME:-${DEVICE_ID}}"
+CAMERA_PROFILE=""
+while [ -z "$CAMERA_PROFILE" ]; do
+    read -p "Enter camera choice (1-3): " CHOICE
+    case "$CHOICE" in
+        1)
+            CAMERA_PROFILE="module3_wide"
+            echo "Selected: Camera Module 3 Wide"
+            ;;
+        2)
+            CAMERA_PROFILE="module3_nir_wide"
+            echo "Selected: Camera Module 3 NoIR Wide"
+            ;;
+        3)
+            CAMERA_PROFILE="ai_camera"
+            echo "Selected: Raspberry Pi AI Camera"
+            ;;
+        *)
+            echo "Invalid choice. Please enter 1, 2, or 3."
+            ;;
+    esac
+done
+
+# Optionally set a display name
+echo ""
+read -p "Enter a display name for this device (or press Enter to use device ID): " DISPLAY_NAME
+DISPLAY_NAME="${DISPLAY_NAME:-$DEVICE_ID}"
 
 echo ""
-echo "--- Writing systemd service ---"
-sudo tee /etc/systemd/system/pollipi.service >/dev/null <<EOF
+echo "Creating configuration..."
+
+# Generate configuration file
+CONFIG_FILE="$CONFIG_DIR/config.json"
+
+cat > "$CONFIG_FILE" << EOF
+{
+  "device_id": "$DEVICE_ID",
+  "display_name": "$DISPLAY_NAME",
+  "camera_profile": "$CAMERA_PROFILE",
+  "api_host": "0.0.0.0",
+  "api_port": 8000,
+  "image_directory": "$POLLIPI_HOME/images"
+}
+EOF
+
+echo "✓ Configuration file created: $CONFIG_FILE"
+
+# Create systemd service file
+SERVICE_FILE="$SYSTEMD_USER_DIR/pollipi.service"
+SERVICE_TEMPLATE="/dev/stdin"
+
+# Read the template from the repo if it exists, otherwise use inline template
+if [ -f "$POLLIPI_HOME/../tools/pollipi.service.template" ]; then
+    SERVICE_TEMPLATE="$POLLIPI_HOME/../tools/pollipi.service.template"
+elif [ -f "$POLLIPI_HOME/pollipi.service.template" ]; then
+    SERVICE_TEMPLATE="$POLLIPI_HOME/pollipi.service.template"
+fi
+
+# If we have a template file, use it; otherwise create inline
+if [ "$SERVICE_TEMPLATE" != "/dev/stdin" ] && [ -f "$SERVICE_TEMPLATE" ]; then
+    sed "s|POLLIPI_HOME|$POLLIPI_HOME|g; s|CONFIG_FILE|$CONFIG_FILE|g; s|DEVICE_ID|$DEVICE_ID|g" "$SERVICE_TEMPLATE" > "$SERVICE_FILE"
+else
+    # Create inline service file
+    cat > "$SERVICE_FILE" << 'SERVICE_EOF'
 [Unit]
-Description=PolliPi Field Observer API
-After=network-online.target
-Wants=network-online.target
+Description=PolliPi API Server
+After=network.target
 
 [Service]
-User=${USER_NAME}
-WorkingDirectory=${INSTALL_DIR}
-ExecStart=${INSTALL_DIR}/.venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
-Restart=always
-RestartSec=3
+Type=simple
+ExecStart=/usr/bin/python3 %h/pollipi_timelapse/pollipi_api_server.py
+WorkingDirectory=%h/pollipi_timelapse
+Environment="PYTHONUNBUFFERED=1"
+Restart=on-failure
+RestartSec=10
+
+# Runtime directories
+RuntimeDirectory=pollipi
+StateDirectory=pollipi
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits (adjust as needed)
+CPUQuota=75%
+MemoryLimit=512M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pollipi
 
 [Install]
-WantedBy=multi-user.target
-EOF
+WantedBy=default.target
+SERVICE_EOF
+fi
 
-echo "--- Writing camera profile ---"
-sudo mkdir -p "${SERVICE_D}"
-sudo tee "${SERVICE_D}/camera-profile.conf" >/dev/null <<EOF
-[Service]
-Environment=POLLIPI_DEVICE_ID=${DEVICE_ID}
-Environment="POLLIPI_DEVICE_NAME=${DEVICE_NAME}"
-Environment="POLLIPI_CAMERA_LABEL=${CAMERA_LABEL}"
-Environment=POLLIPI_CAMERA_MODEL=${CAMERA_MODEL}
-Environment=POLLIPI_CAMERA_PROFILE=${CAMERA_PROFILE}
-Environment=POLLIPI_IS_AI_CAMERA=${IS_AI}
-Environment=POLLIPI_IS_NOIR=${IS_NOIR}
-Environment=POLLIPI_IS_WIDE=${IS_WIDE}
-EOF
+echo "✓ Systemd service file created: $SERVICE_FILE"
 
-echo "--- Enabling and starting pollipi service ---"
-sudo systemctl daemon-reload
-sudo systemctl enable --now pollipi.service
-sudo systemctl restart pollipi.service
+# Reload systemd daemon
+echo ""
+echo "Enabling systemd service..."
+systemctl --user daemon-reload
+
+# Enable the service
+systemctl --user enable pollipi.service
+
+# Start the service
+systemctl --user start pollipi.service
+
+echo "✓ Service enabled and started"
+
+# Wait a moment for the service to start
 sleep 2
 
+# Check service status
 echo ""
-echo "=== Setup complete ==="
-echo "Device ID:   ${DEVICE_ID}"
-echo "Device name: ${DEVICE_NAME}"
-echo "Camera:      ${CAMERA_LABEL} (${CAMERA_MODEL})"
-echo "Profile:     ${CAMERA_PROFILE}"
+echo "Service status:"
+systemctl --user status pollipi.service || true
+
 echo ""
-echo "Verify:"
+echo "=== Configuration Complete ==="
+echo ""
+echo "Device ID: $DEVICE_ID"
+echo "Camera Profile: $CAMERA_PROFILE"
+echo "Config file: $CONFIG_FILE"
+echo "Service file: $SERVICE_FILE"
+echo ""
+echo "To view service logs:"
+echo "  journalctl --user -u pollipi.service -f"
+echo ""
+echo "To test the API:"
 echo "  curl http://localhost:8000/device"
 echo "  curl http://localhost:8000/status"
-echo ""
-echo "PWA (open from iPad/browser on the same network):"
-echo "  http://$(hostname).local:8000/app/"

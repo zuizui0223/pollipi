@@ -1,0 +1,41 @@
+[Unit]
+Description=PolliPi API Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%u
+WorkingDirectory=%h/pollipi_timelapse
+ExecStart=/usr/bin/python3 %h/pollipi_timelapse/pollipi_api_server.py
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=%h/pollipi_timelapse/packages/server/src"
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Security and isolation
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=%h/pollipi_timelapse
+
+# Resource limits
+CPUQuota=75%
+MemoryLimit=512M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pollipi
+
+# Timeout and grace period
+TimeoutStartSec=30
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target

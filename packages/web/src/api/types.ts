@@ -144,6 +144,30 @@ export interface Camera {
   build_info?: BuildInfo;
   camera_role?: string | null;
   comparison_session_id?: string | null;
+  /** Region-of-interest bounding box persisted across sessions. */
+  roi?: unknown | null;
+  editing_roi?: unknown | null;
+  angle_confirmed?: boolean;
+  roi_stale?: boolean;
+  roi_pending?: boolean;
+  roi_tracking?: boolean;
+  roi_search_margin?: number;
+  roi_tracking_min_score?: number;
+  /** Cached image count from the last /images fetch. */
+  imageCount?: number;
+}
+
+/** Training status returned by the training endpoint. */
+export interface TrainingStatus {
+  running: boolean;
+  positive_count: number;
+  negative_count: number;
+  auto_labeled_count: number;
+  reviewed_count: number;
+  model_available: boolean;
+  trained_at: string | null;
+  validation_accuracy: number | null;
+  message: string;
 }
 
 /** Minimal active payload for POST /start. */
