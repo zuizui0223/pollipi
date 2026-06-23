@@ -39,7 +39,9 @@ MODEL_PATH = MODEL_DIR / "insect_presence_svm.xml"
 MODEL_INFO_PATH = MODEL_DIR / "insect_presence_model.json"
 AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
 
-WEB_DIR = Path(__file__).parent.parent.parent.parent.parent / "web"
+WEB_DIR = Path(
+    os.getenv("POLLIPI_WEB_DIR", str(Path.home() / "pollipi_timelapse" / "web"))
+).expanduser()
 PREVIEW_PATH = Path(
     os.getenv("POLLIPI_PREVIEW_PATH", str(Path(tempfile.gettempdir()) / "pollipi_preview.jpg"))
 ).expanduser()
