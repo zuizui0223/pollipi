@@ -1,10 +1,8 @@
-"""Timelapse controller for the active scheduled-mesh runtime."""
+"""Controller for PolliPi's scheduled-image mesh-shadow runtime."""
 from __future__ import annotations
 
 import json
 import threading
-import time
-from datetime import datetime
 from pathlib import Path
 from typing import Generator, Optional
 
@@ -18,17 +16,16 @@ from visit_monitor_server.config import (
     IS_AI_CAMERA,
     IS_NOIR,
     IS_WIDE,
-    USE_FAKE_CAMERA,
 )
 
 STOP_JOIN_TIMEOUT_SEC = 8.0
 
 
 class TimelapseController:
-    """Own camera lifecycle and expose lightweight status/preview state.
+    """Own scheduled capture lifecycle and minimal status state.
 
-    Legacy ROI, ML, event-review, and training workflows are intentionally not
-    part of this controller's active execution path.
+    The active runtime has no ROI, tracking, ML, event queue, or per-motion image
+    workflow. Preview and MJPEG expose only the most recently scheduled image.
     """
 
     def __init__(self, image_dir: Path) -> None:
@@ -38,14 +35,8 @@ class TimelapseController:
         self._stop_event: Optional[threading.Event] = None
         self._thread: Optional[threading.Thread] = None
         self._camera = None
-        # Monitor / preview producer fields (single producer)
         self._monitor_stop_event: Optional[threading.Event] = None
-        self._monitor_thread: Optional[threading.Thread] = None
-        self._monitor_lock = threading.Lock()
-        self._latest_frame_bytes: Optional[bytes] = None
         self._preview_subscriber_count = 0
-        self._preview_producer_state = "idle"
-        self._monitor_idle_timeout = 6.0  # seconds: idle timeout before stopping producer
 
         self.running = False
         self.lifecycle_state = "stopped"
@@ -60,21 +51,7 @@ class TimelapseController:
         self.autonomous_mode = False
         self.adaptive_timelapse_mode = False
         self.mesh_shadow_mode = True
-        self.interval_reason = "Scheduled interval."
-
-        self.motion_score: Optional[float] = None
-        self.changed_area_ratio: Optional[float] = None
-        self.mean_brightness: Optional[float] = None
-        self.brightness_delta: Optional[float] = None
-        self.wind_like_motion = False
-        self.num_blobs = 0
-        self.largest_blob_area = 0
-        self.largest_blob_ratio: Optional[float] = None
-        self.small_blob_count = 0
-        self.motion_type = "mesh_three_state"
-        self.insect_candidate = False
-        self.detection_count = 0
-        self.event_count = 0
+        self.interval_reason = "Scheduled interval; shadow analysis only."
 
         self.site_id: Optional[str] = None
         self.flower_id: Optional[str] = None
@@ -94,42 +71,7 @@ class TimelapseController:
     def _build_status(self):
         from visit_monitor_server.api.schemas.capture import StatusResponse
 
-        # Fields retained below are compatibility values for the current schema.
-        # Active clients use lifecycle, scheduled-image, interval, and mesh fields.
         return StatusResponse(
-            running=self.running,
-            lifecycle_state=self.lifecycle_state,
-            last_error=self.last_error,
-            preview_subscriber_count=self._preview_subscriber_count,
-            preview_latest_frame_age_sec=None,
-            preview_producer_state=self._preview_producer_state,
-            interval_sec=self.interval_sec,
-            next_interval_sec=self.next_interval_sec,
-            capture_count=self.capture_count,
-            last_capture_time=self.last_capture_time,
-            last_image=self.last_image,
-            message=self.message,
-            auto_mode=False,
-            motion_trigger_mode=False,
-            hybrid_mode=False,
-            ml_assist_mode=False,
-            autonomous_mode=self.autonomous_mode,
-            adaptive_timelapse_mode=self.adaptive_timelapse_mode,
-            mesh_shadow_mode=self.mesh_shadow_mode,
-            motion_score=self.motion_score,
-            changed_area_ratio=self.changed_area_ratio,
-            mean_brightness=self.mean_brightness,
-            brightness_delta=self.brightness_delta,
-            wind_like_motion=self.wind_like_motion,
-            num_blobs=self.num_blobs,
-            largest_blob_area=self.largest_blob_area,
-            largest_blob_ratio=self.largest_blob_ratio,
-            small_blob_count=self.small_blob_count,
-            motion_type=self.motion_type,
-            insect_candidate=self.insect_candidate,
-            detection_count=self.detection_count,
-            event_count=self.event_count,
-            interval_reason=self.interval_reason,
             device_id=DEVICE_ID,
             device_name=DEVICE_NAME,
             camera_label=CAMERA_LABEL,
@@ -138,6 +80,22 @@ class TimelapseController:
             is_ai_camera=IS_AI_CAMERA,
             is_noir=IS_NOIR,
             is_wide=IS_WIDE,
+            running=self.running,
+            lifecycle_state=self.lifecycle_state,
+            last_error=self.last_error,
+            preview_subscriber_count=self._preview_subscriber_count,
+            preview_latest_frame_age_sec=None,
+            preview_producer_state="scheduled-image" if self._preview_subscriber_count else "idle",
+            interval_sec=self.interval_sec,
+            next_interval_sec=self.next_interval_sec,
+            capture_count=self.capture_count,
+            last_capture_time=self.last_capture_time,
+            last_image=self.last_image,
+            message=self.message,
+            autonomous_mode=self.autonomous_mode,
+            adaptive_timelapse_mode=self.adaptive_timelapse_mode,
+            mesh_shadow_mode=self.mesh_shadow_mode,
+            interval_reason=self.interval_reason,
             site_id=self.site_id,
             flower_id=self.flower_id,
             plant_species=self.plant_species,
@@ -146,49 +104,11 @@ class TimelapseController:
             comparison_session_id=self.comparison_session_id,
             camera_role=self.camera_role,
             method_mode=self.method_mode,
-            roi_used=False,
-            roi_x=None,
-            roi_y=None,
-            roi_w=None,
-            roi_h=None,
-            roi_semantics="whole_frame_overlapping_mesh",
-            control_roi_used=False,
-            control_roi_x=None,
-            control_roi_y=None,
-            control_roi_w=None,
-            control_roi_h=None,
-            floral_zone_score=None,
-            background_control_score=None,
-            zone_minus_control_score=None,
-            grid_rows=0,
-            grid_cols=0,
-            changed_cell_count=0,
-            changed_cell_ratio=self.changed_area_ratio,
-            local_compactness=None,
-            whole_frame_change_score=self.mesh_global_synchrony,
-            previous_frame_elapsed_sec=None,
-            robust_background_score=None,
-            candidate_reasons=self.mesh_reason,
             mesh_decision=self.mesh_decision,
             mesh_reason=self.mesh_reason,
             mesh_active_cell_proportion=self.mesh_active_cell_proportion,
             mesh_offset_agreement=self.mesh_offset_agreement,
             mesh_global_synchrony=self.mesh_global_synchrony,
-            roi_tracking=False,
-            roi_tracking_success=False,
-            roi_tracking_score=None,
-            roi_search_margin=0,
-            roi_tracking_min_score=0.0,
-            initial_roi_x=None,
-            initial_roi_y=None,
-            initial_roi_w=None,
-            initial_roi_h=None,
-            tracked_roi_x=None,
-            tracked_roi_y=None,
-            tracked_roi_w=None,
-            tracked_roi_h=None,
-            roi_shift_x=None,
-            roi_shift_y=None,
         )
 
     def status(self):
@@ -218,13 +138,13 @@ class TimelapseController:
             self.capture_count = 0
             self.last_capture_time = None
             self.last_image = None
-            self.message = "Starting scheduled timelapse."
+            self.message = "Starting scheduled timelapse with mesh shadow logging."
             self.autonomous_mode = request.autonomous_mode
+            # Live adaptive timing is intentionally disabled until real-Pi shadow
+            # validation is complete, regardless of a historical client setting.
             self.adaptive_timelapse_mode = False
             self.mesh_shadow_mode = True
             self.interval_reason = "Shadow mesh analysis; scheduled interval unchanged."
-            self.motion_score = None
-            self.changed_area_ratio = None
             self.mesh_decision = None
             self.mesh_reason = None
             self.mesh_active_cell_proportion = None
@@ -251,7 +171,6 @@ class TimelapseController:
         return self.status()
 
     def stop(self, preserve_autonomous: bool = False):
-        # ensure monitor/producers are stopped before stopping capture
         self.stop_monitor()
         with self._lock:
             stop_event = self._stop_event
@@ -286,6 +205,7 @@ class TimelapseController:
 
     def _run_loop(self, stop_event: threading.Event, request) -> None:
         from visit_monitor_server.services.capture_loop import run_capture_loop
+
         try:
             run_capture_loop(
                 stop_event=stop_event,
@@ -329,27 +249,23 @@ class TimelapseController:
                 self.next_interval_sec = state["next_interval_sec"]
             if "message" in state:
                 self.message = state["message"]
-            if "motion_score" in state:
-                self.motion_score = state["motion_score"]
-            if "insect_candidate" in state:
-                self.insect_candidate = bool(state["insect_candidate"])
             if "interval_reason" in state:
                 self.interval_reason = state["interval_reason"]
-            metrics = state.get("metrics")
-            if metrics is not None:
-                self.changed_area_ratio = metrics.get("changed_area_ratio")
-                self.mean_brightness = metrics.get("mean_brightness")
-                self.brightness_delta = metrics.get("brightness_delta")
-                self.wind_like_motion = bool(metrics.get("wind_like_motion"))
-                self.motion_type = str(metrics.get("motion_type") or "mesh_three_state")
-                self.mesh_decision = metrics.get("mesh_decision")
-                self.mesh_reason = metrics.get("mesh_reason")
-                self.mesh_active_cell_proportion = metrics.get("mesh_active_cell_proportion")
-                self.mesh_offset_agreement = metrics.get("mesh_offset_agreement")
-                self.mesh_global_synchrony = metrics.get("mesh_global_synchrony")
+
+            metrics = state.get("metrics") or {}
+            self.mesh_decision = metrics.get("mesh_decision", self.mesh_decision)
+            self.mesh_reason = metrics.get("mesh_reason", self.mesh_reason)
+            self.mesh_active_cell_proportion = metrics.get(
+                "mesh_active_cell_proportion", self.mesh_active_cell_proportion
+            )
+            self.mesh_offset_agreement = metrics.get(
+                "mesh_offset_agreement", self.mesh_offset_agreement
+            )
+            self.mesh_global_synchrony = metrics.get(
+                "mesh_global_synchrony", self.mesh_global_synchrony
+            )
+
             self.capture_count += state.get("capture_count_delta", 0)
-            self.detection_count += state.get("detection_count_delta", 0)
-            self.event_count += state.get("event_count_delta", 0)
             if state.get("last_capture_time") is not None:
                 self.last_capture_time = state["last_capture_time"]
             if state.get("last_image") is not None:
@@ -370,170 +286,54 @@ class TimelapseController:
                 self.last_capture_time = None
 
     def preview_frame(self) -> bytes:
-        """Return a preview JPEG bytes.
-
-        Prefer the producer cache if available (non-blocking). If no cached latest
-        frame exists, fall back to the scheduled latest image on disk. We avoid
-        opening a camera instance here to prevent lifecycle conflicts with
-        /mjpeg and the capture loop.
-        """
-        # Prefer the in-memory producer cache
-        with self._monitor_lock:
-            if self._latest_frame_bytes is not None:
-                return self._latest_frame_bytes
-
-        # Fall back to the last scheduled image on disk
         image = self.latest_image()
-        if image is not None:
-            return image.read_bytes()
-
-        # No scheduled image available; raise a consistent error so the router
-        # can turn it into a 503. Don't attempt to open the camera here which can
-        # cause acquisition conflicts with the monitor producer.
-        raise RuntimeError("No scheduled image is available for preview.")
+        if image is None:
+            raise RuntimeError("No scheduled image is available for preview.")
+        return image.read_bytes()
 
     def stop_monitor(self) -> None:
         with self._lock:
-            event = self._monitor_stop_event
-            if event is not None:
-                event.set()
-        # Also stop the dedicated monitor producer if any
-        self._stop_monitor_producer()
-
-    def _start_monitor_producer(self) -> None:
-        with self._monitor_lock:
-            if self._monitor_thread is not None and self._monitor_thread.is_alive():
-                return
-            stop_event = threading.Event()
-            thread = threading.Thread(target=self._monitor_loop, args=(stop_event,), name="pollipi-monitor", daemon=True)
-            self._monitor_thread = thread
-            self._monitor_stop_event = stop_event
-            self._preview_producer_state = "starting"
-            thread.start()
-            self._preview_producer_state = "running"
-
-    def _stop_monitor_producer(self) -> None:
-        # Signal the monitor thread to stop and join it.
-        with self._monitor_lock:
-            ev = self._monitor_stop_event
-            thr = self._monitor_thread
-            # Null out first so concurrent starters see it
-            self._monitor_stop_event = None
-            self._monitor_thread = None
-            self._preview_producer_state = "stopping"
-        if ev is not None:
-            ev.set()
-        if thr is not None:
-            thr.join(timeout=2.0)
-        with self._monitor_lock:
-            self._preview_producer_state = "idle"
-            self._latest_frame_bytes = None
-
-    def _monitor_loop(self, stop_event: threading.Event) -> None:
-        """Producer loop that keeps _latest_frame_bytes populated.
-
-        It prefers reading the scheduled latest image from disk (cheap) and only
-        reads from the camera when no scheduled image is available. The loop
-        respects _camera_lock when interacting with hardware.
-        """
-        last_activity = time.monotonic()
-        try:
-            while not stop_event.is_set():
-                # Try scheduled image first
-                image_path = self.latest_image()
-                if image_path is not None:
-                    try:
-                        frame = image_path.read_bytes()
-                    except Exception:
-                        frame = None
-                else:
-                    frame = None
-
-                if frame is None:
-                    # No scheduled image on disk; attempt to capture one under camera lock
-                    # Only do this if fake camera is not configured, otherwise skip.
-                    if USE_FAKE_CAMERA:
-                        # Nothing to do in fake-camera mode if no scheduled image
-                        time.sleep(0.2)
-                        continue
-                    try:
-                        with self._camera_lock:
-                            # Prefer to reuse any controller-held camera (if set) else skip
-                            if self._camera is not None:
-                                # The real camera capture helper is intentionally
-                                # thin here; we avoid configuring/starting cameras in
-                                # the producer to reduce lifecycle complexity.
-                                # If the controller exposes a capture helper, call it.
-                                try:
-                                    frame = self._camera.capture_preview_bytes()  # type: ignore[attr-defined]
-                                except Exception:
-                                    frame = None
-                            else:
-                                # No camera object available; skip capture attempt
-                                frame = None
-                    except Exception:
-                        frame = None
-
-                if frame is not None:
-                    with self._monitor_lock:
-                        self._latest_frame_bytes = frame
-                    last_activity = time.monotonic()
-
-                # If there are no subscribers, allow idle timeout to stop the producer
-                with self._monitor_lock:
-                    subs = self._preview_subscriber_count
-                if subs == 0 and (time.monotonic() - last_activity) > self._monitor_idle_timeout:
-                    break
-
-                # Sleep a short time; producer doesn't need to be high-framerate here
-                if stop_event.wait(0.4):
-                    break
-        finally:
-            with self._monitor_lock:
-                # clear state on exit
-                self._monitor_thread = None
+            if self._monitor_stop_event is not None:
+                self._monitor_stop_event.set()
                 self._monitor_stop_event = None
-                self._preview_producer_state = "idle"
 
     def monitor_frames(self, ai_detection: bool = False) -> Generator[bytes, None, None]:
-        """Explicit one-viewer stream from the producer's latest frame cache.
+        """Serve a single explicit stream of scheduled images.
 
-        The producer is single-instance: multiple consumers share the same cached
-        latest frame. Consumers increment preview_subscriber_count and the first
-        subscriber starts the producer.
+        This deliberately never opens a second camera or runs AI inference. A viewer
+        receives the most recent saved image when it changes and a heartbeat frame
+        thereafter, while scheduled capture remains the sole camera owner.
         """
         if ai_detection:
             raise RuntimeError("AI monitor is removed from the active workflow.")
-        # Reset any existing monitor stop event for this consumer
+
         self.stop_monitor()
         stop_event = threading.Event()
         with self._lock:
             self._monitor_stop_event = stop_event
             self._preview_subscriber_count += 1
-            # ensure a single producer is running
-            self._start_monitor_producer()
+
+        last_path: Optional[str] = None
         try:
             while not stop_event.is_set():
-                with self._monitor_lock:
-                    frame = self._latest_frame_bytes
-                if frame is not None:
-                    yield (
-                        b"--frame\r\n"
-                        b"Content-Type: image/jpeg\r\n"
-                        + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
-                        + frame
-                        + b"\r\n"
-                    )
-                # Wait briefly for the next update or stop
-                if stop_event.wait(0.4):
+                image = self.latest_image()
+                if image is not None:
+                    path = str(image)
+                    if path != last_path:
+                        frame = image.read_bytes()
+                        last_path = path
+                        yield (
+                            b"--frame\r\n"
+                            b"Content-Type: image/jpeg\r\n"
+                            + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
+                            + frame
+                            + b"\r\n"
+                        )
+                if stop_event.wait(0.8):
                     break
         finally:
             with self._lock:
-                # decrement subscribers and possibly stop producer when no subscribers
                 self._preview_subscriber_count = max(0, self._preview_subscriber_count - 1)
-                if self._preview_subscriber_count == 0:
-                    # either stop immediately or let producer idle-timeout handle it
-                    self._stop_monitor_producer()
                 if self._monitor_stop_event is stop_event:
                     self._monitor_stop_event = None
 
@@ -564,5 +364,5 @@ class TimelapseController:
                 self.message = self.last_error
 
     def migrate_legacy_candidates(self) -> None:
-        """Compatibility hook retained for app startup; active runtime has no events."""
+        """Compatibility startup hook; active runtime has no candidate queue."""
         return None
