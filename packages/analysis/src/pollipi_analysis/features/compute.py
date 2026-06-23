@@ -61,14 +61,21 @@ def compute_features(
     else:
         shift_mag = 0.0
 
-    # 2. optional global brightness normalization
+    # Compute an un-normalised residual first to capture broad global changes
+    # (e.g. an exposure/illumination jump) that normalization would erase.
+    raw_residual = residual_image(cur, base)
+    raw_changed = raw_residual >= cfg.pixel_difference
+    global_synchrony = float(raw_changed.mean())
+
+    # 2. optional global brightness normalization (keeps local contrasts but
+    # avoids treating gentle illumination drift as local motion). This runs after
+    # computing the raw residual used for global-change detection.
     if cfg.normalize_brightness:
         cur = normalize_brightness(cur, base)
 
-    # 3. residual motion image
+    # 3. residual motion image (after optional normalization)
     residual = residual_image(cur, base)
     changed = residual >= cfg.pixel_difference
-    global_synchrony = float(changed.mean())
 
     # 4. overlapping mesh aggregation (rectangular baseline + half-cell offset)
     half = cfg.cell_size // 2
