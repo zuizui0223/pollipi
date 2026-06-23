@@ -8,6 +8,7 @@ import {
   deviceUrl,
   fetchDevice,
   fetchStatus,
+  getMjpegStreamUrl,
   postStart,
   postStop,
 } from '../api/client';
@@ -261,6 +262,11 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     onUpdated();
   }
 
+  function handleMonitor() {
+    const streamUrl = getMjpegStreamUrl(camera);
+    window.open(streamUrl, 'mjpeg-monitor', 'width=800,height=600');
+  }
+
   const current = status.value;
   const build = camera.build_info;
   const pillClass = connectionState.value === 'offline'
@@ -353,16 +359,19 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <button class={s.btnSecondary} type="button" onClick={() => void refresh()} disabled={busy.value}>
           Refresh
         </button>
+        <button class={s.btnSecondary} type="button" onClick={handleMonitor} disabled={busy.value}>
+          Monitor
+        </button>
         <button class={s.btnRemoveCamera} type="button" onClick={() => void handleRemove()} disabled={busy.value}>
           Remove
         </button>
       </div>
 
-      <details class={s.roiAdvanced}>
-        <summary class={s.roiAdvancedSummary}>Connection details</summary>
-        <p class={s.roiStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
-        <p class={s.roiStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
-        <p class={s.roiStatus}>
+      <details class={s.debugDetails}>
+        <summary class={s.debugDetailsSummary}>Connection details</summary>
+        <p class={s.debugStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
+        <p class={s.debugStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
+        <p class={s.debugStatus}>
           Live monitor is kept conservative during field validation. Normal cards use the latest scheduled image.
         </p>
       </details>

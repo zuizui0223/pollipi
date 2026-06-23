@@ -125,26 +125,6 @@ export const btnDanger = style({
   color: 'var(--stop)',
 });
 
-export const btnMonitor = style({
-  border: '1px solid var(--leaf)',
-  background: 'transparent',
-  color: 'var(--leaf)',
-});
-
-export const btnMonitorActive = style({
-  background: '#d8efdf',
-  color: 'var(--leaf-dark)',
-});
-
-export const btnAiMonitor = style({
-  border: '1px solid var(--blue)',
-  background: 'transparent',
-  color: 'var(--blue)',
-});
-
-export const btnAiMonitorActive = style({
-  background: '#e0edf7',
-});
 
 export const btnRemoveCamera = style({
   border: '1px solid var(--line)',
@@ -192,8 +172,6 @@ export const devicesPanel = style([
 ]);
 
 export const galleryPanel = style([panel, { marginTop: '22px', padding: '22px' }]);
-export const eventReviewPanel = style([panel, { marginTop: '22px', padding: '22px' }]);
-export const trainingPanel = style([panel, { marginTop: '22px', padding: '22px' }]);
 
 // ─── Field Mode Panel ──────────────────────────────────────────────────────
 
@@ -342,23 +320,6 @@ export const pillRunning = style({ background: '#d8efdf', color: 'var(--leaf)' }
 export const pillStopped = style({ background: '#ecece6', color: '#687067' });
 export const pillOffline = style({ background: '#f3dfdc', color: 'var(--stop)' });
 
-export const cameraBadgesWrap = style({
-  display: 'flex',
-  gap: '6px',
-  flexWrap: 'wrap',
-  margin: '8px 0 12px',
-});
-
-export const cameraBadge = style({
-  height: 'fit-content',
-  borderRadius: '999px',
-  padding: '7px 11px',
-  fontSize: '12px',
-  fontWeight: '800',
-  background: '#f1f2e9',
-  color: 'var(--muted)',
-});
-
 // ─── Image Frame ───────────────────────────────────────────────────────────
 
 export const imageFrame = style({
@@ -388,123 +349,6 @@ export const imageFrameEmpty = style({
   margin: '0',
   color: 'var(--muted)',
   fontSize: '14px',
-});
-
-export const roiBox = style({
-  position: 'absolute',
-  display: 'none',
-  border: '3px solid #ffcc33',
-  borderRadius: '6px',
-  background: 'rgba(255, 204, 51, 0.16)',
-  boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.12)',
-  pointerEvents: 'none',
-  zIndex: 4,
-});
-
-export const roiBoxVisible = style({ display: 'block' });
-
-export const monitorRoiBox = style([
-  roiBox,
-  {
-    borderColor: '#49d37a',
-    background: 'rgba(73, 211, 122, 0.14)',
-  },
-]);
-
-// ─── ROI Panel ─────────────────────────────────────────────────────────────
-
-export const roiPanel = style({
-  border: '1px solid var(--line)',
-  borderRadius: '16px',
-  background: '#fafaf3',
-  padding: '12px',
-  marginBottom: '14px',
-});
-
-export const workflowStatus = style({
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '10px',
-  marginBottom: '10px',
-});
-
-export const workflowStatusSpan = style({
-  border: '1px solid var(--line)',
-  borderRadius: '999px',
-  background: '#fffdf2',
-  color: 'var(--leaf)',
-  fontWeight: '800',
-  padding: '8px 12px',
-});
-
-export const roiActions = style({
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '10px',
-  marginBottom: '8px',
-});
-
-export const roiStatus = style({
-  margin: '7px 0',
-  color: 'var(--muted)',
-  fontSize: '13px',
-  lineHeight: '1.45',
-});
-
-export const roiTrackToggle = style({
-  display: 'flex',
-  gap: '9px',
-  alignItems: 'center',
-  borderRadius: '12px',
-  background: '#f4f4ee',
-  padding: '10px 12px',
-  fontWeight: '700',
-});
-
-export const roiAdvanced = style({
-  border: '1px solid var(--line)',
-  borderRadius: '14px',
-  background: '#f8f8f0',
-  padding: '10px 12px',
-});
-
-export const roiAdvancedSummary = style({
-  cursor: 'pointer',
-  color: 'var(--leaf)',
-  fontWeight: '800',
-});
-
-export const roiDrawer = style({ marginTop: '10px' });
-
-export const roiPreviewWrap = style({
-  position: 'relative',
-  display: 'grid',
-  placeItems: 'center',
-  width: '100%',
-  aspectRatio: '16 / 9',
-  overflow: 'hidden',
-  borderRadius: '15px',
-  background: '#dde2d7',
-  marginBottom: '14px',
-  touchAction: 'none',
-  cursor: 'crosshair',
-});
-
-export const roiPreviewImg = style({
-  display: 'none',
-  width: '100%',
-  height: '100%',
-  objectFit: 'cover',
-  userSelect: 'none',
-  pointerEvents: 'none',
-});
-
-export const roiPreviewImgReady = style({ display: 'block' });
-
-export const roiEditorActions = style({
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-  gap: '10px',
 });
 
 // ─── Metrics ───────────────────────────────────────────────────────────────
@@ -545,6 +389,28 @@ export const cardActions = style({
   },
 });
 
+// ─── Debug Details ─────────────────────────────────────────────────────────
+
+export const debugDetails = style({
+  border: '1px solid var(--line)',
+  borderRadius: '14px',
+  background: '#f8f8f0',
+  padding: '10px 12px',
+});
+
+export const debugDetailsSummary = style({
+  cursor: 'pointer',
+  color: 'var(--leaf)',
+  fontWeight: '800',
+});
+
+export const debugStatus = style({
+  margin: '7px 0',
+  color: 'var(--muted)',
+  fontSize: '13px',
+  lineHeight: '1.45',
+});
+
 // ─── Gallery ───────────────────────────────────────────────────────────────
 
 export const galleryHeader = style({
@@ -567,16 +433,6 @@ export const gallerySwitch = style({
   padding: '5px',
 });
 
-export const collectionSwitch = style({
-  display: 'flex',
-  gap: '9px',
-  flexWrap: 'wrap',
-  alignItems: 'flex-start',
-  borderRadius: '14px',
-  background: '#f1f2e9',
-  padding: '5px',
-});
-
 export const galleryTab = style({
   minHeight: '42px',
   background: 'transparent',
@@ -586,19 +442,6 @@ export const galleryTab = style({
 });
 
 export const galleryTabSelected = style({
-  background: 'var(--leaf)',
-  color: 'white',
-});
-
-export const collectionTab = style({
-  minHeight: '42px',
-  background: 'transparent',
-  color: 'var(--muted)',
-  fontSize: '14px',
-  padding: '0 14px',
-});
-
-export const collectionTabSelected = style({
   background: 'var(--leaf)',
   color: 'white',
 });
@@ -657,27 +500,6 @@ export const galleryDetail = style({
   fontSize: '12px',
 });
 
-export const labelBadge = style({
-  display: 'inline-flex',
-  width: 'fit-content',
-  margin: '0 10px 10px',
-  borderRadius: '999px',
-  padding: '4px 9px',
-  fontSize: '12px',
-  fontWeight: '700',
-});
-
-export const labelPositive = style({ background: '#d8efdf', color: 'var(--leaf-dark)' });
-export const labelNegative = style({ background: '#f0e9dc', color: '#745a28' });
-export const labelUnclear = style({ background: '#eef0f4', color: '#4c5668' });
-
-export const reviewActions = style({
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: '8px',
-  padding: '0 10px 10px',
-});
-
 export const downloadLink = style({
   display: 'inline-flex',
   alignItems: 'center',
@@ -704,124 +526,7 @@ export const deleteImageBtn = style({
   cursor: 'pointer',
 });
 
-// ─── Events ────────────────────────────────────────────────────────────────
-
-export const eventGrid = style({
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-  gap: '12px',
-  '@media': {
-    '(max-width: 960px)': { gridTemplateColumns: '1fr' },
-  },
-});
-
-export const eventBulkBar = style({
-  display: 'flex',
-  gap: '8px',
-  alignItems: 'center',
-  flexWrap: 'wrap',
-  margin: '0 0 14px',
-});
-
-export const eventDeleteOption = style({
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '6px',
-  minHeight: '38px',
-  color: 'var(--muted)',
-  fontSize: '13px',
-});
-
-export const eventDeleteMessage = style({
-  margin: '0 0 14px',
-  borderRadius: '8px',
-  background: '#f4f4ee',
-  color: 'var(--ink)',
-  padding: '10px 12px',
-  fontSize: '13px',
-});
-
-export const eventItem = style({
-  overflow: 'hidden',
-  border: '1px solid var(--line)',
-  borderRadius: '14px',
-  background: 'white',
-});
-
-export const eventSelectLabel = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  padding: '8px 10px',
-  borderBottom: '1px solid var(--line)',
-  color: 'var(--muted)',
-  fontSize: '13px',
-});
-
-export const eventMeta = style({
-  display: 'grid',
-  gap: '4px',
-  padding: '9px 10px 7px',
-  color: 'var(--muted)',
-  fontSize: '12px',
-});
-
-export const categoryBadge = style({
-  display: 'inline-flex',
-  width: 'fit-content',
-  borderRadius: '999px',
-  fontWeight: '800',
-  padding: '5px 9px',
-});
-
-export const categoryPositive = style({ background: '#d8efdf', color: 'var(--leaf-dark)' });
-export const categoryNegative = style({ background: '#f0e9dc', color: '#745a28' });
-export const categoryUnclear = style({ background: '#eef0f4', color: '#4c5668' });
-
-export const eventReviewForm = style({
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-  gap: '10px',
-  padding: '10px',
-  borderTop: '1px solid var(--line)',
-});
-
-export const eventReviewActions = style({
-  gridColumn: '1 / -1',
-  display: 'grid',
-  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-  gap: '8px',
-});
-
-export const quickLabelPositive = style({ background: '#d8efdf', color: 'var(--leaf-dark)' });
-export const quickLabelNegative = style({ background: '#f0e9dc', color: '#745a28' });
-export const quickLabelUnclear = style({ background: '#eef0f4', color: '#4c5668' });
-export const quickLabelSelected = style({ outline: '3px solid var(--leaf)', outlineOffset: '2px' });
-
-// ─── Training ──────────────────────────────────────────────────────────────
-
-export const trainingMetrics = style({
-  display: 'grid',
-  gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-  gap: '8px',
-  marginBottom: '14px',
-  '@media': {
-    '(max-width: 740px)': { gridTemplateColumns: '1fr' },
-  },
-});
-
-export const trainingMetricsCell = style({
-  borderRadius: '11px',
-  background: '#f4f4ee',
-  padding: '10px',
-});
-
 export const galleryItemSelected = style({
-  outline: '4px solid var(--leaf)',
-  outlineOffset: '-4px',
-});
-
-export const eventItemSelected = style({
   outline: '4px solid var(--leaf)',
   outlineOffset: '-4px',
 });
