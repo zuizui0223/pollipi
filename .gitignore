@@ -33,3 +33,4 @@ coverage/
 *.egg-info/
 packages/web/public/build-info.json
 packages/web/dist/
+.pytmp/
