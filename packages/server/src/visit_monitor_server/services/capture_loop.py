@@ -13,8 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from pollipi_analysis.pipeline import analyze
 from pollipi_analysis.policy.state_policy import IntervalBounds, plan_next_interval
+from pollipi_analysis.track import Tracker
 from visit_monitor_server.config import (
     ADAPTIVE_DECISION_LOG_PATH,
     CAMERA_LABEL,
@@ -171,8 +171,6 @@ def run_capture_loop(
     del trainer
     camera = None
     previous_frame = None
-    previous_active_cells = None
-    previous_centroid = None
 
     try:
         image_dir.mkdir(parents=True, exist_ok=True)
@@ -202,6 +200,10 @@ def run_capture_loop(
 
         policy_config, policy_meta = get_active_policy()
 
+        # The Pi drives the SAME Tracker as the PC simulation shadow runner, so a
+        # given frame sequence yields identical trajectory features and decisions.
+        tracker = Tracker(config=policy_config)
+
         while not stop_event.is_set():
             captured_at = datetime.now().astimezone()
             filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
@@ -222,13 +224,7 @@ def run_capture_loop(
                     "mesh_global_synchrony": 0.0,
                 }
             else:
-                decision = analyze(
-                    frame,
-                    previous_frame,
-                    config=policy_config,
-                    previous_active_cells=previous_active_cells,
-                    previous_centroid=previous_centroid,
-                )
+                decision = tracker.observe(frame, previous_frame)
                 plan = plan_next_interval(
                     decision.state,
                     bounds,
@@ -252,9 +248,6 @@ def run_capture_loop(
                     request,
                     policy_meta,
                 )
-                previous_active_cells = set(decision.active_cells)
-                if decision.features.centroid_x is not None and decision.features.centroid_y is not None:
-                    previous_centroid = (decision.features.centroid_x, decision.features.centroid_y)
 
             previous_frame = frame
             update_state({
