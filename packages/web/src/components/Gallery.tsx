@@ -32,7 +32,7 @@ export function Gallery() {
       return;
     }
     try {
-      const response = await fetchImages(camera, 'all');
+      const response = await fetchImages(camera);
       images.value = response.images;
       imageCount.value = response.image_count;
       totalSize.value = response.total_size_bytes;
@@ -104,7 +104,7 @@ export function Gallery() {
     }
   }
 
-  const zipHref = camera ? deviceUrl(camera, '/exports/images.zip?collection=all') : undefined;
+  const zipHref = camera ? deviceUrl(camera, '/exports/images.zip') : undefined;
 
   return (
     <section class={s.galleryPanel} aria-label="予定撮影画像">

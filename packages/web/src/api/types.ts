@@ -157,19 +157,6 @@ export interface Camera {
   imageCount?: number;
 }
 
-/** Training status returned by the training endpoint. */
-export interface TrainingStatus {
-  running: boolean;
-  positive_count: number;
-  negative_count: number;
-  auto_labeled_count: number;
-  reviewed_count: number;
-  model_available: boolean;
-  trained_at: string | null;
-  validation_accuracy: number | null;
-  message: string;
-}
-
 /** Minimal active payload for POST /start. */
 export interface StartPayload {
   interval_sec: number;

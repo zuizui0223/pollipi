@@ -68,15 +68,6 @@ function buildStartPayload() {
     adaptive_window_sec: windowSec,
     mesh_shadow_mode: !adaptiveEnabled,
     ...getSessionMetadata(),
-
-    auto_mode: false,
-    motion_trigger_mode: false,
-    hybrid_mode: false,
-    ml_assist_mode: false,
-    idle_interval_sec: interval,
-    detection_interval_sec: interval,
-    pixel_difference: 30,
-    motion_ratio: 0.01,
   };
 }
 

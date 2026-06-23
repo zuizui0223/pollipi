@@ -124,8 +124,8 @@ export async function postStop(target: ApiTarget): Promise<StatusResponse> {
   return apiRequest<StatusResponse>(target, '/stop', { method: 'POST' });
 }
 
-export async function fetchImages(target: ApiTarget, collection: string): Promise<ImagesResponse> {
-  return apiRequest<ImagesResponse>(target, `/images?limit=40&collection=${encodeURIComponent(collection)}`);
+export async function fetchImages(target: ApiTarget): Promise<ImagesResponse> {
+  return apiRequest<ImagesResponse>(target, '/images?limit=40');
 }
 
 export async function deleteImage(target: ApiTarget, filename: string): Promise<void> {
