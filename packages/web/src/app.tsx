@@ -26,19 +26,11 @@ import * as s from './styles/components.css';
 function startPayloadFor(_camera: Camera): StartPayload {
   return {
     interval_sec: intervalSec.value,
-    auto_mode: false,
-    motion_trigger_mode: false,
-    hybrid_mode: false,
-    ml_assist_mode: false,
     autonomous_mode: autonomousMode.value,
     adaptive_timelapse_mode: adaptiveTimelapseMode.value,
     adaptive_min_interval_sec: adaptiveMinIntervalSec.value,
     adaptive_max_interval_sec: adaptiveMaxIntervalSec.value,
     mesh_shadow_mode: !adaptiveTimelapseMode.value,
-    idle_interval_sec: intervalSec.value,
-    detection_interval_sec: intervalSec.value,
-    pixel_difference: 30,
-    motion_ratio: 0.01,
     ...getSessionMetadata(),
   };
 }
