@@ -65,10 +65,19 @@ def test_fake_camera_scheduled_timelapse_smoke(monkeypatch, tmp_path: Path) -> N
 
         current = client.get("/status").json()
         assert current["mesh_shadow_mode"] is True
-        assert current["motion_trigger_mode"] is False
-        assert current["hybrid_mode"] is False
-        assert current["ml_assist_mode"] is False
-        assert current["roi_used"] is False
+        assert "mesh_decision" in current
+        assert "mesh_reason" in current
+        for retired_field in (
+            "auto_mode",
+            "motion_trigger_mode",
+            "hybrid_mode",
+            "ml_assist_mode",
+            "roi_used",
+            "roi_tracking",
+            "event_count",
+            "largest_blob_area",
+        ):
+            assert retired_field not in current
 
         stopped = client.post("/stop")
         assert stopped.status_code == 200
@@ -109,4 +118,4 @@ def test_active_api_excludes_retired_candidate_training_and_roi_routes(monkeypat
             "/start",
             json={"interval_sec": 1, "roi_x": 0, "roi_y": 0, "roi_w": 10, "roi_h": 10},
         )
-        assert rejected.status_code == 410
+        assert rejected.status_code == 422
