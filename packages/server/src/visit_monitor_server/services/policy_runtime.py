@@ -35,3 +35,25 @@ def get_active_policy() -> tuple[PipelineConfig, PolicyMeta]:
             # A malformed policy must not take the device down; log-and-fallback.
             pass
     return PipelineConfig(), _DEFAULT_META
+
+
+def get_baseline_policy() -> tuple[PipelineConfig, PolicyMeta]:
+    """Return the built-in baseline rule config (policy A in shadow A/B)."""
+    return PipelineConfig(), _DEFAULT_META
+
+
+def get_ab_policies() -> tuple[
+    tuple[PipelineConfig, PolicyMeta], tuple[PipelineConfig, PolicyMeta], bool
+]:
+    """Return ``(policy_a, policy_b, ab_enabled)`` for shadow A/B comparison.
+
+    A is always the built-in ``baseline_rule``; B is the simulation-informed
+    artifact when one is present. ``ab_enabled`` is True only when B differs from
+    A (i.e. an artifact was actually loaded), so the device does not log a
+    pointless A-vs-A comparison when no policy file exists. Neither policy changes
+    capture timing — both run in shadow until field A/B validates B.
+    """
+    policy_a = get_baseline_policy()
+    policy_b = get_active_policy()
+    ab_enabled = policy_b[1].policy_name != policy_a[1].policy_name
+    return policy_a, policy_b, ab_enabled

@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from pollipi_analysis.abtest import ab_step
 from pollipi_analysis.policy.state_policy import IntervalBounds, plan_next_interval
 from pollipi_analysis.track import Tracker
 from visit_monitor_server.config import (
@@ -27,6 +28,7 @@ from visit_monitor_server.config import (
     IS_WIDE,
     METRICS_PATH,
     MONITOR_SIZE,
+    SHADOW_AB_LOG_PATH,
     USE_FAKE_CAMERA,
 )
 
@@ -153,6 +155,78 @@ def _write_shadow_record(
         ])
 
 
+AB_COLUMNS = [
+    "timestamp",
+    "image_filename",
+    "current_interval_sec",
+    "a_policy_name",
+    "a_policy_version",
+    "a_state",
+    "a_reason",
+    "a_would_be_next_interval_sec",
+    "b_policy_name",
+    "b_policy_version",
+    "b_state",
+    "b_reason",
+    "b_would_be_next_interval_sec",
+    "agree",
+    "b_more_aggressive",
+    "a_more_aggressive",
+    "device_id",
+    "device_name",
+    "comparison_session_id",
+    "camera_role",
+]
+
+
+def _write_ab_record(
+    captured_at: datetime,
+    image_path: Path,
+    current_interval_sec: float,
+    decision_a,
+    would_be_a: float,
+    meta_a,
+    decision_b,
+    would_be_b: float,
+    meta_b,
+    request,
+) -> None:
+    """Append one per-frame baseline(A)-vs-simulation-informed(B) shadow comparison.
+
+    Both decisions are computed on the SAME real frame; neither changes timing.
+    The ``b_more_aggressive`` flag (B proposes a shorter next interval) is the key
+    adoption signal: it is the extra power/review B would cost over the baseline.
+    """
+    cmp = ab_step(decision_a.state, would_be_a, decision_b.state, would_be_b)
+    write_header = not SHADOW_AB_LOG_PATH.exists()
+    with SHADOW_AB_LOG_PATH.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        if write_header:
+            writer.writerow(AB_COLUMNS)
+        writer.writerow([
+            captured_at.isoformat(timespec="seconds"),
+            image_path.name,
+            f"{current_interval_sec:.3f}",
+            getattr(meta_a, "policy_name", "baseline_rule"),
+            getattr(meta_a, "policy_version", "0"),
+            decision_a.state,
+            decision_a.reason,
+            f"{would_be_a:.3f}",
+            getattr(meta_b, "policy_name", "baseline_rule"),
+            getattr(meta_b, "policy_version", "0"),
+            decision_b.state,
+            decision_b.reason,
+            f"{would_be_b:.3f}",
+            cmp["agree"],
+            cmp["b_more_aggressive"],
+            cmp["a_more_aggressive"],
+            DEVICE_ID,
+            DEVICE_NAME,
+            request.comparison_session_id or "",
+            request.camera_role or "",
+        ])
+
+
 def run_capture_loop(
     stop_event: threading.Event,
     request,
@@ -196,13 +270,24 @@ def run_capture_loop(
 
         # Issue #21: load the (simulation-informed) policy artifact once. The Pi
         # only consumes numeric thresholds here — no simulation/search runs.
-        from visit_monitor_server.services.policy_runtime import get_active_policy
+        # Phase 3: also load the built-in baseline so the two policies run side by
+        # side in shadow on the same real frames (shadow A/B). When no artifact is
+        # present, B == baseline and A/B logging is skipped.
+        from visit_monitor_server.services.policy_runtime import get_ab_policies
 
-        policy_config, policy_meta = get_active_policy()
+        (baseline_config, baseline_meta), (policy_config, policy_meta), ab_enabled = get_ab_policies()
 
         # The Pi drives the SAME Tracker as the PC simulation shadow runner, so a
         # given frame sequence yields identical trajectory features and decisions.
+        # B (active/candidate) drives the existing shadow log + status; A (baseline)
+        # runs alongside only for the A/B comparison.
         tracker = Tracker(config=policy_config)
+        tracker_baseline = Tracker(config=baseline_config) if ab_enabled else None
+        if ab_enabled:
+            set_message(
+                "Scheduled timelapse running; shadow A/B "
+                f"(A={baseline_meta.policy_name} vs B={policy_meta.policy_name})."
+            )
 
         while not stop_event.is_set():
             captured_at = datetime.now().astimezone()
@@ -248,6 +333,26 @@ def run_capture_loop(
                     request,
                     policy_meta,
                 )
+
+                if tracker_baseline is not None:
+                    decision_a = tracker_baseline.observe(frame, previous_frame)
+                    plan_a = plan_next_interval(
+                        decision_a.state,
+                        bounds,
+                        current_interval_sec=request.interval_sec,
+                    )
+                    _write_ab_record(
+                        captured_at,
+                        image_path,
+                        request.interval_sec,
+                        decision_a,
+                        plan_a.next_interval_sec,
+                        baseline_meta,
+                        decision,
+                        would_be_next,
+                        policy_meta,
+                        request,
+                    )
 
             previous_frame = frame
             update_state({

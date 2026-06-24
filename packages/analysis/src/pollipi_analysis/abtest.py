@@ -44,6 +44,71 @@ class ABComparison:
         }
 
 
+def ab_step(
+    a_state: str,
+    a_would_be_next_interval_sec: float,
+    b_state: str,
+    b_would_be_next_interval_sec: float,
+) -> dict[str, Any]:
+    """Compare a single capture's A vs B shadow decision.
+
+    Used by the Pi runtime to log one row per scheduled frame while two policies
+    run side by side in shadow. "More aggressive" means proposing a SHORTER next
+    interval (more captures, more power, more review burden) — the key quantity
+    for deciding whether to adopt B.
+    """
+    return {
+        "agree": a_state == b_state,
+        "b_more_aggressive": b_would_be_next_interval_sec < a_would_be_next_interval_sec,
+        "a_more_aggressive": a_would_be_next_interval_sec < b_would_be_next_interval_sec,
+    }
+
+
+def summarize_ab_rows(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate per-frame A/B rows (e.g. parsed from the Pi's shadow_ab.csv).
+
+    Accepts dicts carrying ``a_state``/``b_state`` and either boolean
+    ``agree``/``b_more_aggressive`` (as written by :func:`ab_step`) or the raw
+    ``a_would_be_next_interval_sec``/``b_would_be_next_interval_sec`` to derive
+    them. Returns the agreement rate and aggressiveness counts used to decide
+    whether B is safe to adopt.
+    """
+    rows = list(rows)
+    n = len(rows)
+    agree = b_more = a_more = a_strong = b_strong = 0
+    for r in rows:
+        a_state = r.get("a_state")
+        b_state = r.get("b_state")
+        a_strong += int(a_state == STRONG_VISITATION_CANDIDATE)
+        b_strong += int(b_state == STRONG_VISITATION_CANDIDATE)
+        if "agree" in r:
+            agree += int(_as_bool(r["agree"]))
+        else:
+            agree += int(a_state == b_state)
+        if "b_more_aggressive" in r or "a_more_aggressive" in r:
+            b_more += int(_as_bool(r.get("b_more_aggressive", False)))
+            a_more += int(_as_bool(r.get("a_more_aggressive", False)))
+        else:
+            aw = float(r["a_would_be_next_interval_sec"])
+            bw = float(r["b_would_be_next_interval_sec"])
+            b_more += int(bw < aw)
+            a_more += int(aw < bw)
+    return {
+        "n_frames": n,
+        "agreement_rate": (agree / n) if n else 1.0,
+        "a_strong": a_strong,
+        "b_strong": b_strong,
+        "b_more_aggressive": b_more,
+        "a_more_aggressive": a_more,
+    }
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    return bool(value)
+
+
 def compare_policies(
     frames: Iterable,
     *,

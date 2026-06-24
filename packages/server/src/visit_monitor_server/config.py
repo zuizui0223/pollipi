@@ -28,6 +28,9 @@ IMAGE_DIR = Path(
 
 METRICS_PATH = IMAGE_DIR / "adaptive_metrics.csv"
 ADAPTIVE_DECISION_LOG_PATH = IMAGE_DIR / "adaptive_decisions.csv"
+# Phase 3: per-frame shadow A/B log comparing baseline (A) vs simulation-informed
+# (B) policies on the same real frames. Neither policy controls timing.
+SHADOW_AB_LOG_PATH = IMAGE_DIR / "shadow_ab.csv"
 AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
 
 # Versioned mesh policy artifact loaded at startup (Issue #21). When present the
