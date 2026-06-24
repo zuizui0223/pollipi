@@ -43,6 +43,17 @@ class Device:
     def base_url(self) -> str:
         return self.post_deploy_base_url.format(host=self.host).rstrip("/")
 
+    @property
+    def origin_url(self) -> str:
+        return self.base_url.split("/app", 1)[0].rstrip("/")
+
+    @property
+    def web_app_url(self) -> str:
+        return f"{self.origin_url}/app/"
+
+    def api_url(self, path: str) -> str:
+        return f"{self.origin_url}/{path.lstrip('/')}"
+
 
 def _required_value(merged: dict[str, Any], key: str) -> bool:
     value = merged.get(key)
@@ -97,6 +108,20 @@ def load_devices(path: Path) -> list[Device]:
 
 def ssh_cmd(device: Device, remote: str) -> list[str]:
     return ["ssh", "-p", str(device.ssh_port), device.target, remote]
+
+
+def ssh_batch_cmd(device: Device, remote: str) -> list[str]:
+    return [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=8",
+        "-p",
+        str(device.ssh_port),
+        device.target,
+        remote,
+    ]
 
 
 def scp_cmd(device: Device, source: str, dest: str, *, recursive: bool = False) -> list[str]:
@@ -248,15 +273,29 @@ def preflight_device(device: Device, *, subnet: str, dry_run: bool, web_only: bo
     ok = ok and ssh_ok
     steps.append({"step": "SSH reachability", "status": "ok" if ssh_ok else "failed", "output": ssh_output})
 
+    auth_ok, auth_output = (True, "dry-run") if dry_run else run_cmd(ssh_batch_cmd(device, "hostname"))
+    ok = ok and auth_ok
+    steps.append({"step": "SSH auth", "status": "ok" if auth_ok else "failed", "output": auth_output[:500]})
+    if not dry_run and not auth_ok:
+        return {"status": "failed", "steps": steps}
+
+    if not web_only:
+        sudo_cmd = f"sudo -n systemctl status {device.service_name} >/dev/null"
+        sudo_ok, sudo_output = (True, "dry-run") if dry_run else run_cmd(ssh_batch_cmd(device, sudo_cmd))
+        ok = ok and sudo_ok
+        steps.append({"step": "sudo restart permission", "status": "ok" if sudo_ok else "failed", "output": sudo_output[:500]})
+        if not dry_run and not sudo_ok:
+            return {"status": "failed", "steps": steps}
+
     http_ok, http_output = (True, "dry-run") if dry_run else tcp_connect(device.host, 8000)
     ok = ok and http_ok
     steps.append({"step": "HTTP reachability", "status": "ok" if http_ok else "failed", "output": http_output})
 
     for endpoint in ("device", "status"):
         if dry_run:
-            steps.append({"step": f"GET /{endpoint}", "status": "dry-run", "output": f"GET {device.base_url}/{endpoint}"})
+            steps.append({"step": f"GET /{endpoint}", "status": "dry-run", "output": f"GET {device.api_url(endpoint)}"})
             continue
-        endpoint_ok, payload = http_get_json(f"{device.base_url}/{endpoint}")
+        endpoint_ok, payload = http_get_json(device.api_url(endpoint))
         ok = ok and endpoint_ok
         steps.append({
             "step": f"GET /{endpoint}",
@@ -314,7 +353,7 @@ def http_get_status(url: str) -> tuple[bool, int]:
 
 def verify_web_app(device: Device) -> tuple[bool, str]:
     """GET /app/ and check at least one referenced asset is reachable."""
-    app_url = f"{device.base_url}/"
+    app_url = device.web_app_url
     try:
         with urllib.request.urlopen(app_url, timeout=8) as response:
             if response.status != 200:
@@ -334,8 +373,7 @@ def verify_web_app(device: Device) -> tuple[bool, str]:
         if ref.startswith("http"):
             asset_url = ref
         elif ref.startswith("/"):
-            base = device.post_deploy_base_url.format(host=device.host).split("/app")[0]
-            asset_url = f"{base}{ref}"
+            asset_url = f"{device.origin_url}{ref}"
         else:
             asset_url = f"{app_url}{ref}"
         asset_ok, status = http_get_status(asset_url)
@@ -347,7 +385,7 @@ def verify_web_app(device: Device) -> tuple[bool, str]:
 
 def verify_web_build_info(device: Device, *, expected_commit: str, expected_web_build_id: str) -> tuple[bool, str]:
     """Read the deployed static web build-info.json from /app/."""
-    build_url = f"{device.base_url}/build-info.json"
+    build_url = f"{device.web_app_url}build-info.json"
     ok, payload = http_get_json(build_url)
     if not ok or not isinstance(payload, dict):
         return False, str(payload)
@@ -365,10 +403,7 @@ def verify_web_build_info(device: Device, *, expected_commit: str, expected_web_
 
 
 def verify_post_deploy(device: Device, *, expected_commit: str, expected_web_build_id: str, web_only: bool = False) -> tuple[bool, str]:
-    base = device.post_deploy_base_url.format(host=device.host).rstrip("/")
-    # For web-only, /device is at the server root, not under /app/
-    device_url = base.split("/app")[0] + "/device" if "/app" in base else f"{base}/device"
-    ok, payload = http_get_json(device_url)
+    ok, payload = http_get_json(device.api_url("device"))
     if not ok or not isinstance(payload, dict):
         return False, str(payload)
     build_info = payload.get("build_info") or {}
@@ -430,8 +465,8 @@ def deploy_device(
         result["steps"].append({
             "step": verify_label,
             "status": "dry-run",
-            "command": f"GET {device.base_url}/ and verify assets" if web_only
-            else f"GET {device.base_url}/device and compare commit/web_build_id",
+            "command": f"GET {device.web_app_url} and verify assets" if web_only
+            else f"GET {device.api_url('device')} and compare commit/web_build_id",
         })
         return result
 

@@ -57,6 +57,113 @@ def test_fleet_deploy_dry_run_plans_five_gl_lan_devices(tmp_path: Path) -> None:
     )
 
 
+def test_app_base_url_uses_root_api_urls_in_preflight() -> None:
+    tool = _load_tool()
+    device = tool.Device(
+        name="zuizui",
+        host="192.168.11.17",
+        ssh_user="zuizui0223",
+        ssh_port=22,
+        remote_dir="/home/zuizui0223/pollipi_timelapse",
+        server_artifact="dist/pollipi_api_server.py",
+        server_filename="pollipi_api_server.py",
+        web_build_dir="packages/web/dist",
+        web_remote_dir="web",
+        service_name="pollipi.service",
+        post_deploy_base_url="http://{host}:8000/app",
+    )
+
+    result = tool.preflight_device(device, subnet="192.168.11.0/24", dry_run=True)
+    outputs = [step.get("output", "") for step in result["steps"]]
+
+    assert "GET http://192.168.11.17:8000/device" in outputs
+    assert "GET http://192.168.11.17:8000/status" in outputs
+    assert all("/app/device" not in output for output in outputs)
+    assert all("/app/status" not in output for output in outputs)
+
+
+def test_full_deploy_ssh_auth_failure_stops_before_backup_upload(monkeypatch, tmp_path: Path) -> None:
+    tool = _load_tool()
+    artifact = tmp_path / "dist" / "pollipi_api_server.py"
+    web_dir = tmp_path / "web-dist"
+    artifact.parent.mkdir()
+    artifact.write_text("print('artifact')\n", encoding="utf-8")
+    web_dir.mkdir()
+    device = tool.Device(
+        name="zuizui",
+        host="192.168.11.17",
+        ssh_user="zuizui0223",
+        ssh_port=22,
+        remote_dir="/home/zuizui0223/pollipi_timelapse",
+        server_artifact=str(artifact),
+        server_filename="pollipi_api_server.py",
+        web_build_dir=str(web_dir),
+        web_remote_dir="web",
+        service_name="pollipi.service",
+        post_deploy_base_url="http://{host}:8000/app",
+    )
+    commands: list[str] = []
+
+    monkeypatch.setattr(tool, "pc_on_subnet", lambda subnet, host: (True, "192.168.11.4"))
+    monkeypatch.setattr(tool, "tcp_connect", lambda host, port: (True, "reachable"))
+
+    def fake_run_cmd(cmd):
+        commands.append(tool.command_text(cmd))
+        if "BatchMode=yes" in cmd and cmd[-1] == "hostname":
+            return False, "Permission denied"
+        return True, ""
+
+    monkeypatch.setattr(tool, "run_cmd", fake_run_cmd)
+    result = tool.deploy_device(device, subnet="192.168.11.0/24", dry_run=False)
+
+    assert result["status"] == "failed"
+    assert any(step["step"] == "SSH auth" and step["status"] == "failed" for step in result["steps"])
+    assert not any("cp /home/zuizui0223/pollipi_timelapse/pollipi_api_server.py" in command for command in commands)
+    assert not any("scp" in command for command in commands)
+    assert "rollback" not in result
+
+
+def test_full_deploy_sudo_failure_stops_before_backup_upload(monkeypatch, tmp_path: Path) -> None:
+    tool = _load_tool()
+    artifact = tmp_path / "dist" / "pollipi_api_server.py"
+    web_dir = tmp_path / "web-dist"
+    artifact.parent.mkdir()
+    artifact.write_text("print('artifact')\n", encoding="utf-8")
+    web_dir.mkdir()
+    device = tool.Device(
+        name="zuizui",
+        host="192.168.11.17",
+        ssh_user="zuizui0223",
+        ssh_port=22,
+        remote_dir="/home/zuizui0223/pollipi_timelapse",
+        server_artifact=str(artifact),
+        server_filename="pollipi_api_server.py",
+        web_build_dir=str(web_dir),
+        web_remote_dir="web",
+        service_name="pollipi.service",
+        post_deploy_base_url="http://{host}:8000/app",
+    )
+    commands: list[str] = []
+
+    monkeypatch.setattr(tool, "pc_on_subnet", lambda subnet, host: (True, "192.168.11.4"))
+    monkeypatch.setattr(tool, "tcp_connect", lambda host, port: (True, "reachable"))
+
+    def fake_run_cmd(cmd):
+        commands.append(tool.command_text(cmd))
+        if cmd[-1].startswith("sudo -n systemctl status"):
+            return False, "sudo: a password is required"
+        return True, "zuizui"
+
+    monkeypatch.setattr(tool, "run_cmd", fake_run_cmd)
+    result = tool.deploy_device(device, subnet="192.168.11.0/24", dry_run=False)
+
+    assert result["status"] == "failed"
+    assert any(step["step"] == "sudo restart permission" and step["status"] == "failed" for step in result["steps"])
+    assert not any("cp /home/zuizui0223/pollipi_timelapse/pollipi_api_server.py" in command for command in commands)
+    assert not any("scp" in command for command in commands)
+    assert "rollback" not in result
+
+
 def test_fleet_deploy_execute_requires_confirmation(tmp_path: Path, capsys) -> None:
     tool = _load_tool()
     artifact = tmp_path / "dist" / "pollipi_api_server.py"
@@ -141,6 +248,30 @@ def test_latest_main_web_only_requires_apply_even_with_legacy_execute(monkeypatc
     assert "mode: dry-run" in captured.out
     assert "upload web build" in captured.out
     assert "restart service" not in captured.out
+
+
+def test_web_only_plan_omits_server_upload_and_restart() -> None:
+    tool = _load_tool()
+    device = tool.Device(
+        name="zuizui",
+        host="192.168.11.17",
+        ssh_user="zuizui0223",
+        ssh_port=22,
+        remote_dir="/home/zuizui0223/pollipi_timelapse",
+        server_artifact="dist/pollipi_api_server.py",
+        server_filename="pollipi_api_server.py",
+        web_build_dir="packages/web/dist",
+        web_remote_dir="web",
+        service_name="pollipi.service",
+        post_deploy_base_url="http://{host}:8000/app",
+    )
+
+    plan = tool.web_only_deploy_plan(device, "stamp")
+    commands = [tool.command_text(cmd) for _label, cmd in plan["steps"]]
+
+    assert any("packages/web/dist/." in command for command in commands)
+    assert not any("pollipi_api_server.py" in command for command in commands)
+    assert not any("systemctl restart" in command for command in commands)
 
 
 def test_web_only_verifies_static_build_info_instead_of_device_metadata(monkeypatch, tmp_path: Path) -> None:
