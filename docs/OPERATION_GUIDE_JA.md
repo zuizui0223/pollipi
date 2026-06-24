@@ -25,13 +25,16 @@
 - `stopped`: 撮影停止中です。
 - `capturing`: 高解像度タイムラプス中です。
 - `High-res interval`: 実際のJPEG保存間隔。
+- `Saved photos`: 今回のsessionで保存した高解像度JPEG数です。
+- `Last saved`: 最後に高解像度JPEGを保存した時刻です。ここが更新されれば撮影成功です。
+- カード上の写真: 最新保存済みJPEGです。撮影中も最後に保存された画像を表示します。
 - `Probe interval`: 低解像度解析の間隔。現在は通常5 sec。
 - `Would-be mode` / `Would-be interval`: shadow modeが提案する仮想の次段階。実際の撮影間隔は変わりません。
 - `Shadow only`: `on` であることを確認します。
 - `Policy profile`: 開始時に選んだprofileです。
-- `packaged_artifact / commit ... / web ...`: Piに配布されたserver/web buildの識別情報です。5台で揃っていることを確認できます。
+- `server ... / bundled web ...`: server artifactに埋め込まれたbuild情報です。web-only更新後は、実際に配信中のPWA buildと異なる場合があります。現在のPWA versionは `/app/build-info.json` で確認します。
 
-停止中は、カードに低解像度MJPEGプレビューが出ることがあります。撮影中はカメラ競合を避けるためプレビューを外し、`Capturing` と表示します。
+通常のカードはMJPEGを自動で開きません。これにより、5台を一覧表示してもカメラやWi-Fiを不要に占有しません。ライブプレビューは今後、必要な1台だけを明示的に開く機能として扱います。
 
 ## 研究室Wi-Fiでの使い方
 
@@ -43,7 +46,7 @@
 6. `30 sec baseline`、`three_stage_default_v1`、`Resume autonomously after Pi restart` を設定します。
 7. `Start all` を押します。
 8. 各カードで `capturing`、`High-res interval = 30 sec`、`Shadow only = on` を確認します。
-9. 少なくとも2回以上、`last capture` が進むことを確認してからiPadを閉じます。
+9. 少なくとも2回以上、`Saved photos` と `Last saved` が進むことを確認してからiPadを閉じます。
 
 ## 野外routerだけでの使い方
 
@@ -72,7 +75,7 @@ WANやSIMは不要です。routerは、PiとiPadを同一LANへ入れるため�
 4. 5台がonlineになったことを確認します。
 5. `30 sec baseline`、`three_stage_default_v1`、autonomous resumeを設定します。
 6. Start allを押します。
-7. 各Piでcapture countとlast capture timeが進むことを確認します。
+7. 各Piで`Saved photos`と`Last saved`が進むことを確認します。
 
 ## 途中でiPad・routerが切れたとき
 
@@ -91,6 +94,6 @@ WANやSIMは不要です。routerは、PiとiPadを同一LANへ入れるため�
 
 1. iPadとPiが同じSSID／同じLANにいるか。
 2. PiのIPをSafariで直接開けるか。例: `http://192.168.11.17:8000/device`。
-3. PWAのbuild表示が配布済みcommitと一致しているか。
-4. `capturing`、`capture_count`、`last capture` が進んでいるか。
+3. `Saved photos` と `Last saved` が進んでいるか。
+4. PWAのbuild表示が配布済みbuildと一致しているか。
 5. 新UIが見えないときはSafariを閉じて開き直すか、URL末尾に `?build=<commit>` を付けて開きます。
