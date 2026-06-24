@@ -19,6 +19,14 @@ class StartRequest(BaseModel):
     adaptive_max_interval_sec: float = Field(default=3600, ge=1, le=3600)
     adaptive_window_sec: float = Field(default=300, ge=60, le=3600)
 
+    # Phase 4: live two-stage LOW/HIGH control. Off by default; when enabled the
+    # device actually switches capture timing between low_rate (quiet/noise) and
+    # high_rate (strong local-activity candidate) for a bounded high_hold window.
+    two_stage_control: bool = False
+    low_rate_sec: float = Field(default=30, ge=1, le=3600)
+    high_rate_sec: float = Field(default=5, ge=1, le=3600)
+    high_hold_sec: float = Field(default=120, ge=0, le=86400)
+
     site_id: Optional[str] = None
     flower_id: Optional[str] = None
     plant_species: Optional[str] = None

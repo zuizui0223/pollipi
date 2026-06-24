@@ -31,6 +31,16 @@ ADAPTIVE_DECISION_LOG_PATH = IMAGE_DIR / "adaptive_decisions.csv"
 # Phase 3: per-frame shadow A/B log comparing baseline (A) vs simulation-informed
 # (B) policies on the same real frames. Neither policy controls timing.
 SHADOW_AB_LOG_PATH = IMAGE_DIR / "shadow_ab.csv"
+
+# Phase 4: live two-stage LOW/HIGH interval control. Disabled by default — the
+# device only switches real capture timing once shadow A/B has validated the
+# policy on the actual site's wind / shadow / flower-sway. Can also be turned on
+# per-session via the StartRequest. Rates are the field defaults
+# (LOW_RATE=30s, HIGH_RATE=5s, HIGH hold = 2 min).
+ADAPTIVE_CONTROL_ENABLED = env_bool("POLLIPI_ADAPTIVE_CONTROL", False)
+TWO_STAGE_LOW_RATE_SEC = float(os.getenv("POLLIPI_LOW_RATE_SEC", "30"))
+TWO_STAGE_HIGH_RATE_SEC = float(os.getenv("POLLIPI_HIGH_RATE_SEC", "5"))
+TWO_STAGE_HIGH_HOLD_SEC = float(os.getenv("POLLIPI_HIGH_HOLD_SEC", "120"))
 AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
 
 # Versioned mesh policy artifact loaded at startup (Issue #21). When present the

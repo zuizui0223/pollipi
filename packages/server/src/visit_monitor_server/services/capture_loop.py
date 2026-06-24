@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import csv
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from pollipi_analysis.abtest import ab_step
 from pollipi_analysis.policy.state_policy import IntervalBounds, plan_next_interval
+from pollipi_analysis.policy.two_stage import TwoStageConfig, TwoStageController
 from pollipi_analysis.track import Tracker
 from visit_monitor_server.config import (
+    ADAPTIVE_CONTROL_ENABLED,
     ADAPTIVE_DECISION_LOG_PATH,
     CAMERA_LABEL,
     CAMERA_MODEL,
@@ -89,8 +92,14 @@ def _write_shadow_record(
     decision,
     request,
     policy_meta=None,
+    applied: bool = False,
 ) -> None:
-    """Append compact scheduled-image metadata.  No candidate-event image exists."""
+    """Append compact scheduled-image metadata.  No candidate-event image exists.
+
+    ``applied`` is False in shadow mode (timing unchanged). When live two-stage
+    control is enabled it is True and ``would_be_next_interval_sec`` is the
+    interval actually used for the next capture.
+    """
     write_header = not METRICS_PATH.exists()
     features = decision.features
     with METRICS_PATH.open("a", newline="", encoding="utf-8") as handle:
@@ -102,7 +111,7 @@ def _write_shadow_record(
             image_path.name,
             f"{current_interval_sec:.3f}",
             f"{would_be_next_interval_sec:.3f}",
-            False,
+            applied,
             decision.state,
             decision.reason,
             features.active_cell_proportion,
@@ -151,7 +160,7 @@ def _write_shadow_record(
             f"{would_be_next_interval_sec:.3f}",
             decision.state,
             decision.reason,
-            False,
+            applied,
         ])
 
 
@@ -289,6 +298,29 @@ def run_capture_loop(
                 f"(A={baseline_meta.policy_name} vs B={policy_meta.policy_name})."
             )
 
+        # Phase 4: live two-stage LOW/HIGH control, off unless explicitly enabled
+        # (per-session request flag or the POLLIPI_ADAPTIVE_CONTROL env switch).
+        # When on, the active (B) policy's decision drives real capture timing;
+        # otherwise the loop keeps the fixed interval and only logs would-be.
+        control_enabled = bool(getattr(request, "two_stage_control", False) or ADAPTIVE_CONTROL_ENABLED)
+        controller = (
+            TwoStageController(
+                config=TwoStageConfig(
+                    low_rate_sec=request.low_rate_sec,
+                    high_rate_sec=request.high_rate_sec,
+                    high_hold_sec=request.high_hold_sec,
+                )
+            )
+            if control_enabled
+            else None
+        )
+        if control_enabled:
+            set_message(
+                "Two-stage LOW/HIGH control ENABLED "
+                f"(LOW={request.low_rate_sec:g}s HIGH={request.high_rate_sec:g}s "
+                f"hold={request.high_hold_sec:g}s)."
+            )
+
         while not stop_event.is_set():
             captured_at = datetime.now().astimezone()
             filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
@@ -299,30 +331,59 @@ def run_capture_loop(
                 frame = camera.capture_array("lores")
 
             if previous_frame is None:
-                would_be_next = request.interval_sec
-                reason = "Mesh shadow mode: reference frame captured; scheduled interval unchanged."
+                # Reference frame: no decision yet. Start at LOW under live control,
+                # otherwise hold the requested interval.
+                next_sleep = controller.config.low_rate_sec if controller else request.interval_sec
+                would_be_next = next_sleep
+                applied = control_enabled
+                reason = "Reference frame captured; awaiting first analysed pair."
                 mesh_state: dict = {
                     "mesh_decision": "no_activity",
                     "mesh_reason": "waiting_for_reference_frame",
                     "mesh_active_cell_proportion": 0.0,
                     "mesh_offset_agreement": 0.0,
                     "mesh_global_synchrony": 0.0,
+                    "two_stage_mode": (controller.mode if controller else None),
+                    "adaptive_control": control_enabled,
                 }
             else:
                 decision = tracker.observe(frame, previous_frame)
+                # Continuous would-be interval, kept for the shadow log + A/B
+                # comparison regardless of whether live control is on.
                 plan = plan_next_interval(
                     decision.state,
                     bounds,
                     current_interval_sec=request.interval_sec,
                 )
-                would_be_next = plan.next_interval_sec
-                reason = f"Mesh shadow mode: {decision.state}; {decision.reason}; scheduled interval unchanged."
+
+                if controller is not None:
+                    step = controller.step(decision.state, now_sec=time.monotonic())
+                    next_sleep = step.interval_sec
+                    would_be_next = step.interval_sec
+                    applied = True
+                    mode = step.mode
+                    reason = (
+                        f"Two-stage {mode}: {decision.state}; {decision.reason}; "
+                        f"interval={step.interval_sec:g}s."
+                    )
+                else:
+                    next_sleep = request.interval_sec
+                    would_be_next = plan.next_interval_sec
+                    applied = False
+                    mode = None
+                    reason = (
+                        f"Mesh shadow mode: {decision.state}; {decision.reason}; "
+                        "scheduled interval unchanged."
+                    )
+
                 mesh_state = {
                     "mesh_decision": decision.state,
                     "mesh_reason": decision.reason,
                     "mesh_active_cell_proportion": decision.features.active_cell_proportion,
                     "mesh_offset_agreement": decision.features.offset_agreement,
                     "mesh_global_synchrony": decision.features.global_synchrony,
+                    "two_stage_mode": mode,
+                    "adaptive_control": control_enabled,
                 }
                 _write_shadow_record(
                     captured_at,
@@ -332,6 +393,7 @@ def run_capture_loop(
                     decision,
                     request,
                     policy_meta,
+                    applied=applied,
                 )
 
                 if tracker_baseline is not None:
@@ -341,6 +403,9 @@ def run_capture_loop(
                         bounds,
                         current_interval_sec=request.interval_sec,
                     )
+                    # The A/B log compares the two classifiers under the same
+                    # (continuous) interval mapping, so it stays meaningful whether
+                    # or not live two-stage control is applied.
                     _write_ab_record(
                         captured_at,
                         image_path,
@@ -349,7 +414,7 @@ def run_capture_loop(
                         plan_a.next_interval_sec,
                         baseline_meta,
                         decision,
-                        would_be_next,
+                        plan.next_interval_sec,
                         policy_meta,
                         request,
                     )
@@ -361,14 +426,18 @@ def run_capture_loop(
                 "next_interval_sec": would_be_next,
                 "last_capture_time": captured_at.isoformat(timespec="seconds"),
                 "last_image": str(image_path),
-                "message": "Scheduled timelapse running; shadow mesh analysis only.",
+                "message": (
+                    "Two-stage LOW/HIGH control active."
+                    if control_enabled
+                    else "Scheduled timelapse running; shadow mesh analysis only."
+                ),
                 "interval_reason": reason,
                 **mesh_state,
             })
 
-            # Adaptive control remains intentionally disabled until real Pi shadow
-            # validation is complete.  The policy result is logged as would-be only.
-            if stop_event.wait(request.interval_sec):
+            # Under live control the next interval is the two-stage decision;
+            # otherwise it stays the fixed scheduled interval (shadow only).
+            if stop_event.wait(next_sleep):
                 break
 
     except Exception as exc:
