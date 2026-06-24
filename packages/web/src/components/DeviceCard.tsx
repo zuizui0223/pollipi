@@ -7,6 +7,7 @@ import {
   deleteCoordinatorDevice,
   deviceUrl,
   fetchDevice,
+  getMjpegStreamUrl,
   fetchStatus,
   postStart,
   postStop,
@@ -87,7 +88,7 @@ function latestImageUrl(camera: Camera, status: StatusResponse): string {
   const url = new URL(deviceUrl(camera, '/latest'));
   url.searchParams.set(
     'capture',
-    status.last_capture_time || String(status.capture_count),
+    `${status.last_capture_time || ''}:${status.last_image || ''}`,
   );
   return url.toString();
 }
@@ -97,53 +98,48 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   const status = useSignal<StatusResponse | null>(null);
   const message = useSignal('Reading status...');
   const connectionState = useSignal<ConnectionState>('stale');
-  const imageReady = useSignal(false);
-  const hasImage = useSignal(false);
+  const previewReady = useSignal(false);
+  const previewHasFrame = useSignal(false);
+  const latestReady = useSignal(false);
+  const latestHasImage = useSignal(false);
+  // imageRef is used only for the latest saved JPEG during capture.
   const imageRef = useRef<HTMLImageElement>(null);
+  // previewRef is used only while stopped, then explicitly released at Start.
+  const previewRef = useRef<HTMLImageElement>(null);
+  const previewUrlRef = useRef('');
+  const latestCaptureToken = useRef('');
+  const captureRunning = Boolean(status.value?.running);
 
   const pollDelayMs = useRef(5000);
   const refreshInFlight = useRef(false);
   const refreshGeneration = useRef(0);
 
-  function updateLatestImage(next: StatusResponse) {
-    const image = imageRef.current;
-    if (!image) return;
-
-    if (!next.last_image) {
-      // Keep the previous frame on screen while a newly started capture session
-      // waits for its first scheduled high-resolution JPEG. A stopped session
-      // with no image should show the empty state instead.
-      if (!next.running) {
-        imageReady.value = false;
-        hasImage.value = false;
-        image.removeAttribute('src');
-        delete image.dataset.captureToken;
-      }
-      return;
-    }
-
-    const captureToken = next.last_capture_time || String(next.capture_count);
-    if (image.dataset.captureToken === captureToken) return;
-
-    imageReady.value = false;
-    hasImage.value = false;
-    image.onload = () => {
-      imageReady.value = true;
-      hasImage.value = true;
-    };
-    image.onerror = () => {
-      imageReady.value = false;
-      hasImage.value = false;
-    };
-    image.dataset.captureToken = captureToken;
-    image.src = latestImageUrl(camera, next);
-  }
-
   function updateFromStatus(next: StatusResponse) {
     status.value = next;
     applyStatus(camera, next);
     message.value = next.mesh_reason || next.interval_reason || next.message || 'Status updated.';
-    updateLatestImage(next);
+  }
+
+  function releasePreviewStream() {
+    previewUrlRef.current = '';
+    previewReady.value = false;
+    previewHasFrame.value = false;
+    const image = previewRef.current;
+    if (!image) return;
+    image.onload = null;
+    image.onerror = null;
+    image.removeAttribute('src');
+  }
+
+  function releaseLatestImage() {
+    latestCaptureToken.current = '';
+    latestReady.value = false;
+    latestHasImage.value = false;
+    const image = imageRef.current;
+    if (!image) return;
+    image.onload = null;
+    image.onerror = null;
+    image.removeAttribute('src');
   }
 
   async function refresh() {
@@ -182,6 +178,94 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     }
   }
 
+  // Exactly one idle monitor per visible card. Removing src closes the
+  // MJPEG request before high-resolution scheduled capture begins.
+  useEffect(() => {
+    const image = previewRef.current;
+    if (captureRunning || !image) {
+      releasePreviewStream();
+      return undefined;
+    }
+
+    const streamUrl = getMjpegStreamUrl(camera);
+    if (previewUrlRef.current === streamUrl && image.getAttribute('src')) {
+      return () => {
+        releasePreviewStream();
+      };
+    }
+
+    releaseLatestImage();
+    previewUrlRef.current = streamUrl;
+    previewReady.value = false;
+    previewHasFrame.value = false;
+    image.onload = () => {
+      previewReady.value = true;
+      previewHasFrame.value = true;
+    };
+    image.onerror = () => {
+      previewReady.value = false;
+      previewHasFrame.value = false;
+    };
+    image.src = streamUrl;
+
+    return () => {
+      releasePreviewStream();
+    };
+  }, [
+    camera.baseUrl,
+    camera.apiPathPrefix,
+    camera.managed_by_coordinator,
+    captureRunning,
+  ]);
+
+  useEffect(() => {
+    const image = imageRef.current;
+    const currentStatus = status.value;
+
+    if (!captureRunning || !currentStatus || !image) {
+      if (!captureRunning) releaseLatestImage();
+      return undefined;
+    }
+
+    releasePreviewStream();
+
+    if (!currentStatus.last_image) {
+      latestReady.value = false;
+      latestHasImage.value = false;
+      latestCaptureToken.current = '';
+      image.onload = null;
+      image.onerror = null;
+      image.removeAttribute('src');
+      return undefined;
+    }
+
+    const captureToken = `${currentStatus.last_capture_time || ''}:${currentStatus.last_image || ''}`;
+    if (latestCaptureToken.current === captureToken && image.getAttribute('src')) {
+      return undefined;
+    }
+
+    latestCaptureToken.current = captureToken;
+    latestReady.value = false;
+    latestHasImage.value = false;
+    image.onload = () => {
+      latestReady.value = true;
+      latestHasImage.value = true;
+    };
+    image.onerror = () => {
+      latestReady.value = false;
+      latestHasImage.value = false;
+    };
+    image.src = latestImageUrl(camera, currentStatus);
+    return undefined;
+  }, [
+    camera.baseUrl,
+    camera.apiPathPrefix,
+    camera.managed_by_coordinator,
+    captureRunning,
+    status.value?.last_capture_time,
+    status.value?.last_image,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
     let timer = 0;
@@ -201,12 +285,18 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       cancelled = true;
       window.clearTimeout(timer);
       refreshGeneration.current += 1;
+      releasePreviewStream();
+      releaseLatestImage();
     };
   }, [camera.baseUrl]);
 
   async function handleStart() {
     const payload = buildStartPayload();
     if (!payload) return;
+
+    // Release the browser-side live stream before asking the Pi to open its
+    // scheduled capture camera. The server also stops its monitor as a guard.
+    releasePreviewStream();
 
     busy.value = true;
     try {
@@ -255,7 +345,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
 
   const current = status.value;
   const build = camera.build_info;
-  const isCapturing = Boolean(current?.running);
+  const isCapturing = captureRunning;
   const shadowOnly = current
     ? current.mesh_shadow_mode && !current.adaptive_timelapse_mode && !current.live_adaptive_enabled
     : null;
@@ -297,16 +387,32 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       </div>
 
       <div class={s.imageFrame}>
-        <img
-          ref={imageRef}
-          class={`${s.imageFrameImg}${imageReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
-          alt="Latest saved timelapse image"
-          draggable={false}
-        />
-        {!hasImage.value && (
-          <p class={s.imageFrameEmpty}>
-            {isCapturing ? 'Waiting for first scheduled image' : 'No scheduled image yet'}
-          </p>
+        {!isCapturing && (
+          <>
+            <img
+              ref={previewRef}
+              class={`${s.imageFrameImg}${previewReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
+              alt="Live framing monitor"
+              draggable={false}
+            />
+            {!previewHasFrame.value && (
+              <p class={s.imageFrameEmpty}>Starting live monitor</p>
+            )}
+          </>
+        )}
+
+        {isCapturing && (
+          <>
+            <img
+              ref={imageRef}
+              class={`${s.imageFrameImg}${latestReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
+              alt="Latest saved timelapse image"
+              draggable={false}
+            />
+            {!latestHasImage.value && (
+              <p class={s.imageFrameEmpty}>Saving first scheduled photo...</p>
+            )}
+          </>
         )}
       </div>
 
