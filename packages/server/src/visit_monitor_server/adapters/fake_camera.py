@@ -169,6 +169,12 @@ class FakeCamera:
         Path(path).write_bytes(data)
         self._frame_index += 1
 
+    def capture_preview_bytes(self) -> bytes:
+        """Return a synthetic JPEG for the idle live-preview producer."""
+        data = _make_jpeg_bytes(self._width, self._height, self._frame_index)
+        self._frame_index += 1
+        return data
+
     def capture_array(self, name: str = "main"):  # noqa: ANN201
         """Return a minimal numpy-compatible array (YUV420 plane layout)."""
         try:

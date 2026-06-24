@@ -18,6 +18,7 @@ from visit_monitor_server.config import (
     IS_AI_CAMERA,
     IS_NOIR,
     IS_WIDE,
+    MONITOR_SIZE,
     USE_FAKE_CAMERA,
 )
 
@@ -354,66 +355,123 @@ class TimelapseController:
             self._preview_producer_state = "idle"
             self._latest_frame_bytes = None
 
+    def _open_preview_camera(self):
+        """Open a dedicated low-res camera for the idle live preview.
+
+        Only ever called when the capture loop is NOT running, and always under
+        ``_camera_lock``, so it never opens the sensor while the timelapse owns it.
+        """
+        if USE_FAKE_CAMERA:
+            from visit_monitor_server.adapters.fake_camera import FakeCamera
+
+            cam = FakeCamera()
+            cam.configure(cam.create_preview_configuration(main={"size": MONITOR_SIZE}))
+            cam.start()
+            return cam
+
+        from picamera2 import Picamera2  # type: ignore
+
+        cam = Picamera2()
+        cam.configure(cam.create_preview_configuration(main={"size": MONITOR_SIZE, "format": "RGB888"}))
+        cam.start()
+        return cam
+
+    def _grab_preview_jpeg(self, cam) -> Optional[bytes]:
+        """Return one JPEG frame from a preview camera, or None on failure."""
+        try:
+            if hasattr(cam, "capture_preview_bytes"):
+                return cam.capture_preview_bytes()  # type: ignore[attr-defined]
+            import io
+
+            buffer = io.BytesIO()
+            cam.capture_file(buffer, format="jpeg")
+            return buffer.getvalue()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _close_preview_camera(cam) -> None:
+        try:
+            cam.stop()
+        except Exception:
+            pass
+        try:
+            cam.close()
+        except Exception:
+            pass
+
     def _monitor_loop(self, stop_event: threading.Event) -> None:
         """Producer loop that keeps _latest_frame_bytes populated.
 
-        It prefers reading the scheduled latest image from disk (cheap) and only
-        reads from the camera when no scheduled image is available. The loop
-        respects _camera_lock when interacting with hardware.
+        When the timelapse is NOT running, it opens a dedicated low-res preview
+        camera and streams live frames, so the web monitor shows a real-time view
+        of the framing *before* capture starts. While capture is running it
+        releases the preview camera (the capture loop owns the sensor) and serves
+        the latest scheduled frame from disk. All hardware access is serialized by
+        ``_camera_lock``; any failure falls back to the disk frame and never
+        crashes the producer.
         """
         last_activity = time.monotonic()
+        preview_cam = None
         try:
             while not stop_event.is_set():
-                # Try scheduled image first
-                image_path = self.latest_image()
-                if image_path is not None:
-                    try:
-                        frame = image_path.read_bytes()
-                    except Exception:
-                        frame = None
+                with self._lock:
+                    capture_running = self.running
+
+                frame = None
+                if capture_running:
+                    # Capture owns the camera: drop any preview cam, serve disk.
+                    if preview_cam is not None:
+                        with self._camera_lock:
+                            self._close_preview_camera(preview_cam)
+                        preview_cam = None
                 else:
-                    frame = None
+                    # Idle: serve a true live preview of what the camera sees now.
+                    if preview_cam is None:
+                        try:
+                            with self._camera_lock:
+                                preview_cam = self._open_preview_camera()
+                            self._preview_producer_state = "running"
+                        except Exception:
+                            preview_cam = None
+                    if preview_cam is not None:
+                        with self._camera_lock:
+                            frame = self._grab_preview_jpeg(preview_cam)
+                        if frame is None:
+                            # Preview failed; release the camera and fall back to disk.
+                            with self._camera_lock:
+                                self._close_preview_camera(preview_cam)
+                            preview_cam = None
 
                 if frame is None:
-                    # No scheduled image on disk; attempt to capture one under camera lock
-                    # Only do this if fake camera is not configured, otherwise skip.
-                    if USE_FAKE_CAMERA:
-                        # Nothing to do in fake-camera mode if no scheduled image
-                        time.sleep(0.2)
-                        continue
-                    try:
-                        with self._camera_lock:
-                            # Prefer to reuse any controller-held camera (if set) else skip
-                            if self._camera is not None:
-                                # The real camera capture helper is intentionally
-                                # thin here; we avoid configuring/starting cameras in
-                                # the producer to reduce lifecycle complexity.
-                                # If the controller exposes a capture helper, call it.
-                                try:
-                                    frame = self._camera.capture_preview_bytes()  # type: ignore[attr-defined]
-                                except Exception:
-                                    frame = None
-                            else:
-                                # No camera object available; skip capture attempt
-                                frame = None
-                    except Exception:
-                        frame = None
+                    image_path = self.latest_image()
+                    if image_path is not None:
+                        try:
+                            frame = image_path.read_bytes()
+                        except Exception:
+                            frame = None
 
                 if frame is not None:
                     with self._monitor_lock:
                         self._latest_frame_bytes = frame
                     last_activity = time.monotonic()
 
-                # If there are no subscribers, allow idle timeout to stop the producer
+                # If there are no subscribers, allow idle timeout to stop the
+                # producer (and release the preview camera) so we never hold the
+                # sensor with nobody watching.
                 with self._monitor_lock:
                     subs = self._preview_subscriber_count
                 if subs == 0 and (time.monotonic() - last_activity) > self._monitor_idle_timeout:
                     break
 
-                # Sleep a short time; producer doesn't need to be high-framerate here
-                if stop_event.wait(0.4):
+                # Live preview wants a snappier refresh; the disk fallback is slower.
+                delay = 0.12 if preview_cam is not None else 0.4
+                if stop_event.wait(delay):
                     break
         finally:
+            if preview_cam is not None:
+                with self._camera_lock:
+                    self._close_preview_camera(preview_cam)
             with self._monitor_lock:
                 # clear state on exit
                 self._monitor_thread = None
