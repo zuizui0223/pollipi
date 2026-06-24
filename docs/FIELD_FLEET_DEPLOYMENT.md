@@ -1,45 +1,83 @@
-# PolliPi field fleet updates
+# PolliPi field fleet deployment
 
-This workflow is for a WAN-free GL.iNet local LAN where the iPad and Pi devices are on `192.168.8.0/24`.
+This workflow is for a **WAN-free private field LAN**. The router is only a Wi-Fi access point and DHCP server for the development machine, iPad, and Raspberry Pi units. It does not need an internet uplink, cloud account, coordinator, or Git installation on the Pis.
 
-The tool is dry-run by default and does not assume the SSH user, systemd service name, or Pi install path. Copy `tools/fleet.example.json`, replace every `CHANGE_ME`, and keep the five GL LAN IPs:
+## Before you travel
 
-- `192.168.8.11`
-- `192.168.8.12`
-- `192.168.8.13`
-- `192.168.8.14`
-- `192.168.8.15`
+1. Configure the field router with a fixed SSID and password.
+2. Enable DHCP and disable guest/AP/client isolation.
+3. Reserve one address per Pi on the router.
+4. Record the reservations in the field notebook and in `tools/fleet.local.json`.
 
-Dry-run:
+A typical field subnet is `192.168.8.0/24` with five Pi reservations:
 
-```powershell
-python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json
+```text
+192.168.8.11
+192.168.8.12
+192.168.8.13
+192.168.8.14
+192.168.8.15
 ```
 
-Live execution requires both flags after reviewing the printed plan:
+These are examples, not required addresses. Use the router's actual reservations.
+
+## Build once on the development machine
 
 ```powershell
-python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --execute --confirm-live-deploy
+pnpm install
+pnpm check:web
+pnpm build:artifacts
 ```
 
-For each Pi the plan is:
+Build before leaving the office or before connecting to the WAN-free field router. The Pis do not build or fetch packages during deployment.
 
-1. Preflight: confirm local artifacts exist.
-2. Preflight: confirm the PC is on the configured GL LAN subnet.
-3. Preflight: confirm SSH and HTTP reachability.
-4. Preflight: check `/device` and `/status`.
-5. Prepare the remote install and web directories.
-6. Back up the current server artifact with a timestamp.
-7. Back up the current web build with a timestamp.
-8. Upload `dist/pollipi_api_server.py`.
-9. Upload the built web assets.
-10. Restart the configured systemd service.
-11. Confirm `/device` reports the expected `deployment_mode`, `git_commit`, and `web_build_id`.
+## Configure the fleet
 
-Rollback policy:
+Copy the example configuration:
 
-- If upload, restart, or version verification fails, the tool restores the timestamped backups and restarts the configured service.
-- If rollback itself fails, restore the server artifact backup and web backup manually over SSH, then restart the configured service.
-- Re-check `/device` and `/status` from the iPad before field use.
+```text
+tools/fleet.example.json -> tools/fleet.local.json
+```
 
-The deployment tool does not require WAN, cloud APIs, Git on the Pi, or a coordinator. It only uses SSH/SCP inside the local LAN plus direct HTTP checks against each Pi.
+Set the real field subnet, `ssh_user`, Pi IPs, remote directory, service name, server artifact path, web build directory, and post-deploy app URL. Keep this local configuration out of version control.
+
+## Dry-run
+
+```powershell
+python tools\pollipi_fleet_deploy.py --config tools\fleet.local.json
+```
+
+Review that the output includes only the intended field Pi IPs, root API checks (`/device`, `/status`), non-interactive SSH commands, backups, server/web uploads, restart, and version verification.
+
+## Live full deployment
+
+```powershell
+python tools\pollipi_fleet_deploy.py `
+  --config tools\fleet.local.json `
+  --execute `
+  --confirm-live-deploy
+```
+
+For each Pi the tool:
+
+1. verifies local artifacts;
+2. verifies that the development machine is on the expected field subnet;
+3. verifies SSH, sudo/service access, and HTTP reachability;
+4. backs up the current server artifact and web directory;
+5. uploads `dist/pollipi_api_server.py` and `packages/web/dist/`;
+6. restarts `pollipi.service`;
+7. confirms `/device` reports the expected packaged artifact commit and web build ID.
+
+If upload, restart, or version verification fails, the tool restores timestamped backups for that Pi and attempts to restart its service. It stops at the first failed Pi.
+
+## After deployment
+
+1. On the iPad, open `http://<console-pi-ip>:8000/app/`.
+2. Add each Pi by its reserved IP address.
+3. Confirm all cards show the expected build.
+4. Run a short fixed-interval capture test before field placement.
+5. Complete the router-disconnect and Pi-reboot checks in [FIELD_READINESS_CHECKLIST.md](FIELD_READINESS_CHECKLIST.md).
+
+## Web-only changes
+
+A web-only deployment is appropriate only when the server artifact is intentionally unchanged. Use the explicit `--web-only` mode after a dry-run. Do not use it for policy/API/capture/runtime changes.
