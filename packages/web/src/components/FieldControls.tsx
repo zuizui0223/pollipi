@@ -1,8 +1,5 @@
 import { h } from 'preact';
 import {
-  adaptiveMaxIntervalSec,
-  adaptiveMinIntervalSec,
-  adaptiveTimelapseMode,
   autonomousMode,
   intervalSec,
 } from '../state/session';
@@ -35,49 +32,14 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
           <span>sec baseline</span>
         </label>
         <p class={s.hint}>
-          Shadow mode logs mesh decisions while preserving the scheduled interval. Enable adaptive only after field validation.
+          Shadow mode logs mesh decisions while the high-res timelapse interval stays fixed.
         </p>
       </div>
 
       <div class={s.fieldBasicGrid}>
         <p class={s.sectionTitle} style={{ gridColumn: '1 / -1' }}>
-          Active policy
+          Runtime
         </p>
-        <label class={s.advancedGridLabel}>
-          min interval
-          <input
-            type="number"
-            min={1}
-            max={3600}
-            value={adaptiveMinIntervalSec.value}
-            onInput={(e) => {
-              adaptiveMinIntervalSec.value = Number((e.target as HTMLInputElement).value || 15);
-            }}
-          />
-        </label>
-        <label class={s.advancedGridLabel}>
-          max interval
-          <input
-            type="number"
-            min={1}
-            max={3600}
-            value={adaptiveMaxIntervalSec.value}
-            onInput={(e) => {
-              adaptiveMaxIntervalSec.value = Number((e.target as HTMLInputElement).value || 3600);
-            }}
-          />
-        </label>
-        <label class={s.autoToggle} style={{ gridColumn: '1 / -1' }}>
-          <input
-            class={s.autoToggleInput}
-            type="checkbox"
-            checked={adaptiveTimelapseMode.value}
-            onChange={() => {
-              adaptiveTimelapseMode.value = !adaptiveTimelapseMode.value;
-            }}
-          />
-          <span>Enable adaptive interval</span>
-        </label>
         <label class={s.autoToggle} style={{ gridColumn: '1 / -1' }}>
           <input
             class={s.autoToggleInput}

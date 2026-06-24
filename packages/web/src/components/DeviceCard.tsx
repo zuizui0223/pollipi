@@ -5,7 +5,6 @@ import { useSignal } from '@preact/signals';
 import type { Camera, DeviceInfo, StatusResponse } from '../api/types';
 import {
   deleteCoordinatorDevice,
-  deviceUrl,
   fetchDevice,
   fetchStatus,
   getMjpegStreamUrl,
@@ -13,12 +12,7 @@ import {
   postStop,
 } from '../api/client';
 import {
-  adaptiveMaxIntervalSec,
-  adaptiveMinIntervalSec,
-  adaptiveTimelapseMode,
-  adaptiveWindowSec,
   autonomousMode,
-  getSessionMetadata,
   intervalSec,
 } from '../state/session';
 import { removeCamera } from '../state/devices';
@@ -41,34 +35,11 @@ function buildStartPayload() {
     return null;
   }
 
-  const adaptiveEnabled = adaptiveTimelapseMode.value;
-  const minInterval = adaptiveMinIntervalSec.value;
-  const maxInterval = adaptiveMaxIntervalSec.value;
-  const windowSec = adaptiveWindowSec.value;
-  if (
-    adaptiveEnabled &&
-    (!Number.isFinite(minInterval) ||
-      !Number.isFinite(maxInterval) ||
-      !Number.isFinite(windowSec) ||
-      minInterval < 1 ||
-      maxInterval < minInterval ||
-      maxInterval > 3600 ||
-      windowSec < 60 ||
-      windowSec > 3600)
-  ) {
-    alert('Check the adaptive timelapse interval settings.');
-    return null;
-  }
-
   return {
     interval_sec: interval,
     autonomous_mode: autonomousMode.value,
-    adaptive_timelapse_mode: adaptiveEnabled,
-    adaptive_min_interval_sec: minInterval,
-    adaptive_max_interval_sec: maxInterval,
-    adaptive_window_sec: windowSec,
-    mesh_shadow_mode: !adaptiveEnabled,
-    ...getSessionMetadata(),
+    adaptive_timelapse_mode: false,
+    mesh_shadow_mode: true,
   };
 }
 
@@ -113,6 +84,10 @@ function shortCommit(value?: string | null): string {
   return value.length > 12 ? value.slice(0, 12) : value;
 }
 
+function seconds(value?: number | null): string {
+  return Number.isFinite(value) ? `${value} sec` : '-';
+}
+
 export function DeviceCard({ camera, index, onUpdated }: Props) {
   const busy = useSignal(false);
   const status = useSignal<StatusResponse | null>(null);
@@ -132,26 +107,27 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
 
     message.value = next.mesh_reason || next.interval_reason || next.message || 'Status updated.';
 
-    if (next.last_image && next.last_image !== (camera as any).previousImage) {
-      const image = imageRef.current;
-      if (image) {
-        image.onload = () => {
-          imageReady.value = true;
-          hasImage.value = true;
-        };
-        image.onerror = () => {
-          imageReady.value = false;
-        };
-        image.src = deviceUrl(
-          camera,
-          `/latest?capture=${encodeURIComponent(next.last_capture_time || String(Date.now()))}`,
-        );
-        (camera as any).previousImage = next.last_image;
-      }
-    } else if (!next.last_image) {
+    const image = imageRef.current;
+    if (next.running) {
       imageReady.value = false;
       hasImage.value = false;
-      imageRef.current?.removeAttribute('src');
+      image?.removeAttribute('src');
+      return;
+    }
+
+    const streamUrl = getMjpegStreamUrl(camera);
+    if (image && image.src !== streamUrl) {
+      imageReady.value = false;
+      hasImage.value = false;
+      image.onload = () => {
+        imageReady.value = true;
+        hasImage.value = true;
+      };
+      image.onerror = () => {
+        imageReady.value = false;
+        hasImage.value = false;
+      };
+      image.src = streamUrl;
     }
   }
 
@@ -262,13 +238,12 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     onUpdated();
   }
 
-  function handleMonitor() {
-    const streamUrl = getMjpegStreamUrl(camera);
-    window.open(streamUrl, 'mjpeg-monitor', 'width=800,height=600');
-  }
-
   const current = status.value;
   const build = camera.build_info;
+  const isCapturing = Boolean(current?.running);
+  const shadowOnly = current
+    ? current.mesh_shadow_mode && !current.adaptive_timelapse_mode && !current.live_adaptive_enabled
+    : null;
   const pillClass = connectionState.value === 'offline'
     ? s.pillOffline
     : !current
@@ -307,31 +282,38 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       </div>
 
       <div class={s.imageFrame}>
-        <img
-          ref={imageRef}
-          class={`${s.imageFrameImg}${imageReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
-          alt="Latest scheduled timelapse frame"
-          draggable={false}
-        />
-        {!hasImage.value && <p class={s.imageFrameEmpty}>Waiting for latest image</p>}
+        {!isCapturing && (
+          <img
+            ref={imageRef}
+            class={`${s.imageFrameImg}${imageReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
+            alt="Idle MJPEG live preview"
+            draggable={false}
+          />
+        )}
+        {isCapturing && <p class={s.imageFrameEmpty}>Capturing</p>}
+        {!isCapturing && !hasImage.value && <p class={s.imageFrameEmpty}>Starting live preview</p>}
       </div>
 
       <dl class={s.metrics}>
         <div class={s.metricsCell}>
-          <dt class={s.metricsDt}>State</dt>
-          <dd class={s.metricsDd}>{meshDecisionLabel(current)}</dd>
+          <dt class={s.metricsDt}>High-res interval</dt>
+          <dd class={s.metricsDd}>{seconds(current?.interval_sec)}</dd>
         </div>
         <div class={s.metricsCell}>
-          <dt class={s.metricsDt}>Next interval</dt>
-          <dd class={s.metricsDd}>{(current as any)?.next_interval_sec ?? '-'} sec</dd>
+          <dt class={s.metricsDt}>Probe interval</dt>
+          <dd class={s.metricsDd}>{seconds(current?.probe_interval_sec)}</dd>
         </div>
         <div class={s.metricsCell}>
-          <dt class={s.metricsDt}>Last capture</dt>
-          <dd class={s.metricsDd}>{formatCaptureTime(current?.last_capture_time)}</dd>
+          <dt class={s.metricsDt}>Would-be mode</dt>
+          <dd class={s.metricsDd}>{current?.would_be_mode || meshDecisionLabel(current)}</dd>
         </div>
         <div class={s.metricsCell}>
-          <dt class={s.metricsDt}>Connection</dt>
-          <dd class={s.metricsDd}>{connectionState.value}</dd>
+          <dt class={s.metricsDt}>Would-be interval</dt>
+          <dd class={s.metricsDd}>{seconds(current?.would_be_interval_sec)}</dd>
+        </div>
+        <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>Shadow only</dt>
+          <dd class={s.metricsDd}>{shadowOnly === null ? '-' : shadowOnly ? 'on' : 'off'}</dd>
         </div>
       </dl>
 
@@ -359,9 +341,6 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <button class={s.btnSecondary} type="button" onClick={() => void refresh()} disabled={busy.value}>
           Refresh
         </button>
-        <button class={s.btnSecondary} type="button" onClick={handleMonitor} disabled={busy.value}>
-          Monitor
-        </button>
         <button class={s.btnRemoveCamera} type="button" onClick={() => void handleRemove()} disabled={busy.value}>
           Remove
         </button>
@@ -371,9 +350,8 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <summary class={s.debugDetailsSummary}>Connection details</summary>
         <p class={s.debugStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
         <p class={s.debugStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
-        <p class={s.debugStatus}>
-          Live monitor is kept conservative during field validation. Normal cards use the latest scheduled image.
-        </p>
+        <p class={s.debugStatus}>last capture: {formatCaptureTime(current?.last_capture_time)}</p>
+        <p class={s.debugStatus}>connection: {connectionState.value}</p>
       </details>
     </article>
   );

@@ -95,6 +95,10 @@ export interface StatusResponse {
   mesh_active_cell_proportion?: number | null;
   mesh_offset_agreement?: number | null;
   mesh_global_synchrony?: number | null;
+  probe_interval_sec?: number | null;
+  would_be_mode?: string | null;
+  would_be_interval_sec?: number | null;
+  live_adaptive_enabled?: boolean;
 }
 
 /** System info from GET /system. */
@@ -154,15 +158,4 @@ export interface StartPayload {
   autonomous_mode: boolean;
   adaptive_timelapse_mode: boolean;
   mesh_shadow_mode: boolean;
-  adaptive_min_interval_sec?: number;
-  adaptive_max_interval_sec?: number;
-  adaptive_window_sec?: number;
-  site_id?: string;
-  flower_id?: string;
-  plant_species?: string;
-  observer?: string;
-  notes?: string;
-  comparison_session_id?: string;
-  camera_role?: string;
-  method_mode?: string;
 }

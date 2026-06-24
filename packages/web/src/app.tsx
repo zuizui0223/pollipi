@@ -13,11 +13,7 @@ import { Gallery } from './components/Gallery';
 import { getCameras } from './state/devices';
 import { selectedGalleryCamera } from './state/gallery';
 import {
-  adaptiveMaxIntervalSec,
-  adaptiveMinIntervalSec,
-  adaptiveTimelapseMode,
   autonomousMode,
-  getSessionMetadata,
   intervalSec,
   syncLabel,
 } from './state/session';
@@ -28,11 +24,8 @@ function startPayloadFor(_camera: Camera): StartPayload {
   return {
     interval_sec: intervalSec.value,
     autonomous_mode: autonomousMode.value,
-    adaptive_timelapse_mode: adaptiveTimelapseMode.value,
-    adaptive_min_interval_sec: adaptiveMinIntervalSec.value,
-    adaptive_max_interval_sec: adaptiveMaxIntervalSec.value,
-    mesh_shadow_mode: !adaptiveTimelapseMode.value,
-    ...getSessionMetadata(),
+    adaptive_timelapse_mode: false,
+    mesh_shadow_mode: true,
   };
 }
 
@@ -83,7 +76,7 @@ export function App() {
       <header class={s.heroLayout}>
         <div>
           <p class={s.eyebrow}>PolliPi Field Console</p>
-          <h1 class={s.h1}>Visit Monitor</h1>
+          <h1 class={s.h1}>Field Console</h1>
           <p class={s.lead}>
             Status-first control for autonomous Raspberry Pi timelapse units on the field LAN.
           </p>
