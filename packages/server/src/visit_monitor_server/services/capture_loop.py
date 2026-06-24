@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from pollipi_analysis.pipeline import analyze
-from pollipi_analysis.policy.three_stage import ThreeStageConfig, ThreeStageController
+from pollipi_analysis.policy import create_policy_controller, get_policy_profile
 from visit_monitor_server.config import (
     ADAPTIVE_DECISION_LOG_PATH,
     CAMERA_LABEL,
@@ -71,6 +71,10 @@ SHADOW_COLUMNS = [
     "policy_name",
     "policy_version",
     "validation_status",
+    "policy_profile_id",
+    "simulation_run_id",
+    "kind",
+    "live_allowed",
 ]
 
 
@@ -90,6 +94,7 @@ def _write_shadow_record(
     decision,
     request,
     policy_meta=None,
+    policy_profile=None,
 ) -> None:
     """Append compact scheduled-image metadata.  No candidate-event image exists."""
     write_header = not METRICS_PATH.exists()
@@ -132,6 +137,10 @@ def _write_shadow_record(
             getattr(policy_meta, "policy_name", "baseline_rule"),
             getattr(policy_meta, "policy_version", "0"),
             getattr(policy_meta, "validation_status", "synthetic_only"),
+            getattr(policy_profile, "profile_id", getattr(request, "policy_profile_id", "") or ""),
+            getattr(policy_profile, "simulation_run_id", ""),
+            getattr(policy_profile, "kind", ""),
+            getattr(policy_profile, "live_allowed", False),
         ])
 
     decision_header = not ADAPTIVE_DECISION_LOG_PATH.exists()
@@ -172,6 +181,10 @@ PROBE_SHADOW_COLUMNS = [
     "policy_name",
     "policy_version",
     "validation_status",
+    "policy_profile_id",
+    "simulation_run_id",
+    "kind",
+    "live_allowed",
 ]
 
 
@@ -184,6 +197,7 @@ def _write_probe_record(
     actual_highres_saved: bool,
     next_highres_due_at: str,
     policy_meta,
+    policy_profile,
 ) -> None:
     """Append one row per low-resolution probe (no image saved here)."""
     write_header = not PROBE_SHADOW_LOG_PATH.exists()
@@ -207,6 +221,10 @@ def _write_probe_record(
             getattr(policy_meta, "policy_name", "baseline_rule"),
             getattr(policy_meta, "policy_version", "0"),
             getattr(policy_meta, "validation_status", "synthetic_only"),
+            policy_profile.profile_id,
+            policy_profile.simulation_run_id,
+            policy_profile.kind,
+            policy_profile.live_allowed,
         ])
 
 
@@ -252,6 +270,7 @@ def run_capture_loop(
         from visit_monitor_server.services.policy_runtime import get_active_policy
 
         policy_config, policy_meta = get_active_policy()
+        policy_profile = get_policy_profile(request.policy_profile_id)
 
         # Issue #27 probe-only three-stage shadow. Two clocks:
         #  - low-resolution probe every PROBE_INTERVAL_SEC (no JPEG saved),
@@ -260,12 +279,16 @@ def run_capture_loop(
         # never changed (live adaptive control stays off).
         hires_interval = float(request.interval_sec)
         probe_interval = min(PROBE_INTERVAL_SEC, hires_interval)
-        three = ThreeStageController(ThreeStageConfig(low_interval_sec=hires_interval))
+        three = create_policy_controller(policy_profile)
 
         update_state({
             "probe_interval_sec": probe_interval,
             "would_be_mode": "LOW",
             "would_be_interval_sec": three.config.low_interval_sec,
+            "policy_profile_id": policy_profile.profile_id,
+            "simulation_run_id": policy_profile.simulation_run_id,
+            "kind": policy_profile.kind,
+            "live_allowed": policy_profile.live_allowed,
             "message": "Probe-only three-stage shadow; high-res capture fixed.",
         })
 
@@ -313,7 +336,14 @@ def run_capture_loop(
                     next_hires_due = now_mono + hires_interval
                 if decision is not None:
                     _write_shadow_record(
-                        captured_at, image_path, hires_interval, out.interval_sec, decision, request, policy_meta
+                        captured_at,
+                        image_path,
+                        hires_interval,
+                        out.interval_sec,
+                        decision,
+                        request,
+                        policy_meta,
+                        policy_profile,
                     )
                 update_state({
                     "capture_count_delta": 1,
@@ -324,7 +354,7 @@ def run_capture_loop(
             next_due_at = (captured_at + timedelta(seconds=max(0.0, next_hires_due - now_mono))).isoformat(timespec="seconds")
             _write_probe_record(
                 captured_at, probe_interval, out, decision_state, decision_reason,
-                actual_highres_saved, next_due_at, policy_meta,
+                actual_highres_saved, next_due_at, policy_meta, policy_profile,
             )
 
             mesh_state = {
@@ -339,6 +369,10 @@ def run_capture_loop(
                 "next_interval_sec": hires_interval,
                 "would_be_mode": out.mode,
                 "would_be_interval_sec": out.interval_sec,
+                "policy_profile_id": policy_profile.profile_id,
+                "simulation_run_id": policy_profile.simulation_run_id,
+                "kind": policy_profile.kind,
+                "live_allowed": policy_profile.live_allowed,
                 "interval_reason": (
                     f"Probe shadow: would-be {out.mode} ({out.interval_sec:.0f}s); "
                     f"{decision_reason}; high-res fixed at {hires_interval:.0f}s."

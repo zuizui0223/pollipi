@@ -1,0 +1,16 @@
+{
+  "schema": "pollipi-policy-profile-1",
+  "profile_id": "three_stage_sensitive_v1",
+  "simulation_run_id": "issue27-three-stage-sensitive",
+  "source_commit": "analysis-run-issue27-three-stage-sensitive",
+  "kind": "three_stage",
+  "live_allowed": false,
+  "description": "More persistent high shadow response for PC simulation comparison only.",
+  "parameters": {
+    "low_interval_sec": 30.0,
+    "mid_interval_sec": 10.0,
+    "high_interval_sec": 5.0,
+    "high_hard_cap_sec": 180.0,
+    "high_exit_quiet_probes": 4
+  }
+}

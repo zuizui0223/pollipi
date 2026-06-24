@@ -12,6 +12,15 @@ from pollipi_analysis.policy.state_policy import (
     IntervalPlan,
     plan_next_interval,
 )
+from pollipi_analysis.policy.profiles import (
+    DEFAULT_POLICY_PROFILE_ID,
+    PROFILE_SCHEMA_VERSION,
+    PolicyProfile,
+    create_policy_controller,
+    get_policy_profile,
+    list_policy_profiles,
+    three_stage_config_from_profile,
+)
 from pollipi_analysis.policy.three_stage import (
     HIGH,
     LOW,
@@ -37,6 +46,14 @@ __all__ = [
     "load_policy",
     "write_policy",
     "policy_to_pipeline_config",
+    # Versioned policy profiles for Pi shadow selection.
+    "PROFILE_SCHEMA_VERSION",
+    "DEFAULT_POLICY_PROFILE_ID",
+    "PolicyProfile",
+    "list_policy_profiles",
+    "get_policy_profile",
+    "three_stage_config_from_profile",
+    "create_policy_controller",
     # Probe-only three-stage adaptive shadow controller (Issue #27).
     "ThreeStageController",
     "ThreeStageConfig",

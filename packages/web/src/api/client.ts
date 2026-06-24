@@ -1,6 +1,7 @@
 import type {
   DeviceInfo,
   StatusResponse,
+  PolicyProfilesResponse,
   SystemInfo,
   ImagesResponse,
   DeleteImagesResponse,
@@ -106,6 +107,10 @@ export async function fetchDevice(target: ApiTarget, options: RequestInit = {}):
 
 export async function fetchStatus(target: ApiTarget, options: RequestInit = {}): Promise<StatusResponse> {
   return apiRequest<StatusResponse>(target, '/status', options);
+}
+
+export async function fetchPolicyProfiles(target: ApiTarget, options: RequestInit = {}): Promise<PolicyProfilesResponse> {
+  return apiRequest<PolicyProfilesResponse>(target, '/policy-profiles', options);
 }
 
 export async function fetchSystem(target: ApiTarget, options: RequestInit = {}): Promise<SystemInfo> {

@@ -1,7 +1,9 @@
 import { h } from 'preact';
 import {
+  approvedPolicyProfiles,
   autonomousMode,
   intervalSec,
+  policyProfileId,
 } from '../state/session';
 import * as s from '../styles/components.css';
 
@@ -50,6 +52,26 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
             }}
           />
           <span>Resume autonomously after Pi restart</span>
+        </label>
+        <label class={s.profileSelectWrap} style={{ gridColumn: '1 / -1' }}>
+          <span>Approved policy profile</span>
+          <select
+            class={s.profileSelect}
+            value={policyProfileId.value}
+            disabled={approvedPolicyProfiles.value.length === 0}
+            onChange={(e) => {
+              policyProfileId.value = (e.target as HTMLSelectElement).value;
+            }}
+          >
+            {approvedPolicyProfiles.value.length === 0 && (
+              <option value="">Loading approved profiles</option>
+            )}
+            {approvedPolicyProfiles.value.map((profile) => (
+              <option value={profile.profile_id} key={profile.profile_id}>
+                {profile.profile_id}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 

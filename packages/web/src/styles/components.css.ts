@@ -204,6 +204,27 @@ export const autoToggleInput = style({
   accentColor: 'var(--leaf)',
 });
 
+export const profileSelectWrap = style({
+  display: 'grid',
+  gap: '6px',
+  color: 'var(--muted)',
+  fontSize: '12px',
+  fontWeight: '800',
+  textTransform: 'uppercase',
+});
+
+export const profileSelect = style({
+  width: '100%',
+  minHeight: '40px',
+  border: '1px solid var(--line)',
+  borderRadius: '8px',
+  background: 'white',
+  color: 'var(--ink)',
+  fontSize: '14px',
+  fontWeight: '700',
+  padding: '8px 10px',
+});
+
 export const fieldBasicGrid = style({
   display: 'grid',
   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',

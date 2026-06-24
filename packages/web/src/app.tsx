@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks';
 
 import './styles/index.css';
 
-import { postStart, postStop } from './api/client';
+import { fetchPolicyProfiles, postStart, postStop } from './api/client';
 import type { Camera, StartPayload } from './api/types';
 import { CoordinatorPanel } from './components/CoordinatorPanel';
 import { DeviceForm } from './components/DeviceForm';
@@ -14,19 +14,23 @@ import { getCameras } from './state/devices';
 import { selectedGalleryCamera } from './state/gallery';
 import {
   autonomousMode,
+  approvedPolicyProfiles,
   intervalSec,
+  policyProfileId,
   syncLabel,
 } from './state/session';
 import { formatSyncTime } from './lib/formatting';
 import * as s from './styles/components.css';
 
 function startPayloadFor(_camera: Camera): StartPayload {
-  return {
+  const payload: StartPayload = {
     interval_sec: intervalSec.value,
     autonomous_mode: autonomousMode.value,
     adaptive_timelapse_mode: false,
     mesh_shadow_mode: true,
   };
+  if (policyProfileId.value) payload.policy_profile_id = policyProfileId.value;
+  return payload;
 }
 
 export function App() {
@@ -37,12 +41,30 @@ export function App() {
     if (!selectedGalleryCamera.value && cameras.length > 0) {
       selectedGalleryCamera.value = cameras[0];
     }
+    if (cameras.length > 0 && approvedPolicyProfiles.value.length === 0) {
+      void loadPolicyProfiles(cameras[0]);
+    }
   }, [cameraList.length]);
+
+  async function loadPolicyProfiles(camera: Camera) {
+    try {
+      const response = await fetchPolicyProfiles(camera);
+      approvedPolicyProfiles.value = response.profiles;
+      if (!policyProfileId.value) {
+        policyProfileId.value = response.default_profile_id;
+      }
+    } catch (error: unknown) {
+      syncLabel.value = `policy profiles unavailable: ${(error as Error).message}`;
+    }
+  }
 
   async function refreshWorkspace() {
     const cameras = getCameras();
     if (!selectedGalleryCamera.value && cameras.length > 0) {
       selectedGalleryCamera.value = cameras[0];
+    }
+    if (cameras.length > 0) {
+      await loadPolicyProfiles(cameras[0]);
     }
     syncLabel.value = `last sync ${formatSyncTime(new Date())}`;
   }
