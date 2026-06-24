@@ -76,9 +76,13 @@ class TimelapseController:
         self.mesh_active_cell_proportion: Optional[float] = None
         self.mesh_offset_agreement: Optional[float] = None
         self.mesh_global_synchrony: Optional[float] = None
+        self.probe_interval_sec: Optional[float] = None
+        self.would_be_mode: str = "LOW"
+        self.would_be_interval_sec: Optional[float] = None
 
     def _build_status(self):
         from visit_monitor_server.api.schemas.capture import StatusResponse
+        from visit_monitor_server.config import LIVE_ADAPTIVE_ENABLED
         from visit_monitor_server.services.policy_runtime import get_active_policy
 
         _policy_config, _policy_meta = get_active_policy()
@@ -87,6 +91,10 @@ class TimelapseController:
             policy_name=_policy_meta.policy_name,
             policy_version=_policy_meta.policy_version,
             validation_status=_policy_meta.validation_status,
+            probe_interval_sec=self.probe_interval_sec,
+            would_be_mode=self.would_be_mode,
+            would_be_interval_sec=self.would_be_interval_sec,
+            live_adaptive_enabled=LIVE_ADAPTIVE_ENABLED,
             running=self.running,
             lifecycle_state=self.lifecycle_state,
             last_error=self.last_error,
@@ -274,6 +282,12 @@ class TimelapseController:
                 self.mesh_offset_agreement = state["mesh_offset_agreement"]
             if "mesh_global_synchrony" in state:
                 self.mesh_global_synchrony = state["mesh_global_synchrony"]
+            if "probe_interval_sec" in state:
+                self.probe_interval_sec = state["probe_interval_sec"]
+            if "would_be_mode" in state:
+                self.would_be_mode = state["would_be_mode"]
+            if "would_be_interval_sec" in state:
+                self.would_be_interval_sec = state["would_be_interval_sec"]
             self.capture_count += state.get("capture_count_delta", 0)
             if state.get("last_capture_time") is not None:
                 self.last_capture_time = state["last_capture_time"]

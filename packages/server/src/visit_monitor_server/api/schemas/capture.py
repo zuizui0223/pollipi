@@ -80,3 +80,10 @@ class StatusResponse(BaseModel):
     policy_name: str = "baseline_rule"
     policy_version: str = "0"
     validation_status: str = "synthetic_only"
+
+    # Issue #27 probe-only three-stage shadow. would_be_* is advisory only; live
+    # adaptive timing stays off (live_adaptive_enabled guards future enablement).
+    probe_interval_sec: Optional[float] = None
+    would_be_mode: str = "LOW"
+    would_be_interval_sec: Optional[float] = None
+    live_adaptive_enabled: bool = False

@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import csv
 import threading
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from pollipi_analysis.pipeline import analyze
-from pollipi_analysis.policy.state_policy import IntervalBounds, plan_next_interval
+from pollipi_analysis.policy.three_stage import ThreeStageConfig, ThreeStageController
 from visit_monitor_server.config import (
     ADAPTIVE_DECISION_LOG_PATH,
     CAMERA_LABEL,
@@ -27,6 +28,8 @@ from visit_monitor_server.config import (
     IS_WIDE,
     METRICS_PATH,
     MONITOR_SIZE,
+    PROBE_INTERVAL_SEC,
+    PROBE_SHADOW_LOG_PATH,
     USE_FAKE_CAMERA,
 )
 
@@ -153,6 +156,60 @@ def _write_shadow_record(
         ])
 
 
+PROBE_SHADOW_COLUMNS = [
+    "probe_timestamp",
+    "probe_interval_sec",
+    "would_be_mode",
+    "would_be_interval_sec",
+    "decision_state",
+    "decision_reason",
+    "local_candidate_streak",
+    "quiet_streak",
+    "high_elapsed_sec",
+    "high_remaining_sec",
+    "actual_highres_saved",
+    "next_highres_due_at",
+    "policy_name",
+    "policy_version",
+    "validation_status",
+]
+
+
+def _write_probe_record(
+    probe_at: datetime,
+    probe_interval_sec: float,
+    out,
+    decision_state: str,
+    decision_reason: str,
+    actual_highres_saved: bool,
+    next_highres_due_at: str,
+    policy_meta,
+) -> None:
+    """Append one row per low-resolution probe (no image saved here)."""
+    write_header = not PROBE_SHADOW_LOG_PATH.exists()
+    with PROBE_SHADOW_LOG_PATH.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        if write_header:
+            writer.writerow(PROBE_SHADOW_COLUMNS)
+        writer.writerow([
+            probe_at.isoformat(timespec="seconds"),
+            f"{probe_interval_sec:.3f}",
+            out.mode,
+            f"{out.interval_sec:.3f}",
+            decision_state,
+            decision_reason,
+            out.local_candidate_streak,
+            out.quiet_streak,
+            f"{out.high_elapsed_sec:.3f}",
+            f"{out.high_remaining_sec:.3f}",
+            actual_highres_saved,
+            next_highres_due_at,
+            getattr(policy_meta, "policy_name", "baseline_rule"),
+            getattr(policy_meta, "policy_version", "0"),
+            getattr(policy_meta, "validation_status", "synthetic_only"),
+        ])
+
+
 def run_capture_loop(
     stop_event: threading.Event,
     request,
@@ -190,37 +247,42 @@ def run_capture_loop(
             return
         set_message("Scheduled timelapse running; mesh decisions are logged in shadow mode.")
 
-        bounds = IntervalBounds(
-            baseline_interval_sec=request.interval_sec,
-            min_interval_sec=request.adaptive_min_interval_sec,
-            max_interval_sec=request.adaptive_max_interval_sec,
-        )
-
         # Issue #21: load the (simulation-informed) policy artifact once. The Pi
         # only consumes numeric thresholds here — no simulation/search runs.
         from visit_monitor_server.services.policy_runtime import get_active_policy
 
         policy_config, policy_meta = get_active_policy()
 
+        # Issue #27 probe-only three-stage shadow. Two clocks:
+        #  - low-resolution probe every PROBE_INTERVAL_SEC (no JPEG saved),
+        #  - high-resolution JPEG on the fixed scheduled interval.
+        # The three-stage controller only logs a WOULD-BE mode; capture timing is
+        # never changed (live adaptive control stays off).
+        hires_interval = float(request.interval_sec)
+        probe_interval = min(PROBE_INTERVAL_SEC, hires_interval)
+        three = ThreeStageController(ThreeStageConfig(low_interval_sec=hires_interval))
+
+        update_state({
+            "probe_interval_sec": probe_interval,
+            "would_be_mode": "LOW",
+            "would_be_interval_sec": three.config.low_interval_sec,
+            "message": "Probe-only three-stage shadow; high-res capture fixed.",
+        })
+
+        start_mono = time.monotonic()
+        next_hires_due = start_mono  # save the first high-res frame immediately
+
         while not stop_event.is_set():
+            now_mono = time.monotonic()
             captured_at = datetime.now().astimezone()
-            filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
-            image_path = image_dir / filename
 
             with camera_lock:
-                camera.capture_file(str(image_path))
                 frame = camera.capture_array("lores")
 
             if previous_frame is None:
-                would_be_next = request.interval_sec
-                reason = "Mesh shadow mode: reference frame captured; scheduled interval unchanged."
-                mesh_state: dict = {
-                    "mesh_decision": "no_activity",
-                    "mesh_reason": "waiting_for_reference_frame",
-                    "mesh_active_cell_proportion": 0.0,
-                    "mesh_offset_agreement": 0.0,
-                    "mesh_global_synchrony": 0.0,
-                }
+                decision = None
+                decision_state = "no_activity"
+                decision_reason = "waiting_for_reference_frame"
             else:
                 decision = analyze(
                     frame,
@@ -229,48 +291,64 @@ def run_capture_loop(
                     previous_active_cells=previous_active_cells,
                     previous_centroid=previous_centroid,
                 )
-                plan = plan_next_interval(
-                    decision.state,
-                    bounds,
-                    current_interval_sec=request.interval_sec,
-                )
-                would_be_next = plan.next_interval_sec
-                reason = f"Mesh shadow mode: {decision.state}; {decision.reason}; scheduled interval unchanged."
-                mesh_state = {
-                    "mesh_decision": decision.state,
-                    "mesh_reason": decision.reason,
-                    "mesh_active_cell_proportion": decision.features.active_cell_proportion,
-                    "mesh_offset_agreement": decision.features.offset_agreement,
-                    "mesh_global_synchrony": decision.features.global_synchrony,
-                }
-                _write_shadow_record(
-                    captured_at,
-                    image_path,
-                    request.interval_sec,
-                    would_be_next,
-                    decision,
-                    request,
-                    policy_meta,
-                )
+                decision_state = decision.state
+                decision_reason = decision.reason
                 previous_active_cells = set(decision.active_cells)
                 if decision.features.centroid_x is not None and decision.features.centroid_y is not None:
                     previous_centroid = (decision.features.centroid_x, decision.features.centroid_y)
-
             previous_frame = frame
+
+            out = three.step(decision_state, now_mono)
+
+            # High-resolution JPEG on the fixed schedule only.
+            actual_highres_saved = False
+            if now_mono >= next_hires_due:
+                filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
+                image_path = image_dir / filename
+                with camera_lock:
+                    camera.capture_file(str(image_path))
+                actual_highres_saved = True
+                next_hires_due += hires_interval
+                if next_hires_due <= now_mono:  # avoid drift after a slow cycle
+                    next_hires_due = now_mono + hires_interval
+                if decision is not None:
+                    _write_shadow_record(
+                        captured_at, image_path, hires_interval, out.interval_sec, decision, request, policy_meta
+                    )
+                update_state({
+                    "capture_count_delta": 1,
+                    "last_capture_time": captured_at.isoformat(timespec="seconds"),
+                    "last_image": str(image_path),
+                })
+
+            next_due_at = (captured_at + timedelta(seconds=max(0.0, next_hires_due - now_mono))).isoformat(timespec="seconds")
+            _write_probe_record(
+                captured_at, probe_interval, out, decision_state, decision_reason,
+                actual_highres_saved, next_due_at, policy_meta,
+            )
+
+            mesh_state = {
+                "mesh_decision": decision_state,
+                "mesh_reason": decision_reason,
+                "mesh_active_cell_proportion": decision.features.active_cell_proportion if decision else 0.0,
+                "mesh_offset_agreement": decision.features.offset_agreement if decision else 0.0,
+                "mesh_global_synchrony": decision.features.global_synchrony if decision else 0.0,
+            }
             update_state({
-                "capture_count_delta": 1,
-                "interval_sec": request.interval_sec,
-                "next_interval_sec": would_be_next,
-                "last_capture_time": captured_at.isoformat(timespec="seconds"),
-                "last_image": str(image_path),
-                "message": "Scheduled timelapse running; shadow mesh analysis only.",
-                "interval_reason": reason,
+                "interval_sec": hires_interval,  # actual observed high-res capture gap
+                "next_interval_sec": hires_interval,
+                "would_be_mode": out.mode,
+                "would_be_interval_sec": out.interval_sec,
+                "interval_reason": (
+                    f"Probe shadow: would-be {out.mode} ({out.interval_sec:.0f}s); "
+                    f"{decision_reason}; high-res fixed at {hires_interval:.0f}s."
+                ),
                 **mesh_state,
             })
 
             # Adaptive control remains intentionally disabled until real Pi shadow
-            # validation is complete.  The policy result is logged as would-be only.
-            if stop_event.wait(request.interval_sec):
+            # validation is complete.  Only the probe cadence governs the loop.
+            if stop_event.wait(probe_interval):
                 break
 
     except Exception as exc:

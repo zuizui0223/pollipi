@@ -28,7 +28,14 @@ IMAGE_DIR = Path(
 
 METRICS_PATH = IMAGE_DIR / "adaptive_metrics.csv"
 ADAPTIVE_DECISION_LOG_PATH = IMAGE_DIR / "adaptive_decisions.csv"
+PROBE_SHADOW_LOG_PATH = IMAGE_DIR / "adaptive_probe_shadow-1.csv"
 AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
+
+# Issue #27 probe-only three-stage shadow: low-resolution probes run every
+# PROBE_INTERVAL_SEC (no JPEG saved); high-resolution JPEGs stay on the fixed
+# scheduled interval. Live adaptive capture timing remains disabled.
+PROBE_INTERVAL_SEC = float(os.getenv("POLLIPI_PROBE_INTERVAL_SEC", "5"))
+LIVE_ADAPTIVE_ENABLED = env_bool("POLLIPI_LIVE_ADAPTIVE_ENABLED", False)
 
 # Versioned mesh policy artifact loaded at startup (Issue #21). When present the
 # Pi builds its analysis configuration from this JSON; otherwise a built-in
