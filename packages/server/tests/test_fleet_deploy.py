@@ -123,7 +123,44 @@ def test_full_deploy_ssh_auth_failure_stops_before_backup_upload(monkeypatch, tm
     assert "rollback" not in result
 
 
-def test_full_deploy_sudo_failure_stops_before_backup_upload(monkeypatch, tmp_path: Path) -> None:
+def test_sudo_preflight_allows_inactive_service_when_unit_exists(monkeypatch, tmp_path: Path) -> None:
+    tool = _load_tool()
+    artifact = tmp_path / "dist" / "pollipi_api_server.py"
+    web_dir = tmp_path / "web-dist"
+    artifact.parent.mkdir()
+    artifact.write_text("print('artifact')\n", encoding="utf-8")
+    web_dir.mkdir()
+    device = tool.Device(
+        name="zuizui",
+        host="192.168.11.17",
+        ssh_user="zuizui0223",
+        ssh_port=22,
+        remote_dir="/home/zuizui0223/pollipi_timelapse",
+        server_artifact=str(artifact),
+        server_filename="pollipi_api_server.py",
+        web_build_dir=str(web_dir),
+        web_remote_dir="web",
+        service_name="pollipi.service",
+        post_deploy_base_url="http://{host}:8000/app",
+    )
+
+    monkeypatch.setattr(tool, "pc_on_subnet", lambda subnet, host: (True, "192.168.11.4"))
+    monkeypatch.setattr(tool, "tcp_connect", lambda host, port: (True, "reachable"))
+    monkeypatch.setattr(tool, "http_get_json", lambda url: (True, {"ok": True}))
+
+    def fake_run_cmd(cmd):
+        if cmd[-1].startswith("sudo -n systemctl cat"):
+            return True, "# pollipi.service unit exists; current active state is irrelevant"
+        return True, "zuizui"
+
+    monkeypatch.setattr(tool, "run_cmd", fake_run_cmd)
+    result = tool.preflight_device(device, subnet="192.168.11.0/24", dry_run=False)
+
+    assert result["status"] == "ok"
+    assert any(step["step"] == "sudo unit access" and step["status"] == "ok" for step in result["steps"])
+
+
+def test_full_deploy_sudo_password_failure_stops_before_backup_upload(monkeypatch, tmp_path: Path) -> None:
     tool = _load_tool()
     artifact = tmp_path / "dist" / "pollipi_api_server.py"
     web_dir = tmp_path / "web-dist"
@@ -150,7 +187,7 @@ def test_full_deploy_sudo_failure_stops_before_backup_upload(monkeypatch, tmp_pa
 
     def fake_run_cmd(cmd):
         commands.append(tool.command_text(cmd))
-        if cmd[-1].startswith("sudo -n systemctl status"):
+        if cmd[-1].startswith("sudo -n systemctl cat"):
             return False, "sudo: a password is required"
         return True, "zuizui"
 
@@ -158,7 +195,48 @@ def test_full_deploy_sudo_failure_stops_before_backup_upload(monkeypatch, tmp_pa
     result = tool.deploy_device(device, subnet="192.168.11.0/24", dry_run=False)
 
     assert result["status"] == "failed"
-    assert any(step["step"] == "sudo restart permission" and step["status"] == "failed" for step in result["steps"])
+    assert any(step["step"] == "sudo unit access" and step["status"] == "failed" for step in result["steps"])
+    assert not any("cp /home/zuizui0223/pollipi_timelapse/pollipi_api_server.py" in command for command in commands)
+    assert not any("scp" in command for command in commands)
+    assert "rollback" not in result
+
+
+def test_full_deploy_unit_not_found_stops_before_backup_upload(monkeypatch, tmp_path: Path) -> None:
+    tool = _load_tool()
+    artifact = tmp_path / "dist" / "pollipi_api_server.py"
+    web_dir = tmp_path / "web-dist"
+    artifact.parent.mkdir()
+    artifact.write_text("print('artifact')\n", encoding="utf-8")
+    web_dir.mkdir()
+    device = tool.Device(
+        name="zuizui",
+        host="192.168.11.17",
+        ssh_user="zuizui0223",
+        ssh_port=22,
+        remote_dir="/home/zuizui0223/pollipi_timelapse",
+        server_artifact=str(artifact),
+        server_filename="pollipi_api_server.py",
+        web_build_dir=str(web_dir),
+        web_remote_dir="web",
+        service_name="pollipi.service",
+        post_deploy_base_url="http://{host}:8000/app",
+    )
+    commands: list[str] = []
+
+    monkeypatch.setattr(tool, "pc_on_subnet", lambda subnet, host: (True, "192.168.11.4"))
+    monkeypatch.setattr(tool, "tcp_connect", lambda host, port: (True, "reachable"))
+
+    def fake_run_cmd(cmd):
+        commands.append(tool.command_text(cmd))
+        if cmd[-1].startswith("sudo -n systemctl cat"):
+            return False, "No files found for pollipi.service."
+        return True, "zuizui"
+
+    monkeypatch.setattr(tool, "run_cmd", fake_run_cmd)
+    result = tool.deploy_device(device, subnet="192.168.11.0/24", dry_run=False)
+
+    assert result["status"] == "failed"
+    assert any(step["step"] == "sudo unit access" and step["status"] == "failed" for step in result["steps"])
     assert not any("cp /home/zuizui0223/pollipi_timelapse/pollipi_api_server.py" in command for command in commands)
     assert not any("scp" in command for command in commands)
     assert "rollback" not in result

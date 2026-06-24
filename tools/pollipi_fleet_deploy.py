@@ -288,10 +288,10 @@ def preflight_device(device: Device, *, subnet: str, dry_run: bool, web_only: bo
         return {"status": "failed", "steps": steps}
 
     if not web_only:
-        sudo_cmd = f"sudo -n systemctl status {device.service_name} >/dev/null"
+        sudo_cmd = f"sudo -n systemctl cat {device.service_name} >/dev/null"
         sudo_ok, sudo_output = (True, "dry-run") if dry_run else run_cmd(ssh_batch_cmd(device, sudo_cmd))
         ok = ok and sudo_ok
-        steps.append({"step": "sudo restart permission", "status": "ok" if sudo_ok else "failed", "output": sudo_output[:500]})
+        steps.append({"step": "sudo unit access", "status": "ok" if sudo_ok else "failed", "output": sudo_output[:500]})
         if not dry_run and not sudo_ok:
             return {"status": "failed", "steps": steps}
 
