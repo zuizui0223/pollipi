@@ -164,6 +164,60 @@ def test_full_deploy_sudo_failure_stops_before_backup_upload(monkeypatch, tmp_pa
     assert "rollback" not in result
 
 
+def test_full_deploy_plan_uses_noninteractive_ssh_and_scp() -> None:
+    tool = _load_tool()
+    device = tool.Device(
+        name="zuizui",
+        host="192.168.11.17",
+        ssh_user="zuizui0223",
+        ssh_port=22,
+        remote_dir="/home/zuizui0223/pollipi_timelapse",
+        server_artifact="dist/pollipi_api_server.py",
+        server_filename="pollipi_api_server.py",
+        web_build_dir="packages/web/dist",
+        web_remote_dir="web",
+        service_name="pollipi.service",
+        post_deploy_base_url="http://{host}:8000/app",
+    )
+
+    plan = tool.deploy_plan(device, "stamp")
+    commands = [cmd for _label, cmd in plan["steps"]]
+    ssh_commands = [cmd for cmd in commands if cmd[0] == "ssh"]
+    scp_commands = [cmd for cmd in commands if cmd[0] == "scp"]
+
+    assert ssh_commands
+    assert scp_commands
+    assert all("BatchMode=yes" in command for command in ssh_commands)
+    assert all("ConnectTimeout=8" in command for command in ssh_commands)
+    assert all("BatchMode=yes" in command for command in scp_commands)
+    assert all("ConnectTimeout=8" in command for command in scp_commands)
+
+
+def test_full_deploy_rollback_uses_noninteractive_ssh() -> None:
+    tool = _load_tool()
+    device = tool.Device(
+        name="zuizui",
+        host="192.168.11.17",
+        ssh_user="zuizui0223",
+        ssh_port=22,
+        remote_dir="/home/zuizui0223/pollipi_timelapse",
+        server_artifact="dist/pollipi_api_server.py",
+        server_filename="pollipi_api_server.py",
+        web_build_dir="packages/web/dist",
+        web_remote_dir="web",
+        service_name="pollipi.service",
+        post_deploy_base_url="http://{host}:8000/app",
+    )
+
+    plan = tool.deploy_plan(device, "stamp")
+    rollback_commands = [cmd for _label, cmd in plan["rollback"]]
+
+    assert rollback_commands
+    assert all(command[0] == "ssh" for command in rollback_commands)
+    assert all("BatchMode=yes" in command for command in rollback_commands)
+    assert all("ConnectTimeout=8" in command for command in rollback_commands)
+
+
 def test_fleet_deploy_execute_requires_confirmation(tmp_path: Path, capsys) -> None:
     tool = _load_tool()
     artifact = tmp_path / "dist" / "pollipi_api_server.py"
@@ -272,6 +326,8 @@ def test_web_only_plan_omits_server_upload_and_restart() -> None:
     assert any("packages/web/dist/." in command for command in commands)
     assert not any("pollipi_api_server.py" in command for command in commands)
     assert not any("systemctl restart" in command for command in commands)
+    assert all("BatchMode=yes" in command for command in commands)
+    assert all("ConnectTimeout=8" in command for command in commands)
 
 
 def test_web_only_verifies_static_build_info_instead_of_device_metadata(monkeypatch, tmp_path: Path) -> None:

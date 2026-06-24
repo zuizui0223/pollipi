@@ -107,10 +107,6 @@ def load_devices(path: Path) -> list[Device]:
 
 
 def ssh_cmd(device: Device, remote: str) -> list[str]:
-    return ["ssh", "-p", str(device.ssh_port), device.target, remote]
-
-
-def ssh_batch_cmd(device: Device, remote: str) -> list[str]:
     return [
         "ssh",
         "-o",
@@ -124,8 +120,20 @@ def ssh_batch_cmd(device: Device, remote: str) -> list[str]:
     ]
 
 
+def ssh_batch_cmd(device: Device, remote: str) -> list[str]:
+    return ssh_cmd(device, remote)
+
+
 def scp_cmd(device: Device, source: str, dest: str, *, recursive: bool = False) -> list[str]:
-    cmd = ["scp", "-P", str(device.ssh_port)]
+    cmd = [
+        "scp",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=8",
+        "-P",
+        str(device.ssh_port),
+    ]
     if recursive:
         cmd.append("-r")
     cmd.extend([source, f"{device.target}:{dest}"])
