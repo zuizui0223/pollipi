@@ -5,9 +5,9 @@ import { useSignal } from '@preact/signals';
 import type { Camera, DeviceInfo, StatusResponse } from '../api/types';
 import {
   deleteCoordinatorDevice,
+  deviceUrl,
   fetchDevice,
   fetchStatus,
-  getMjpegStreamUrl,
   postStart,
   postStop,
 } from '../api/client';
@@ -42,10 +42,9 @@ function buildStartPayload() {
     adaptive_timelapse_mode: false,
     mesh_shadow_mode: true,
   };
-  if (policyProfileId.value) {
-    return { ...payload, policy_profile_id: policyProfileId.value };
-  }
-  return payload;
+  return policyProfileId.value
+    ? { ...payload, policy_profile_id: policyProfileId.value }
+    : payload;
 }
 
 function applyDeviceInfo(camera: Camera, device: DeviceInfo) {
@@ -75,15 +74,6 @@ function applyStatus(camera: Camera, next: StatusResponse) {
   });
 }
 
-function meshDecisionLabel(status: StatusResponse | null): string {
-  const state = (status as any)?.mesh_decision;
-  if (state === 'strong_visitation_candidate') return 'strong activity';
-  if (state === 'uncertain_local_activity') return 'uncertain activity';
-  if (state === 'environmental_noise') return 'environmental noise';
-  if (state === 'no_activity') return 'no activity';
-  return 'waiting';
-}
-
 function shortCommit(value?: string | null): string {
   if (!value) return 'unknown';
   return value.length > 12 ? value.slice(0, 12) : value;
@@ -91,6 +81,15 @@ function shortCommit(value?: string | null): string {
 
 function seconds(value?: number | null): string {
   return Number.isFinite(value) ? `${value} sec` : '-';
+}
+
+function latestImageUrl(camera: Camera, status: StatusResponse): string {
+  const url = new URL(deviceUrl(camera, '/latest'));
+  url.searchParams.set(
+    'capture',
+    status.last_capture_time || String(status.capture_count),
+  );
+  return url.toString();
 }
 
 export function DeviceCard({ camera, index, onUpdated }: Props) {
@@ -106,34 +105,45 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   const refreshInFlight = useRef(false);
   const refreshGeneration = useRef(0);
 
-  function updateFromStatus(next: StatusResponse) {
-    status.value = next;
-    applyStatus(camera, next);
-
-    message.value = next.mesh_reason || next.interval_reason || next.message || 'Status updated.';
-
+  function updateLatestImage(next: StatusResponse) {
     const image = imageRef.current;
-    if (next.running) {
-      imageReady.value = false;
-      hasImage.value = false;
-      image?.removeAttribute('src');
+    if (!image) return;
+
+    if (!next.last_image) {
+      // Keep the previous frame on screen while a newly started capture session
+      // waits for its first scheduled high-resolution JPEG. A stopped session
+      // with no image should show the empty state instead.
+      if (!next.running) {
+        imageReady.value = false;
+        hasImage.value = false;
+        image.removeAttribute('src');
+        delete image.dataset.captureToken;
+      }
       return;
     }
 
-    const streamUrl = getMjpegStreamUrl(camera);
-    if (image && image.src !== streamUrl) {
+    const captureToken = next.last_capture_time || String(next.capture_count);
+    if (image.dataset.captureToken === captureToken) return;
+
+    imageReady.value = false;
+    hasImage.value = false;
+    image.onload = () => {
+      imageReady.value = true;
+      hasImage.value = true;
+    };
+    image.onerror = () => {
       imageReady.value = false;
       hasImage.value = false;
-      image.onload = () => {
-        imageReady.value = true;
-        hasImage.value = true;
-      };
-      image.onerror = () => {
-        imageReady.value = false;
-        hasImage.value = false;
-      };
-      image.src = streamUrl;
-    }
+    };
+    image.dataset.captureToken = captureToken;
+    image.src = latestImageUrl(camera, next);
+  }
+
+  function updateFromStatus(next: StatusResponse) {
+    status.value = next;
+    applyStatus(camera, next);
+    message.value = next.mesh_reason || next.interval_reason || next.message || 'Status updated.';
+    updateLatestImage(next);
   }
 
   async function refresh() {
@@ -280,23 +290,24 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
             {camera.camera_model || '-'} / {camera.camera_profile || 'unspecified'} / {camera.baseUrl}
           </p>
           <p class={s.sensor}>
-            {(build?.deployment_mode || 'unknown')} / commit {shortCommit(build?.git_commit)} / web {build?.web_build_id || 'unknown'}
+            server {shortCommit(build?.git_commit)} / bundled web {build?.web_build_id || 'unknown'}
           </p>
         </div>
         <span class={`${s.pill} ${pillClass}`}>{pillText}</span>
       </div>
 
       <div class={s.imageFrame}>
-        {!isCapturing && (
-          <img
-            ref={imageRef}
-            class={`${s.imageFrameImg}${imageReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
-            alt="Idle MJPEG live preview"
-            draggable={false}
-          />
+        <img
+          ref={imageRef}
+          class={`${s.imageFrameImg}${imageReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
+          alt="Latest saved timelapse image"
+          draggable={false}
+        />
+        {!hasImage.value && (
+          <p class={s.imageFrameEmpty}>
+            {isCapturing ? 'Waiting for first scheduled image' : 'No scheduled image yet'}
+          </p>
         )}
-        {isCapturing && <p class={s.imageFrameEmpty}>Capturing</p>}
-        {!isCapturing && !hasImage.value && <p class={s.imageFrameEmpty}>Starting live preview</p>}
       </div>
 
       <dl class={s.metrics}>
@@ -305,12 +316,20 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
           <dd class={s.metricsDd}>{seconds(current?.interval_sec)}</dd>
         </div>
         <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>Saved photos</dt>
+          <dd class={s.metricsDd}>{current ? current.capture_count : '-'}</dd>
+        </div>
+        <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>Last saved</dt>
+          <dd class={s.metricsDd}>{formatCaptureTime(current?.last_capture_time)}</dd>
+        </div>
+        <div class={s.metricsCell}>
           <dt class={s.metricsDt}>Probe interval</dt>
           <dd class={s.metricsDd}>{seconds(current?.probe_interval_sec)}</dd>
         </div>
         <div class={s.metricsCell}>
           <dt class={s.metricsDt}>Would-be mode</dt>
-          <dd class={s.metricsDd}>{current?.would_be_mode || meshDecisionLabel(current)}</dd>
+          <dd class={s.metricsDd}>{current?.would_be_mode || '-'}</dd>
         </div>
         <div class={s.metricsCell}>
           <dt class={s.metricsDt}>Would-be interval</dt>
@@ -327,7 +346,9 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       </dl>
 
       <p class={s.cameraMessage}>
-        {(current as any)?.mesh_reason || (current as any)?.interval_reason || message.value}
+        {current?.last_capture_time
+          ? `Latest scheduled JPEG: ${formatCaptureTime(current.last_capture_time)}. ${message.value}`
+          : message.value}
       </p>
 
       <div class={s.cardActions}>
@@ -357,12 +378,12 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
 
       <details class={s.debugDetails}>
         <summary class={s.debugDetailsSummary}>Connection details</summary>
-        <p class={s.debugStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
-        <p class={s.debugStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
+        <p class={s.debugStatus}>lifecycle: {current?.lifecycle_state || '-'}</p>
+        <p class={s.debugStatus}>preview subscribers: {current?.preview_subscriber_count ?? '-'}</p>
+        <p class={s.debugStatus}>preview producer: {current?.preview_producer_state || '-'}</p>
         <p class={s.debugStatus}>simulation: {current?.simulation_run_id || '-'}</p>
         <p class={s.debugStatus}>kind: {current?.kind || '-'}</p>
         <p class={s.debugStatus}>live allowed: {current?.live_allowed ? 'true' : 'false'}</p>
-        <p class={s.debugStatus}>last capture: {formatCaptureTime(current?.last_capture_time)}</p>
         <p class={s.debugStatus}>connection: {connectionState.value}</p>
       </details>
     </article>
