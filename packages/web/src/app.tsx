@@ -5,7 +5,6 @@ import './styles/index.css';
 
 import { fetchPolicyProfiles, postStart, postStop } from './api/client';
 import type { Camera, StartPayload } from './api/types';
-import { CoordinatorPanel } from './components/CoordinatorPanel';
 import { DeviceForm } from './components/DeviceForm';
 import { DeviceGrid } from './components/DeviceGrid';
 import { FieldControls } from './components/FieldControls';
@@ -100,20 +99,22 @@ export function App() {
           <p class={s.eyebrow}>PolliPi Field Console</p>
           <h1 class={s.h1}>Field Console</h1>
           <p class={s.lead}>
-            Status-first control for autonomous Raspberry Pi timelapse units on the field LAN.
+            Direct local control for Raspberry Pi timelapse units on the same Wi-Fi network.
+          </p>
+          <p class={s.hint}>
+            Add each Pi by its IP address below. A coordinator or internet connection is not required for normal field use.
           </p>
         </div>
         <p class={s.sensor}>{syncLabel.value}</p>
       </header>
       <main class={s.mainLayout}>
         <FieldControls onStartAll={startAll} onStopAll={stopAll} />
-        <CoordinatorPanel />
         <DeviceForm onCameraAdded={refreshWorkspace} />
         <DeviceGrid onRefresh={refreshWorkspace} />
         <Gallery />
       </main>
       <footer class={s.footerLayout}>
-        <span>PolliPi active mesh runtime</span>
+        <span>PolliPi shadow-mode field runtime</span>
         <span>{cameraList.length} observation unit{cameraList.length === 1 ? '' : 's'}</span>
       </footer>
     </>
