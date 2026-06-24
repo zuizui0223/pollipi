@@ -174,6 +174,55 @@ def expected_git_commit() -> str:
     return output.strip() if ok else ""
 
 
+def git_sha(ref: str) -> str:
+    ok, output = run_cmd(["git", "rev-parse", ref])
+    if not ok:
+        raise RuntimeError(f"git rev-parse {ref} failed: {output}")
+    return output.strip()
+
+
+def git_short_sha(ref: str) -> str:
+    ok, output = run_cmd(["git", "rev-parse", "--short=12", ref])
+    if not ok:
+        raise RuntimeError(f"git rev-parse --short=12 {ref} failed: {output}")
+    return output.strip()
+
+
+def worktree_is_clean() -> tuple[bool, str]:
+    ok, output = run_cmd(["git", "status", "--porcelain", "--untracked-files=all"])
+    if not ok:
+        return False, output
+    return output == "", output
+
+
+def require_latest_origin_main() -> tuple[str, str]:
+    """Fetch origin and require a clean worktree exactly at origin/main."""
+    fetch_ok, fetch_output = run_cmd(["git", "fetch", "origin", "--prune"])
+    if not fetch_ok:
+        raise RuntimeError(f"git fetch origin --prune failed:\n{fetch_output}")
+
+    clean, dirty_output = worktree_is_clean()
+    if not clean:
+        raise RuntimeError(f"working tree is dirty; aborting:\n{dirty_output}")
+
+    head = git_sha("HEAD")
+    origin_main = git_sha("origin/main")
+    if head != origin_main:
+        raise RuntimeError(
+            "current HEAD does not match origin/main; aborting:\n"
+            f"  HEAD:        {head}\n"
+            f"  origin/main: {origin_main}"
+        )
+    return git_short_sha("HEAD"), origin_main
+
+
+def build_web_or_fail() -> str:
+    build_ok, build_output = run_cmd(["pnpm", "build:web"])
+    if not build_ok:
+        raise RuntimeError(f"pnpm build:web failed:\n{build_output}")
+    return build_output
+
+
 def preflight_device(device: Device, *, subnet: str, dry_run: bool, web_only: bool = False) -> dict[str, Any]:
     steps: list[dict[str, str]] = []
     ok = True
@@ -296,6 +345,25 @@ def verify_web_app(device: Device) -> tuple[bool, str]:
     return False, f"GET {app_url} 200, but asset(s) {asset_refs[:3]} unreachable"
 
 
+def verify_web_build_info(device: Device, *, expected_commit: str, expected_web_build_id: str) -> tuple[bool, str]:
+    """Read the deployed static web build-info.json from /app/."""
+    build_url = f"{device.base_url}/build-info.json"
+    ok, payload = http_get_json(build_url)
+    if not ok or not isinstance(payload, dict):
+        return False, str(payload)
+
+    commit = str(payload.get("git_commit", "")).strip()
+    web_build_id = str(payload.get("web_build_id", "")).strip()
+    mismatches = []
+    if expected_commit and commit != expected_commit:
+        mismatches.append(f"git_commit={commit}, expected={expected_commit}")
+    if expected_web_build_id and web_build_id != expected_web_build_id:
+        mismatches.append(f"web_build_id={web_build_id}, expected={expected_web_build_id}")
+    if mismatches:
+        return False, "; ".join(mismatches)
+    return True, f"{commit or 'unknown'} / {web_build_id or 'unknown'}"
+
+
 def verify_post_deploy(device: Device, *, expected_commit: str, expected_web_build_id: str, web_only: bool = False) -> tuple[bool, str]:
     base = device.post_deploy_base_url.format(host=device.host).rstrip("/")
     # For web-only, /device is at the server root, not under /app/
@@ -380,13 +448,22 @@ def deploy_device(
             result["rollback"] = run_rollback(device, plan["rollback"])
             return result
 
-    # Post-deploy version/build-id check (both full and web-only)
-    verify_ok, verify_output = verify_post_deploy(
-        device,
-        expected_commit=expected_commit if not web_only else "",
-        expected_web_build_id=expected_web_build_id,
-        web_only=web_only,
-    )
+    # Post-deploy version/build-id check. Web-only updates must verify the
+    # static web build metadata because /device reports the running server
+    # artifact, which is intentionally left untouched.
+    if web_only:
+        verify_ok, verify_output = verify_web_build_info(
+            device,
+            expected_commit=expected_commit,
+            expected_web_build_id=expected_web_build_id,
+        )
+    else:
+        verify_ok, verify_output = verify_post_deploy(
+            device,
+            expected_commit=expected_commit,
+            expected_web_build_id=expected_web_build_id,
+            web_only=False,
+        )
     result["steps"].append({
         "step": "post-deploy version check",
         "status": "ok" if verify_ok else "failed",
@@ -400,17 +477,35 @@ def deploy_device(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deploy PolliPi server/web builds to a configured Pi fleet.")
-    parser.add_argument("--config", type=Path, default=Path("tools/fleet.example.json"))
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--execute", action="store_true", help="Prepare for live execution. Requires --confirm-live-deploy too.")
     parser.add_argument("--confirm-live-deploy", action="store_true", help="Required with --execute to touch real Pis.")
+    parser.add_argument("--apply", action="store_true", help="Live execution shorthand for safe web-only fleet updates.")
     parser.add_argument("--web-only", action="store_true", help="Deploy only web UI assets. No server artifact upload, no service restart.")
+    parser.add_argument(
+        "--latest-main-web-only",
+        action="store_true",
+        help=(
+            "Safe manual function for the Zuizui fleet: fetch origin, require HEAD == origin/main, "
+            "require a clean worktree, run pnpm build:web, and deploy packages/web/dist only."
+        ),
+    )
     parser.add_argument("--expected-git-commit", default="")
     parser.add_argument("--expected-web-build-id", default="")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON results.")
     args = parser.parse_args()
 
+    if args.apply:
+        args.execute = True
+        args.confirm_live_deploy = True
+
+    if args.latest_main_web_only:
+        args.web_only = True
+
+    config_path = args.config or Path("tools/fleet.zuizui.json" if args.latest_main_web_only else "tools/fleet.example.json")
+
     try:
-        fleet = load_fleet(args.config)
+        fleet = load_fleet(config_path)
     except Exception as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
@@ -418,9 +513,31 @@ def main() -> int:
     dry_run = not (args.execute and args.confirm_live_deploy)
     if args.execute and not args.confirm_live_deploy:
         print("--execute requires --confirm-live-deploy; running dry-run only.", file=sys.stderr)
+    if args.latest_main_web_only:
+        dry_run = not args.apply
+        if args.execute and args.confirm_live_deploy and not args.apply:
+            print("--latest-main-web-only requires --apply for live deployment; running dry-run only.", file=sys.stderr)
 
-    if args.web_only:
-        # For web-only, ensure web build exists or offer to build
+    target_commit = ""
+    target_web_build_id = ""
+    if args.latest_main_web_only:
+        try:
+            target_commit, origin_main = require_latest_origin_main()
+            build_output = build_web_or_fail()
+        except Exception as exc:
+            print(f"latest-main web-only safety check failed: {exc}", file=sys.stderr)
+            return 2
+        target_web_build_id = read_web_build_id(fleet.devices[0].web_build_dir)
+        print("PolliPi latest-main web-only fleet deployment")
+        print(f"  config: {config_path}")
+        print(f"  mode: {'apply' if not dry_run else 'dry-run'}")
+        print(f"  origin/main: {origin_main}")
+        print(f"  commit: {target_commit}")
+        print(f"  web_build_id: {target_web_build_id or 'unknown'}")
+        if build_output:
+            print("  build: pnpm build:web ok")
+    elif args.web_only:
+        # For web-only, ensure web build exists or offer to build.
         web_dir = Path(fleet.devices[0].web_build_dir)
         if not web_dir.is_dir():
             print(f"Web build not found at {web_dir}. Building...", file=sys.stderr)
@@ -434,8 +551,15 @@ def main() -> int:
                 return 2
             print("Web build complete.", file=sys.stderr)
 
-    expected_commit = args.expected_git_commit or expected_git_commit()
-    expected_web_build_id = args.expected_web_build_id or read_web_build_id(fleet.devices[0].web_build_dir)
+    expected_commit = args.expected_git_commit or target_commit or expected_git_commit()
+    expected_web_build_id = (
+        args.expected_web_build_id
+        or target_web_build_id
+        or read_web_build_id(fleet.devices[0].web_build_dir)
+    )
+    if not args.latest_main_web_only:
+        print(f"commit: {expected_commit}")
+        print(f"web_build_id: {expected_web_build_id or 'unknown'}")
     results = []
     for device in fleet.devices:
         result = deploy_device(
