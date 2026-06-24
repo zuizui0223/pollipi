@@ -22,6 +22,10 @@ plot = [
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.data-files]
+"pollipi_analysis/policy_profiles" = ["policy_profiles/*.json"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -2,8 +2,9 @@
   "schema": "pollipi-policy-profile-1",
   "profile_id": "three_stage_default_v1",
   "simulation_run_id": "issue27-three-stage-baseline",
-  "source_commit": "af2b561",
+  "source_commit": "analysis-run-issue27-three-stage-baseline",
   "kind": "three_stage",
+  "live_allowed": false,
   "description": "Default shadow-only three-stage profile; keeps 30s high-res capture fixed.",
   "parameters": {
     "low_interval_sec": 30.0,

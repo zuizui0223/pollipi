@@ -74,6 +74,7 @@ SHADOW_COLUMNS = [
     "policy_profile_id",
     "simulation_run_id",
     "kind",
+    "live_allowed",
 ]
 
 
@@ -139,6 +140,7 @@ def _write_shadow_record(
             getattr(policy_profile, "profile_id", getattr(request, "policy_profile_id", "") or ""),
             getattr(policy_profile, "simulation_run_id", ""),
             getattr(policy_profile, "kind", ""),
+            getattr(policy_profile, "live_allowed", False),
         ])
 
     decision_header = not ADAPTIVE_DECISION_LOG_PATH.exists()
@@ -182,6 +184,7 @@ PROBE_SHADOW_COLUMNS = [
     "policy_profile_id",
     "simulation_run_id",
     "kind",
+    "live_allowed",
 ]
 
 
@@ -221,6 +224,7 @@ def _write_probe_record(
             policy_profile.profile_id,
             policy_profile.simulation_run_id,
             policy_profile.kind,
+            policy_profile.live_allowed,
         ])
 
 
@@ -284,6 +288,7 @@ def run_capture_loop(
             "policy_profile_id": policy_profile.profile_id,
             "simulation_run_id": policy_profile.simulation_run_id,
             "kind": policy_profile.kind,
+            "live_allowed": policy_profile.live_allowed,
             "message": "Probe-only three-stage shadow; high-res capture fixed.",
         })
 
@@ -367,6 +372,7 @@ def run_capture_loop(
                 "policy_profile_id": policy_profile.profile_id,
                 "simulation_run_id": policy_profile.simulation_run_id,
                 "kind": policy_profile.kind,
+                "live_allowed": policy_profile.live_allowed,
                 "interval_reason": (
                     f"Probe shadow: would-be {out.mode} ({out.interval_sec:.0f}s); "
                     f"{decision_reason}; high-res fixed at {hires_interval:.0f}s."

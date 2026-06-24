@@ -69,3 +69,4 @@ def test_probes_outnumber_highres_saves_and_status_reports_would_be_mode(monkeyp
     assert all(r["policy_profile_id"] == "three_stage_default_v1" for r in rows)
     assert all(r["simulation_run_id"] == "issue27-three-stage-baseline" for r in rows)
     assert all(r["kind"] == "three_stage" for r in rows)
+    assert all(r["live_allowed"] == "False" for r in rows)

@@ -17,6 +17,7 @@ from pathlib import Path
 PACKAGE_NAME = "visit_monitor_server"
 ANALYSIS_PACKAGE_NAME = "pollipi_analysis"
 BUILD_INFO_MODULE = f"{PACKAGE_NAME}.build_info"
+PROFILE_BUNDLE_MODULE = f"{ANALYSIS_PACKAGE_NAME}.policy_profile_bundle"
 
 
 def _package_root() -> Path:
@@ -46,6 +47,18 @@ def collect_bundle_sources(package_root: Path) -> dict[str, str]:
     analysis_root = _repo_root() / "packages" / "analysis" / "src" / ANALYSIS_PACKAGE_NAME
     if analysis_root.is_dir():
         sources.update(collect_sources(analysis_root, ANALYSIS_PACKAGE_NAME))
+    profile_dir = _repo_root() / "packages" / "analysis" / "policy_profiles"
+    if profile_dir.is_dir():
+        profile_json = {
+            path.name: path.read_text(encoding="utf-8")
+            for path in sorted(profile_dir.glob("*.json"))
+            if path.is_file()
+        }
+        sources[PROFILE_BUNDLE_MODULE] = (
+            '"""Embedded policy profile JSON for single-file Pi artifacts."""\n'
+            "from __future__ import annotations\n\n"
+            f"PROFILE_JSON = {json.dumps(profile_json, ensure_ascii=True, indent=2)}\n"
+        )
     return sources
 
 

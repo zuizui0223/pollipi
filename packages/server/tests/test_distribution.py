@@ -57,3 +57,29 @@ def test_bundle_imports_analysis_package(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stdout
     assert "PolliPi" in result.stdout
+
+
+def test_bundle_embeds_policy_profile_json(tmp_path: Path) -> None:
+    output = tmp_path / "pollipi_api_server.py"
+    build(
+        output,
+        git_commit="abc123",
+        build_timestamp="2026-06-22T00:00:00+00:00",
+        web_build_id="web-42",
+    )
+
+    probe = (
+        "import pollipi_api_server; "
+        "from pollipi_analysis.policy import list_policy_profiles; "
+        "print([p.profile_id for p in list_policy_profiles()])"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=tmp_path,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stdout
+    assert "three_stage_default_v1" in result.stdout

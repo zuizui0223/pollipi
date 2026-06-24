@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import importlib
+import json
 import sys
 import time
 from pathlib import Path
@@ -25,6 +26,47 @@ def _client(monkeypatch, tmp_path: Path) -> TestClient:
     _clear_server_modules()
     app_module = importlib.import_module("visit_monitor_server.app")
     return TestClient(app_module.create_app())
+
+
+def _profile_payload(profile_id: str, simulation_run_id: str | None = None) -> dict:
+    return {
+        "schema": "pollipi-policy-profile-1",
+        "profile_id": profile_id,
+        "simulation_run_id": simulation_run_id or f"run-{profile_id}",
+        "source_commit": f"analysis-{profile_id}",
+        "kind": "three_stage",
+        "live_allowed": False,
+        "description": "test profile",
+        "parameters": {
+            "low_interval_sec": 30.0,
+            "mid_interval_sec": 15.0,
+            "high_interval_sec": 5.0,
+            "high_hard_cap_sec": 120.0,
+            "high_exit_quiet_probes": 3,
+        },
+    }
+
+
+def _write_profile(directory: Path, name: str, payload: dict) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_policy_profiles_endpoint_reads_json_registry(monkeypatch, tmp_path: Path) -> None:
+    profile_dir = tmp_path / "profiles"
+    _write_profile(profile_dir, "default.json", _profile_payload("three_stage_default_v1"))
+    _write_profile(profile_dir, "extra.json", _profile_payload("three_stage_extra_v1"))
+    monkeypatch.setenv("POLLIPI_POLICY_PROFILE_DIR", str(profile_dir))
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.get("/policy-profiles")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["default_profile_id"] == "three_stage_default_v1"
+    profiles = {profile["profile_id"]: profile for profile in body["profiles"]}
+    assert "three_stage_extra_v1" in profiles
+    assert profiles["three_stage_extra_v1"]["live_allowed"] is False
 
 
 def test_unknown_policy_profile_is_rejected(monkeypatch, tmp_path: Path) -> None:
@@ -56,6 +98,7 @@ def test_policy_profile_is_fixed_while_capture_runs(monkeypatch, tmp_path: Path)
     assert status["policy_profile_id"] == "three_stage_default_v1"
     assert status["simulation_run_id"] == "issue27-three-stage-baseline"
     assert status["kind"] == "three_stage"
+    assert status["live_allowed"] is False
     assert status["live_adaptive_enabled"] is False
 
 
@@ -81,8 +124,21 @@ def test_probe_csv_logs_policy_profile_provenance(monkeypatch, tmp_path: Path) -
     assert status["policy_profile_id"] == "three_stage_sensitive_v1"
     assert status["simulation_run_id"] == "issue27-three-stage-sensitive"
     assert status["kind"] == "three_stage"
+    assert status["live_allowed"] is False
     rows = list(csv.DictReader(probe_log.open(encoding="utf-8")))
     assert rows
     assert {row["policy_profile_id"] for row in rows} == {"three_stage_sensitive_v1"}
     assert {row["simulation_run_id"] for row in rows} == {"issue27-three-stage-sensitive"}
     assert {row["kind"] for row in rows} == {"three_stage"}
+    assert {row["live_allowed"] for row in rows} == {"False"}
+
+
+def test_pwa_uses_policy_profiles_api_instead_of_hardcoded_profiles() -> None:
+    root = Path(__file__).resolve().parents[3]
+    session_source = (root / "packages" / "web" / "src" / "state" / "session.ts").read_text(encoding="utf-8")
+    app_source = (root / "packages" / "web" / "src" / "app.tsx").read_text(encoding="utf-8")
+    client_source = (root / "packages" / "web" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+
+    assert "fetchPolicyProfiles" in client_source
+    assert "fetchPolicyProfiles" in app_source
+    assert "three_stage_sensitive_v1" not in session_source

@@ -36,13 +36,16 @@ function buildStartPayload() {
     return null;
   }
 
-  return {
+  const payload = {
     interval_sec: interval,
     autonomous_mode: autonomousMode.value,
     adaptive_timelapse_mode: false,
     mesh_shadow_mode: true,
-    policy_profile_id: policyProfileId.value,
   };
+  if (policyProfileId.value) {
+    return { ...payload, policy_profile_id: policyProfileId.value };
+  }
+  return payload;
 }
 
 function applyDeviceInfo(camera: Camera, device: DeviceInfo) {
@@ -358,6 +361,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <p class={s.debugStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
         <p class={s.debugStatus}>simulation: {current?.simulation_run_id || '-'}</p>
         <p class={s.debugStatus}>kind: {current?.kind || '-'}</p>
+        <p class={s.debugStatus}>live allowed: {current?.live_allowed ? 'true' : 'false'}</p>
         <p class={s.debugStatus}>last capture: {formatCaptureTime(current?.last_capture_time)}</p>
         <p class={s.debugStatus}>connection: {connectionState.value}</p>
       </details>

@@ -65,6 +65,7 @@ def get_policy_profiles() -> PolicyProfilesResponse:
                 simulation_run_id=profile.simulation_run_id,
                 source_commit=profile.source_commit,
                 kind=profile.kind,
+                live_allowed=profile.live_allowed,
                 parameters=dict(profile.parameters),
                 description=profile.description,
             )

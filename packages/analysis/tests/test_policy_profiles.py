@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from pollipi_analysis.policy import (
     DEFAULT_POLICY_PROFILE_ID,
     PolicyProfile,
     create_policy_controller,
     get_policy_profile,
+    list_policy_profiles,
 )
 
 
@@ -20,6 +23,75 @@ def test_json_policy_profiles_are_versioned_and_allowed() -> None:
         "three_stage_sensitive_v1",
     }
     assert all(profile.kind == "three_stage" for profile in profiles)
+    assert all(profile.live_allowed is False for profile in profiles)
+
+
+def _profile_payload(profile_id: str, simulation_run_id: str | None = None) -> dict:
+    return {
+        "schema": "pollipi-policy-profile-1",
+        "profile_id": profile_id,
+        "simulation_run_id": simulation_run_id or f"run-{profile_id}",
+        "source_commit": f"analysis-{profile_id}",
+        "kind": "three_stage",
+        "live_allowed": False,
+        "description": "test profile",
+        "parameters": {
+            "low_interval_sec": 30.0,
+            "mid_interval_sec": 15.0,
+            "high_interval_sec": 5.0,
+            "high_hard_cap_sec": 120.0,
+            "high_exit_quiet_probes": 3,
+        },
+    }
+
+
+def _write_profile(directory: Path, name: str, payload: dict) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_adding_one_json_profile_makes_it_available(monkeypatch, tmp_path: Path) -> None:
+    profile_dir = tmp_path / "profiles"
+    _write_profile(profile_dir, "default.json", _profile_payload(DEFAULT_POLICY_PROFILE_ID))
+    _write_profile(profile_dir, "new.json", _profile_payload("three_stage_new_run_v1"))
+    monkeypatch.setenv("POLLIPI_POLICY_PROFILE_DIR", str(profile_dir))
+
+    assert {profile.profile_id for profile in list_policy_profiles()} == {
+        DEFAULT_POLICY_PROFILE_ID,
+        "three_stage_new_run_v1",
+    }
+
+
+def test_live_allowed_true_profile_is_rejected(monkeypatch, tmp_path: Path) -> None:
+    profile_dir = tmp_path / "profiles"
+    payload = _profile_payload(DEFAULT_POLICY_PROFILE_ID)
+    payload["live_allowed"] = True
+    _write_profile(profile_dir, "default.json", payload)
+    monkeypatch.setenv("POLLIPI_POLICY_PROFILE_DIR", str(profile_dir))
+
+    with pytest.raises(ValueError, match="live_allowed=false"):
+        list_policy_profiles()
+
+
+def test_duplicate_profile_id_is_rejected(monkeypatch, tmp_path: Path) -> None:
+    profile_dir = tmp_path / "profiles"
+    _write_profile(profile_dir, "a.json", _profile_payload(DEFAULT_POLICY_PROFILE_ID))
+    _write_profile(profile_dir, "b.json", _profile_payload(DEFAULT_POLICY_PROFILE_ID, "another-run"))
+    monkeypatch.setenv("POLLIPI_POLICY_PROFILE_DIR", str(profile_dir))
+
+    with pytest.raises(ValueError, match="duplicate policy profile_id"):
+        list_policy_profiles()
+
+
+def test_kind_required_parameter_validation(monkeypatch, tmp_path: Path) -> None:
+    profile_dir = tmp_path / "profiles"
+    payload = _profile_payload(DEFAULT_POLICY_PROFILE_ID)
+    payload["parameters"].pop("high_interval_sec")
+    _write_profile(profile_dir, "default.json", payload)
+    monkeypatch.setenv("POLLIPI_POLICY_PROFILE_DIR", str(profile_dir))
+
+    with pytest.raises(ValueError, match="missing parameters: high_interval_sec"):
+        list_policy_profiles()
 
 
 def test_policy_profile_factory_is_deterministic_for_pc_pi_parity() -> None:

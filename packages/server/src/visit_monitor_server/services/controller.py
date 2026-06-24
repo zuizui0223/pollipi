@@ -83,6 +83,7 @@ class TimelapseController:
         self.policy_profile_id = "three_stage_default_v1"
         self.simulation_run_id = "issue27-three-stage-baseline"
         self.kind = "three_stage"
+        self.live_allowed = False
 
     def _build_status(self):
         from visit_monitor_server.api.schemas.capture import StatusResponse
@@ -102,6 +103,7 @@ class TimelapseController:
             policy_profile_id=self.policy_profile_id,
             simulation_run_id=self.simulation_run_id,
             kind=self.kind,
+            live_allowed=self.live_allowed,
             running=self.running,
             lifecycle_state=self.lifecycle_state,
             last_error=self.last_error,
@@ -196,6 +198,7 @@ class TimelapseController:
             self.policy_profile_id = profile.profile_id
             self.simulation_run_id = profile.simulation_run_id
             self.kind = profile.kind
+            self.live_allowed = profile.live_allowed
             self.site_id = request.site_id
             self.flower_id = request.flower_id
             self.plant_species = request.plant_species
@@ -319,6 +322,8 @@ class TimelapseController:
                 self.simulation_run_id = state["simulation_run_id"]
             if "kind" in state:
                 self.kind = state["kind"]
+            if "live_allowed" in state:
+                self.live_allowed = state["live_allowed"]
             self.capture_count += state.get("capture_count_delta", 0)
             if state.get("last_capture_time") is not None:
                 self.last_capture_time = state["last_capture_time"]

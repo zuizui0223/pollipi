@@ -91,6 +91,7 @@ class StatusResponse(BaseModel):
     policy_profile_id: str = "three_stage_default_v1"
     simulation_run_id: str = "issue27-three-stage-baseline"
     kind: str = "three_stage"
+    live_allowed: bool = False
 
 
 class PolicyProfileResponse(BaseModel):
@@ -99,6 +100,7 @@ class PolicyProfileResponse(BaseModel):
     simulation_run_id: str
     source_commit: str
     kind: str
+    live_allowed: bool
     parameters: dict
     description: str = ""
 

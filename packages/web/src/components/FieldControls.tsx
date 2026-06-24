@@ -58,13 +58,17 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
           <select
             class={s.profileSelect}
             value={policyProfileId.value}
+            disabled={approvedPolicyProfiles.value.length === 0}
             onChange={(e) => {
               policyProfileId.value = (e.target as HTMLSelectElement).value;
             }}
           >
-            {approvedPolicyProfiles.map((profile) => (
-              <option value={profile.id} key={profile.id}>
-                {profile.label}
+            {approvedPolicyProfiles.value.length === 0 && (
+              <option value="">Loading approved profiles</option>
+            )}
+            {approvedPolicyProfiles.value.map((profile) => (
+              <option value={profile.profile_id} key={profile.profile_id}>
+                {profile.profile_id}
               </option>
             ))}
           </select>
