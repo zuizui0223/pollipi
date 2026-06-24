@@ -16,6 +16,35 @@ Dry-run first (no changes made):
 python3 tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --web-only
 ```
 
+## Safe Latest-Main Fleet Web Deployment
+
+Use this manual function when the five Zuizui Pis should receive only the latest
+`origin/main` web build. It never updates Python files, `config.py`,
+`capture_loop.py`, the Python environment, or the systemd service, and it does
+not restart PolliPi.
+
+Dry-run is the default:
+
+```bash
+python3 tools/pollipi_fleet_deploy.py --latest-main-web-only
+```
+
+Live web-only deployment requires the explicit `--apply` flag:
+
+```bash
+python3 tools/pollipi_fleet_deploy.py --latest-main-web-only --apply
+```
+
+What the function does:
+
+1. Runs `git fetch origin --prune`.
+2. Aborts unless the current `HEAD` exactly matches `origin/main`.
+3. Aborts if the working tree is dirty, including untracked files.
+4. Runs `pnpm build:web`.
+5. Shows the target commit SHA and `web_build_id`.
+6. Syncs only `packages/web/dist/` to the five devices in `tools/fleet.zuizui.json`.
+7. Verifies `/app/` and `/app/build-info.json` over HTTP for each Pi and prints a success/failure list.
+
 ## Quick Deployment (Single Pi)
 
 Deploy the current web UI build to one Pi:

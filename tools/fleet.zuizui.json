@@ -1,0 +1,21 @@
+{
+  "subnet": "192.168.11.0/24",
+  "defaults": {
+    "ssh_port": 22,
+    "ssh_user": "zuizui0223",
+    "server_artifact": "dist/pollipi_api_server.py",
+    "web_build_dir": "packages/web/dist",
+    "remote_dir": "/home/zuizui0223/pollipi_timelapse",
+    "server_filename": "pollipi_api_server.py",
+    "web_remote_dir": "web",
+    "service_name": "pollipi.service",
+    "post_deploy_base_url": "http://{host}:8000/app"
+  },
+  "devices": [
+    { "name": "zuizui",  "host": "zuizui.local" },
+    { "name": "zuizui2", "host": "zuizui2.local" },
+    { "name": "zuizui3", "host": "zuizui3.local" },
+    { "name": "zuizui4", "host": "zuizui4.local" },
+    { "name": "zuizui5", "host": "zuizui5.local" }
+  ]
+}
