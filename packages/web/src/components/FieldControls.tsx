@@ -4,14 +4,7 @@ import {
   adaptiveMinIntervalSec,
   adaptiveTimelapseMode,
   autonomousMode,
-  cameraRole,
-  comparisonSessionId,
-  flowerId,
   intervalSec,
-  notes,
-  observer,
-  plantSpecies,
-  siteId,
 } from '../state/session';
 import * as s from '../styles/components.css';
 
@@ -96,32 +89,6 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
           />
           <span>Resume autonomously after Pi restart</span>
         </label>
-
-        <details class={s.advancedFields} style={{ gridColumn: '1 / -1' }}>
-          <summary class={s.advancedFieldsSummary}>Field metadata</summary>
-          <div class={s.advancedGrid}>
-            {[
-              ['site_id', siteId],
-              ['flower_id', flowerId],
-              ['plant_species', plantSpecies],
-              ['observer', observer],
-              ['comparison_session_id', comparisonSessionId],
-              ['camera_role', cameraRole],
-              ['notes', notes],
-            ].map(([label, sig]) => (
-              <label class={s.advancedGridLabel} key={label as string}>
-                {label as string}
-                <input
-                  type="text"
-                  value={(sig as any).value}
-                  onInput={(e) => {
-                    (sig as any).value = (e.target as HTMLInputElement).value;
-                  }}
-                />
-              </label>
-            ))}
-          </div>
-        </details>
       </div>
 
       <div class={s.groupActions}>
