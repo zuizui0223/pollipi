@@ -19,7 +19,7 @@ export const comparisonSessionId = signal<string>('');
 export const cameraRole = signal<string>('');
 export const methodMode = signal<string>('');
 
-export const syncLabel = signal<string>('状態を読み込み中...');
+export const syncLabel = signal<string>('Loading status...');
 
 export function getSessionMetadata(): Record<string, string | undefined> {
   return {

@@ -11,12 +11,14 @@ class StartRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    interval_sec: float = Field(..., ge=1, le=3600)
+    # Intervals are customizable up to a day; the min<=max rule is enforced in
+    # the /start route validator (no fixed default ceiling on the web UI).
+    interval_sec: float = Field(..., ge=1, le=86400)
     autonomous_mode: bool = False
     adaptive_timelapse_mode: bool = False
     mesh_shadow_mode: bool = True
-    adaptive_min_interval_sec: float = Field(default=15, ge=1, le=3600)
-    adaptive_max_interval_sec: float = Field(default=3600, ge=1, le=3600)
+    adaptive_min_interval_sec: float = Field(default=15, ge=1, le=86400)
+    adaptive_max_interval_sec: float = Field(default=3600, ge=1, le=86400)
     adaptive_window_sec: float = Field(default=300, ge=60, le=3600)
 
     # Phase 4: live two-stage LOW/HIGH control. Off by default; when enabled the

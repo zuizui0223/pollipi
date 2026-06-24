@@ -13,7 +13,7 @@ export function Gallery() {
   const images = useSignal<ImageInfo[]>([]);
   const imageCount = useSignal(0);
   const totalSize = useSignal(0);
-  const imageDir = useSignal('保存先を読み込み中...');
+  const imageDir = useSignal('Loading storage path...');
   const loadError = useSignal('');
   const deleting = useSignal(false);
   const selectMode = useSignal(false);
@@ -27,7 +27,7 @@ export function Gallery() {
       images.value = [];
       imageCount.value = 0;
       totalSize.value = 0;
-      imageDir.value = '観察機を追加すると保存画像を表示できます。';
+      imageDir.value = 'Add a device to see its saved images.';
       loadError.value = '';
       return;
     }
@@ -43,7 +43,7 @@ export function Gallery() {
       );
       loadError.value = '';
     } catch (error: unknown) {
-      loadError.value = `画像一覧を取得できません: ${(error as Error).message}`;
+      loadError.value = `Could not load images: ${(error as Error).message}`;
     }
   }
 
@@ -53,29 +53,29 @@ export function Gallery() {
 
   async function handleDelete(filename: string) {
     if (!camera) return;
-    if (!confirm(`${camera.camera_label} のこの予定撮影画像を削除しますか？\n${filename}`)) return;
+    if (!confirm(`Delete this scheduled frame from ${camera.camera_label}?\n${filename}`)) return;
     try {
       await deleteImage(camera, filename);
       await load();
     } catch (error: unknown) {
-      alert(`削除できませんでした: ${(error as Error).message}`);
+      alert(`Delete failed: ${(error as Error).message}`);
     }
   }
 
   async function handleDeleteAll() {
     if (!camera) return;
     if (camera.status?.running) {
-      alert('全削除の前に、この観察機の撮影を停止してください。');
+      alert('Stop capture on this device before deleting all images.');
       return;
     }
-    if (!confirm(`${camera.camera_label} の保存済み予定撮影画像をすべて削除しますか？\n\n削除後は元に戻せません。`)) return;
+    if (!confirm(`Delete ALL saved frames from ${camera.camera_label}?\n\nThis cannot be undone.`)) return;
     deleting.value = true;
     try {
       const result = await deleteAllImages(camera);
-      alert(`${result.deleted_count} 枚を削除しました。`);
+      alert(`Deleted ${result.deleted_count} image(s).`);
       await load();
     } catch (error: unknown) {
-      alert(`全削除できませんでした: ${(error as Error).message}`);
+      alert(`Delete all failed: ${(error as Error).message}`);
     } finally {
       deleting.value = false;
     }
@@ -90,15 +90,15 @@ export function Gallery() {
 
   async function handleBulkDelete() {
     if (!camera || selectedFilenames.value.size === 0 || deleting.value) return;
-    if (!confirm(`選択した ${selectedFilenames.value.size} 枚の予定撮影画像を削除しますか？`)) return;
+    if (!confirm(`Delete ${selectedFilenames.value.size} selected frame(s)?`)) return;
     deleting.value = true;
     try {
       const result = await bulkDeleteImages(camera, [...selectedFilenames.value]);
-      alert(`${result.deleted_count} 枚を削除しました。`);
+      alert(`Deleted ${result.deleted_count} image(s).`);
       selectedFilenames.value = new Set();
       await load();
     } catch (error: unknown) {
-      alert(`削除できませんでした: ${(error as Error).message}`);
+      alert(`Delete failed: ${(error as Error).message}`);
     } finally {
       deleting.value = false;
     }
@@ -107,16 +107,16 @@ export function Gallery() {
   const zipHref = camera ? deviceUrl(camera, '/exports/images.zip') : undefined;
 
   return (
-    <section class={s.galleryPanel} aria-label="予定撮影画像">
+    <section class={s.galleryPanel} aria-label="Scheduled frames">
       <div class={s.galleryHeader}>
         <div>
           <p class={s.sectionTitle}>SCHEDULED TIMELAPSE</p>
-          <h2>予定撮影画像を確認・整理</h2>
-          <p class={s.hint}>ここには予定タイムラプス画像だけが保存されます。候補event画像や機械学習ラベルはありません。</p>
+          <h2>Review scheduled frames</h2>
+          <p class={s.hint}>Only scheduled timelapse frames are stored here - no event clips or ML labels.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <a class={`${s.downloadLink}${!camera ? ` ${s.downloadLinkDisabled}` : ''}`} href={zipHref} download>
-            画像とshadow logをZIP保存
+            Download images + shadow log (ZIP)
           </a>
           {camera && (
             <button
@@ -127,23 +127,23 @@ export function Gallery() {
                 selectedFilenames.value = new Set();
               }}
             >
-              {selectMode.value ? '選択解除' : '選択モード'}
+              {selectMode.value ? 'Cancel select' : 'Select'}
             </button>
           )}
           {selectMode.value && selectedFilenames.value.size > 0 && (
             <button class={s.btnDanger} type="button" onClick={handleBulkDelete} disabled={deleting.value}>
-              選択を削除 ({selectedFilenames.value.size})
+              Delete selected ({selectedFilenames.value.size})
             </button>
           )}
           {camera && !selectMode.value && (
             <button class={s.btnDanger} type="button" onClick={handleDeleteAll} disabled={deleting.value}>
-              全画像を削除
+              Delete all
             </button>
           )}
         </div>
       </div>
 
-      <div class={s.gallerySwitch} role="group" aria-label="観察機選択">
+      <div class={s.gallerySwitch} role="group" aria-label="Select device">
         {cameraList.map((item) => (
           <button
             key={item.coordinator_device_id ? `coordinator-${item.coordinator_device_id}` : item.baseUrl}
@@ -157,16 +157,16 @@ export function Gallery() {
       </div>
 
       <div class={s.folderSummary}>
-        <span>{camera ? camera.camera_label : '観察機未選択'}</span>
-        <span>{imageCount.value > 0 ? `${imageCount.value} 枚` : '-'}</span>
+        <span>{camera ? camera.camera_label : 'No device selected'}</span>
+        <span>{imageCount.value > 0 ? `${imageCount.value} images` : '-'}</span>
         <span>{totalSize.value > 0 ? formatBytes(totalSize.value) : ''}</span>
       </div>
       <p class={s.folderPath}>{imageDir.value}</p>
 
       <div class={s.galleryGrid}>
-        {!camera && <p class={s.galleryEmpty}>観察機が登録されていません。</p>}
+        {!camera && <p class={s.galleryEmpty}>No device registered.</p>}
         {camera && loadError.value && <p class={s.galleryEmpty}>{loadError.value}</p>}
-        {camera && !loadError.value && images.value.length === 0 && <p class={s.galleryEmpty}>予定撮影画像はまだありません。</p>}
+        {camera && !loadError.value && images.value.length === 0 && <p class={s.galleryEmpty}>No scheduled frames yet.</p>}
         {camera && !loadError.value && images.value.map((image) => {
           const selected = selectedFilenames.value.has(image.filename);
           const downloadUrl = deviceUrl(camera, `${image.url}${image.url.includes('?') ? '&' : '?'}download=true`);
@@ -188,11 +188,11 @@ export function Gallery() {
                 style={{ display: 'block', padding: '0 10px 4px', fontSize: '13px', color: 'var(--leaf)' }}
                 onClick={selectMode.value ? (event) => event.stopPropagation() : undefined}
               >
-                iPadに保存
+                Download
               </a>
               {!selectMode.value && (
                 <button class={s.deleteImageBtn} type="button" onClick={() => void handleDelete(image.filename)}>
-                  削除
+                  Delete
                 </button>
               )}
             </article>

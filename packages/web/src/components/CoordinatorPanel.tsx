@@ -137,7 +137,11 @@ export function CoordinatorPanel() {
     <section class={s.devicesPanel} aria-label="Coordinator">
       <div>
         <p class={s.sectionTitle}>Coordinator</p>
-        <h2>中央サーバー</h2>
+        <h2>Central server (optional)</h2>
+        <p class={s.hint}>
+          Optional. Sign in to manage many Raspberry Pi units from one account and
+          start/stop them together. Leave it blank to control devices directly over the LAN.
+        </p>
         <p class={s.hint}>{coordinatorMessage.value}</p>
         {coordinatorUser.value && (
           <p class={s.hint}>

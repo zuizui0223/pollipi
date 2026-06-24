@@ -4,14 +4,7 @@ import {
   adaptiveMinIntervalSec,
   adaptiveTimelapseMode,
   autonomousMode,
-  cameraRole,
-  comparisonSessionId,
-  flowerId,
   intervalSec,
-  notes,
-  observer,
-  plantSpecies,
-  siteId,
 } from '../state/session';
 import * as s from '../styles/components.css';
 
@@ -21,6 +14,11 @@ interface Props {
 }
 
 export function FieldControls({ onStartAll, onStopAll }: Props) {
+  const minInterval = adaptiveMinIntervalSec.value;
+  const maxInterval = adaptiveMaxIntervalSec.value;
+  const intervalRangeInvalid =
+    Number.isFinite(minInterval) && Number.isFinite(maxInterval) && maxInterval < minInterval;
+
   return (
     <section class={s.controlPanel} aria-label="field control">
       <div>
@@ -32,7 +30,6 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
             id="interval-input"
             type="number"
             min={1}
-            max={3600}
             inputMode="decimal"
             value={intervalSec.value}
             onInput={(e) => {
@@ -48,32 +45,35 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
 
       <div class={s.fieldBasicGrid}>
         <p class={s.sectionTitle} style={{ gridColumn: '1 / -1' }}>
-          Active policy
+          Adaptive interval bounds
         </p>
         <label class={s.advancedGridLabel}>
-          min interval
+          min interval (sec)
           <input
             type="number"
             min={1}
-            max={3600}
             value={adaptiveMinIntervalSec.value}
             onInput={(e) => {
-              adaptiveMinIntervalSec.value = Number((e.target as HTMLInputElement).value || 15);
+              adaptiveMinIntervalSec.value = Number((e.target as HTMLInputElement).value);
             }}
           />
         </label>
         <label class={s.advancedGridLabel}>
-          max interval
+          max interval (sec)
           <input
             type="number"
             min={1}
-            max={3600}
             value={adaptiveMaxIntervalSec.value}
             onInput={(e) => {
-              adaptiveMaxIntervalSec.value = Number((e.target as HTMLInputElement).value || 3600);
+              adaptiveMaxIntervalSec.value = Number((e.target as HTMLInputElement).value);
             }}
           />
         </label>
+        {intervalRangeInvalid && (
+          <p class={s.hint} style={{ gridColumn: '1 / -1', color: 'var(--stop)' }}>
+            Max interval must be greater than or equal to min interval.
+          </p>
+        )}
         <label class={s.autoToggle} style={{ gridColumn: '1 / -1' }}>
           <input
             class={s.autoToggleInput}
@@ -96,32 +96,6 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
           />
           <span>Resume autonomously after Pi restart</span>
         </label>
-
-        <details class={s.advancedFields} style={{ gridColumn: '1 / -1' }}>
-          <summary class={s.advancedFieldsSummary}>Field metadata</summary>
-          <div class={s.advancedGrid}>
-            {[
-              ['site_id', siteId],
-              ['flower_id', flowerId],
-              ['plant_species', plantSpecies],
-              ['observer', observer],
-              ['comparison_session_id', comparisonSessionId],
-              ['camera_role', cameraRole],
-              ['notes', notes],
-            ].map(([label, sig]) => (
-              <label class={s.advancedGridLabel} key={label as string}>
-                {label as string}
-                <input
-                  type="text"
-                  value={(sig as any).value}
-                  onInput={(e) => {
-                    (sig as any).value = (e.target as HTMLInputElement).value;
-                  }}
-                />
-              </label>
-            ))}
-          </div>
-        </details>
       </div>
 
       <div class={s.groupActions}>

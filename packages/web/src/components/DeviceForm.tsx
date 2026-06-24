@@ -28,7 +28,7 @@ export function DeviceForm({ onCameraAdded }: Props) {
       try {
         baseUrl = resolveBaseUrl(rawAddress);
       } catch (_) {
-        error.value = '観察機名を確認してください。例: pi@pollipi1';
+        error.value = 'Check the device name, e.g. pi@pollipi1';
         return;
       }
       const device = await fetchDevice(baseUrl);
@@ -54,20 +54,20 @@ export function DeviceForm({ onCameraAdded }: Props) {
       deviceSecret.value = '';
       await onCameraAdded();
     } catch (err: unknown) {
-      error.value = `観察機に接続できません: ${(err as Error).message}`;
+      error.value = `Could not connect to the device: ${(err as Error).message}`;
     } finally {
       busy.value = false;
     }
   }
 
   return (
-    <section class={s.devicesPanel} aria-label="観察機の登録">
+    <section class={s.devicesPanel} aria-label="Add device">
       <div>
-        <p class={s.sectionTitle}>観察機</p>
-        <h2>Raspberry Pi を追加</h2>
+        <p class={s.sectionTitle}>Device</p>
+        <h2>Add a Raspberry Pi</h2>
         <p class={s.hint}>
-          <code>pi@pollipi1</code> のように入れると <code>http://pollipi1.local:8000</code>{' '}
-          へ接続します。IP アドレス直接入力も可能です。
+          Enter <code>pi@pollipi1</code> to connect to <code>http://pollipi1.local:8000</code>.
+          A direct IP address also works.
         </p>
       </div>
       <form class={s.deviceForm} onSubmit={handleSubmit}>
@@ -97,7 +97,7 @@ export function DeviceForm({ onCameraAdded }: Props) {
           disabled={busy.value}
         />
         <button class={s.btnPrimary} type="submit" disabled={busy.value}>
-          {busy.value ? '接続中...' : '追加'}
+          {busy.value ? 'Connecting...' : 'Add'}
         </button>
         {error.value && (
           <p style={{ color: 'var(--stop)', fontSize: '13px', margin: '4px 0 0', gridColumn: '1 / -1' }}>

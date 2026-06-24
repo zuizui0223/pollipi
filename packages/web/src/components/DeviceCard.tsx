@@ -36,8 +36,8 @@ type ConnectionState = 'online' | 'degraded' | 'reconnecting' | 'offline' | 'sta
 
 function buildStartPayload() {
   const interval = intervalSec.value;
-  if (!Number.isFinite(interval) || interval < 1 || interval > 3600) {
-    alert('Capture interval must be between 1 and 3600 seconds.');
+  if (!Number.isFinite(interval) || interval < 1) {
+    alert('Capture interval must be at least 1 second.');
     return null;
   }
 
@@ -45,18 +45,18 @@ function buildStartPayload() {
   const minInterval = adaptiveMinIntervalSec.value;
   const maxInterval = adaptiveMaxIntervalSec.value;
   const windowSec = adaptiveWindowSec.value;
-  if (
-    adaptiveEnabled &&
-    (!Number.isFinite(minInterval) ||
-      !Number.isFinite(maxInterval) ||
-      !Number.isFinite(windowSec) ||
-      minInterval < 1 ||
-      maxInterval < minInterval ||
-      maxInterval > 3600 ||
-      windowSec < 60 ||
-      windowSec > 3600)
-  ) {
-    alert('Check the adaptive timelapse interval settings.');
+  // Min/max are customizable with no fixed ceiling; the only rule is that the
+  // max interval is never smaller than the min interval.
+  if (!Number.isFinite(minInterval) || !Number.isFinite(maxInterval) || minInterval < 1) {
+    alert('Min and max interval must be at least 1 second.');
+    return null;
+  }
+  if (maxInterval < minInterval) {
+    alert('Max interval must be greater than or equal to min interval.');
+    return null;
+  }
+  if (adaptiveEnabled && (!Number.isFinite(windowSec) || windowSec < 60)) {
+    alert('Adaptive window must be at least 60 seconds.');
     return null;
   }
 
@@ -120,6 +120,8 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   const connectionState = useSignal<ConnectionState>('stale');
   const imageReady = useSignal(false);
   const hasImage = useSignal(false);
+  const monitoring = useSignal(false);
+  const monitorError = useSignal(false);
   const imageRef = useRef<HTMLImageElement>(null);
 
   const pollDelayMs = useRef(5000);
@@ -262,9 +264,11 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     onUpdated();
   }
 
-  function handleMonitor() {
-    const streamUrl = getMjpegStreamUrl(camera);
-    window.open(streamUrl, 'mjpeg-monitor', 'width=800,height=600');
+  function toggleMonitor() {
+    monitorError.value = false;
+    monitoring.value = !monitoring.value;
+    // Refresh the latest scheduled frame immediately when leaving live view.
+    if (!monitoring.value) void refresh();
   }
 
   const current = status.value;
@@ -307,13 +311,36 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       </div>
 
       <div class={s.imageFrame}>
-        <img
-          ref={imageRef}
-          class={`${s.imageFrameImg}${imageReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
-          alt="Latest scheduled timelapse frame"
-          draggable={false}
-        />
-        {!hasImage.value && <p class={s.imageFrameEmpty}>Waiting for latest image</p>}
+        {monitoring.value ? (
+          <>
+            <img
+              class={`${s.imageFrameImg} ${s.imageFrameImgReady}`}
+              src={getMjpegStreamUrl(camera)}
+              alt="Live camera monitor"
+              draggable={false}
+              onError={() => {
+                monitorError.value = true;
+              }}
+              onLoad={() => {
+                monitorError.value = false;
+              }}
+            />
+            <span class={s.liveBadge}>LIVE</span>
+            {monitorError.value && (
+              <p class={s.imageFrameEmpty}>No live signal from this camera yet</p>
+            )}
+          </>
+        ) : (
+          <>
+            <img
+              ref={imageRef}
+              class={`${s.imageFrameImg}${imageReady.value ? ` ${s.imageFrameImgReady}` : ''}`}
+              alt="Latest scheduled timelapse frame"
+              draggable={false}
+            />
+            {!hasImage.value && <p class={s.imageFrameEmpty}>Tap Monitor for a live view</p>}
+          </>
+        )}
       </div>
 
       <dl class={s.metrics}>
@@ -359,8 +386,12 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <button class={s.btnSecondary} type="button" onClick={() => void refresh()} disabled={busy.value}>
           Refresh
         </button>
-        <button class={s.btnSecondary} type="button" onClick={handleMonitor} disabled={busy.value}>
-          Monitor
+        <button
+          class={monitoring.value ? s.btnPrimary : s.btnSecondary}
+          type="button"
+          onClick={toggleMonitor}
+        >
+          {monitoring.value ? 'Stop monitor' : 'Monitor'}
         </button>
         <button class={s.btnRemoveCamera} type="button" onClick={() => void handleRemove()} disabled={busy.value}>
           Remove
@@ -372,7 +403,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <p class={s.debugStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
         <p class={s.debugStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
         <p class={s.debugStatus}>
-          Live monitor is kept conservative during field validation. Normal cards use the latest scheduled image.
+          Monitor shows the live camera view in this card. The card otherwise shows the latest scheduled frame.
         </p>
       </details>
     </article>

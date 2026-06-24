@@ -349,6 +349,23 @@ export const imageFrameEmpty = style({
   margin: '0',
   color: 'var(--muted)',
   fontSize: '14px',
+  position: 'relative',
+});
+
+export const liveBadge = style({
+  position: 'absolute',
+  top: '10px',
+  left: '10px',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  padding: '3px 9px',
+  borderRadius: '999px',
+  background: 'rgba(200, 38, 38, 0.92)',
+  color: '#fff',
+  fontSize: '12px',
+  fontWeight: 700,
+  letterSpacing: '0.06em',
 });
 
 // ─── Metrics ───────────────────────────────────────────────────────────────
