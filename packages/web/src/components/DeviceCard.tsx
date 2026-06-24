@@ -30,6 +30,8 @@ interface Props {
 
 type ConnectionState = 'online' | 'degraded' | 'reconnecting' | 'offline' | 'stale';
 
+const BLANK_IMAGE_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+
 function buildStartPayload() {
   const interval = intervalSec.value;
   if (!Number.isFinite(interval) || interval < 1 || interval > 3600) {
@@ -120,26 +122,28 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     message.value = next.mesh_reason || next.interval_reason || next.message || 'Status updated.';
   }
 
-  function releasePreviewStream() {
-    previewUrlRef.current = '';
-    previewReady.value = false;
-    previewHasFrame.value = false;
-    const image = previewRef.current;
-    if (!image) return;
+  function clearImageElement(image: HTMLImageElement) {
     image.onload = null;
     image.onerror = null;
+    image.removeAttribute('src');
+    image.src = BLANK_IMAGE_SRC;
     image.removeAttribute('src');
   }
 
-  function releaseLatestImage() {
+  function releasePreviewStream(image = previewRef.current) {
+    previewUrlRef.current = '';
+    previewReady.value = false;
+    previewHasFrame.value = false;
+    if (!image) return;
+    clearImageElement(image);
+  }
+
+  function releaseLatestImage(image = imageRef.current) {
     latestCaptureToken.current = '';
     latestReady.value = false;
     latestHasImage.value = false;
-    const image = imageRef.current;
     if (!image) return;
-    image.onload = null;
-    image.onerror = null;
-    image.removeAttribute('src');
+    clearImageElement(image);
   }
 
   async function refresh() {
@@ -190,7 +194,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     const streamUrl = getMjpegStreamUrl(camera);
     if (previewUrlRef.current === streamUrl && image.getAttribute('src')) {
       return () => {
-        releasePreviewStream();
+        releasePreviewStream(image);
       };
     }
 
@@ -209,7 +213,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
     image.src = streamUrl;
 
     return () => {
-      releasePreviewStream();
+      releasePreviewStream(image);
     };
   }, [
     camera.baseUrl,
@@ -233,9 +237,7 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
       latestReady.value = false;
       latestHasImage.value = false;
       latestCaptureToken.current = '';
-      image.onload = null;
-      image.onerror = null;
-      image.removeAttribute('src');
+      clearImageElement(image);
       return undefined;
     }
 
