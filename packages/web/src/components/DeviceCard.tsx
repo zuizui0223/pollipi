@@ -14,6 +14,7 @@ import {
 import {
   autonomousMode,
   intervalSec,
+  policyProfileId,
 } from '../state/session';
 import { removeCamera } from '../state/devices';
 import { coordinatorBaseUrl } from '../state/coordinator';
@@ -40,6 +41,7 @@ function buildStartPayload() {
     autonomous_mode: autonomousMode.value,
     adaptive_timelapse_mode: false,
     mesh_shadow_mode: true,
+    policy_profile_id: policyProfileId.value,
   };
 }
 
@@ -315,6 +317,10 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
           <dt class={s.metricsDt}>Shadow only</dt>
           <dd class={s.metricsDd}>{shadowOnly === null ? '-' : shadowOnly ? 'on' : 'off'}</dd>
         </div>
+        <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>Policy profile</dt>
+          <dd class={s.metricsDd}>{current?.policy_profile_id || 'unknown'}</dd>
+        </div>
       </dl>
 
       <p class={s.cameraMessage}>
@@ -350,6 +356,8 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <summary class={s.debugDetailsSummary}>Connection details</summary>
         <p class={s.debugStatus}>lifecycle: {(current as any)?.lifecycle_state || '-'}</p>
         <p class={s.debugStatus}>preview producer: {(current as any)?.preview_producer_state || '-'}</p>
+        <p class={s.debugStatus}>simulation: {current?.simulation_run_id || '-'}</p>
+        <p class={s.debugStatus}>kind: {current?.kind || '-'}</p>
         <p class={s.debugStatus}>last capture: {formatCaptureTime(current?.last_capture_time)}</p>
         <p class={s.debugStatus}>connection: {connectionState.value}</p>
       </details>

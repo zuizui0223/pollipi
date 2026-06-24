@@ -80,6 +80,9 @@ class TimelapseController:
         self.probe_interval_sec: Optional[float] = None
         self.would_be_mode: str = "LOW"
         self.would_be_interval_sec: Optional[float] = None
+        self.policy_profile_id = "three_stage_default_v1"
+        self.simulation_run_id = "issue27-three-stage-baseline"
+        self.kind = "three_stage"
 
     def _build_status(self):
         from visit_monitor_server.api.schemas.capture import StatusResponse
@@ -96,6 +99,9 @@ class TimelapseController:
             would_be_mode=self.would_be_mode,
             would_be_interval_sec=self.would_be_interval_sec,
             live_adaptive_enabled=LIVE_ADAPTIVE_ENABLED,
+            policy_profile_id=self.policy_profile_id,
+            simulation_run_id=self.simulation_run_id,
+            kind=self.kind,
             running=self.running,
             lifecycle_state=self.lifecycle_state,
             last_error=self.last_error,
@@ -143,6 +149,18 @@ class TimelapseController:
         return self._build_status()
 
     def start(self, request):
+        from pollipi_analysis.policy import get_policy_profile
+
+        profile = get_policy_profile(request.policy_profile_id)
+        with self._lock:
+            if self.running or self._thread is not None:
+                if profile.profile_id != self.policy_profile_id:
+                    raise ValueError(
+                        "policy_profile_id cannot be changed while capture is running."
+                    )
+                self.message = "Timelapse is already running; start was not duplicated."
+                return self.status_unlocked()
+
         stopped = self.stop()
         if stopped.lifecycle_state == "stopping":
             with self._lock:
@@ -172,6 +190,12 @@ class TimelapseController:
             self.mesh_active_cell_proportion = None
             self.mesh_offset_agreement = None
             self.mesh_global_synchrony = None
+            self.probe_interval_sec = None
+            self.would_be_mode = "LOW"
+            self.would_be_interval_sec = None
+            self.policy_profile_id = profile.profile_id
+            self.simulation_run_id = profile.simulation_run_id
+            self.kind = profile.kind
             self.site_id = request.site_id
             self.flower_id = request.flower_id
             self.plant_species = request.plant_species
@@ -289,6 +313,12 @@ class TimelapseController:
                 self.would_be_mode = state["would_be_mode"]
             if "would_be_interval_sec" in state:
                 self.would_be_interval_sec = state["would_be_interval_sec"]
+            if "policy_profile_id" in state:
+                self.policy_profile_id = state["policy_profile_id"]
+            if "simulation_run_id" in state:
+                self.simulation_run_id = state["simulation_run_id"]
+            if "kind" in state:
+                self.kind = state["kind"]
             self.capture_count += state.get("capture_count_delta", 0)
             if state.get("last_capture_time") is not None:
                 self.last_capture_time = state["last_capture_time"]

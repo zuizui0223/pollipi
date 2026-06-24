@@ -15,6 +15,7 @@ import { selectedGalleryCamera } from './state/gallery';
 import {
   autonomousMode,
   intervalSec,
+  policyProfileId,
   syncLabel,
 } from './state/session';
 import { formatSyncTime } from './lib/formatting';
@@ -26,6 +27,7 @@ function startPayloadFor(_camera: Camera): StartPayload {
     autonomous_mode: autonomousMode.value,
     adaptive_timelapse_mode: false,
     mesh_shadow_mode: true,
+    policy_profile_id: policyProfileId.value,
   };
 }
 

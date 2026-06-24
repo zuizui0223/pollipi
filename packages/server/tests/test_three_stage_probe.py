@@ -66,3 +66,6 @@ def test_probes_outnumber_highres_saves_and_status_reports_would_be_mode(monkeyp
     assert len(rows) > highres_saves
     # Provenance present on every probe row.
     assert all(r["validation_status"] == "synthetic_only" for r in rows)
+    assert all(r["policy_profile_id"] == "three_stage_default_v1" for r in rows)
+    assert all(r["simulation_run_id"] == "issue27-three-stage-baseline" for r in rows)
+    assert all(r["kind"] == "three_stage" for r in rows)

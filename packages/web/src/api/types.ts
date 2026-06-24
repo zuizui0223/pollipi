@@ -99,6 +99,9 @@ export interface StatusResponse {
   would_be_mode?: string | null;
   would_be_interval_sec?: number | null;
   live_adaptive_enabled?: boolean;
+  policy_profile_id?: string;
+  simulation_run_id?: string;
+  kind?: string;
 }
 
 /** System info from GET /system. */
@@ -158,4 +161,5 @@ export interface StartPayload {
   autonomous_mode: boolean;
   adaptive_timelapse_mode: boolean;
   mesh_shadow_mode: boolean;
+  policy_profile_id: string;
 }

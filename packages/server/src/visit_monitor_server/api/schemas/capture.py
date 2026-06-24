@@ -27,6 +27,7 @@ class StartRequest(BaseModel):
     comparison_session_id: Optional[str] = None
     camera_role: Optional[str] = None
     method_mode: Optional[str] = None
+    policy_profile_id: Optional[str] = None
 
 
 class StatusResponse(BaseModel):
@@ -87,3 +88,21 @@ class StatusResponse(BaseModel):
     would_be_mode: str = "LOW"
     would_be_interval_sec: Optional[float] = None
     live_adaptive_enabled: bool = False
+    policy_profile_id: str = "three_stage_default_v1"
+    simulation_run_id: str = "issue27-three-stage-baseline"
+    kind: str = "three_stage"
+
+
+class PolicyProfileResponse(BaseModel):
+    schema_: str = Field(alias="schema")
+    profile_id: str
+    simulation_run_id: str
+    source_commit: str
+    kind: str
+    parameters: dict
+    description: str = ""
+
+
+class PolicyProfilesResponse(BaseModel):
+    default_profile_id: str
+    profiles: list[PolicyProfileResponse]
