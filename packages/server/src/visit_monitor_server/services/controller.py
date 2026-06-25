@@ -44,9 +44,18 @@ class TimelapseController:
         self._monitor_thread: Optional[threading.Thread] = None
         self._monitor_lock = threading.Lock()
         self._latest_frame_bytes: Optional[bytes] = None
-        self._preview_subscriber_count = 0
         self._preview_producer_state = "idle"
         self._monitor_idle_timeout = 6.0  # seconds: idle timeout before stopping producer
+        # Connection-level preview subscriber tracking. Each /mjpeg stream gets a
+        # unique id and refreshes its last-seen timestamp while it is actively
+        # iterated. A stream that stops being iterated (normal end, cancel, or an
+        # unclean disconnect) stops refreshing and is reaped after
+        # _subscriber_stale_after, so a stale subscriber can never hold the
+        # producer running forever. We never trust a raw cumulative counter.
+        self._subscriber_lock = threading.Lock()
+        self._subscribers: dict[int, float] = {}  # subscriber_id -> last_seen (monotonic)
+        self._subscriber_seq = 0
+        self._subscriber_stale_after = 5.0  # seconds without a refresh => treated as gone
 
         self.running = False
         self.lifecycle_state = "stopped"
@@ -107,7 +116,7 @@ class TimelapseController:
             running=self.running,
             lifecycle_state=self.lifecycle_state,
             last_error=self.last_error,
-            preview_subscriber_count=self._preview_subscriber_count,
+            preview_subscriber_count=self._active_subscriber_count(),
             preview_latest_frame_age_sec=None,
             preview_producer_state=self._preview_producer_state,
             interval_sec=self.interval_sec,
@@ -367,6 +376,35 @@ class TimelapseController:
         # cause acquisition conflicts with the monitor producer.
         raise RuntimeError("No scheduled image is available for preview.")
 
+    # --- connection-level preview subscriber tracking -------------------------
+    def _register_subscriber(self) -> int:
+        with self._subscriber_lock:
+            self._subscriber_seq += 1
+            sid = self._subscriber_seq
+            self._subscribers[sid] = time.monotonic()
+            return sid
+
+    def _touch_subscriber(self, sid: int) -> None:
+        with self._subscriber_lock:
+            if sid in self._subscribers:
+                self._subscribers[sid] = time.monotonic()
+
+    def _remove_subscriber(self, sid: int) -> None:
+        with self._subscriber_lock:
+            self._subscribers.pop(sid, None)
+
+    def _active_subscriber_count(self) -> int:
+        """Number of live preview streams, after reaping stale ones.
+
+        A subscriber that has not refreshed within _subscriber_stale_after is
+        removed here, so a leaked/abandoned stream cannot keep the producer alive.
+        """
+        cutoff = time.monotonic() - self._subscriber_stale_after
+        with self._subscriber_lock:
+            for sid in [s for s, seen in self._subscribers.items() if seen < cutoff]:
+                del self._subscribers[sid]
+            return len(self._subscribers)
+
     def stop_monitor(self) -> None:
         with self._lock:
             event = self._monitor_stop_event
@@ -376,6 +414,10 @@ class TimelapseController:
         self._stop_monitor_producer()
 
     def _start_monitor_producer(self) -> None:
+        # The preview producer must never run while scheduled capture is active.
+        with self._lock:
+            if self.running:
+                return
         with self._monitor_lock:
             if self._monitor_thread is not None and self._monitor_thread.is_alive():
                 return
@@ -473,28 +515,28 @@ class TimelapseController:
             while not stop_event.is_set():
                 with self._lock:
                     capture_running = self.running
+                if capture_running:
+                    # Scheduled capture owns the sensor; the preview producer must
+                    # not run or linger during capture. Exit; the finally releases
+                    # the preview camera. It will only restart once capture stops
+                    # AND a live subscriber requests it.
+                    break
 
                 frame = None
-                if capture_running:
-                    if preview_cam is not None:
+                if preview_cam is None:
+                    try:
+                        with self._camera_lock:
+                            preview_cam = self._open_preview_camera()
+                        self._preview_producer_state = "running"
+                    except Exception:
+                        preview_cam = None
+                if preview_cam is not None:
+                    with self._camera_lock:
+                        frame = self._grab_preview_jpeg(preview_cam)
+                    if frame is None:
                         with self._camera_lock:
                             self._close_preview_camera(preview_cam)
                         preview_cam = None
-                else:
-                    if preview_cam is None:
-                        try:
-                            with self._camera_lock:
-                                preview_cam = self._open_preview_camera()
-                            self._preview_producer_state = "running"
-                        except Exception:
-                            preview_cam = None
-                    if preview_cam is not None:
-                        with self._camera_lock:
-                            frame = self._grab_preview_jpeg(preview_cam)
-                        if frame is None:
-                            with self._camera_lock:
-                                self._close_preview_camera(preview_cam)
-                            preview_cam = None
 
                 if frame is None:
                     image_path = self.latest_image()
@@ -509,10 +551,12 @@ class TimelapseController:
                         self._latest_frame_bytes = frame
                     last_activity = time.monotonic()
 
-                # If there are no subscribers, allow idle timeout to stop the producer.
-                with self._monitor_lock:
-                    subs = self._preview_subscriber_count
-                if subs == 0 and (time.monotonic() - last_activity) > self._monitor_idle_timeout:
+                # When no live subscriber remains (stale ones are reaped here),
+                # allow the idle timeout to stop the producer.
+                if (
+                    self._active_subscriber_count() == 0
+                    and (time.monotonic() - last_activity) > self._monitor_idle_timeout
+                ):
                     break
 
                 delay = 0.12 if preview_cam is not None else 0.4
@@ -529,24 +573,33 @@ class TimelapseController:
                 self._preview_producer_state = "idle"
 
     def monitor_frames(self, ai_detection: bool = False) -> Generator[bytes, None, None]:
-        """Explicit one-viewer stream from the producer's latest frame cache.
+        """Live preview stream from the shared producer's latest frame cache.
 
-        The producer is single-instance: multiple consumers share the same cached
-        latest frame. Consumers increment preview_subscriber_count and the first
-        subscriber starts the producer.
+        Each stream registers a connection-level subscriber id and refreshes it
+        while iterated; the producer is single-instance and shared. The stream is
+        refused while scheduled capture is running, and ends if capture starts
+        mid-stream, so the producer is never kept alive during capture.
         """
         if ai_detection:
             raise RuntimeError("AI monitor is removed from the active workflow.")
-        # Reset any existing monitor stop event for this consumer
-        self.stop_monitor()
-        stop_event = threading.Event()
+        # Never run a live preview stream while scheduled capture is active.
         with self._lock:
-            self._monitor_stop_event = stop_event
-            self._preview_subscriber_count += 1
-            # ensure a single producer is running
-            self._start_monitor_producer()
+            if self.running:
+                return
+
+        sid = self._register_subscriber()
+        # Ensure a single shared producer is running (no-op while capture runs).
+        self._start_monitor_producer()
         try:
-            while not stop_event.is_set():
+            while True:
+                # Refresh liveness so this subscriber is not reaped as stale while
+                # the client is actively consuming the stream.
+                self._touch_subscriber(sid)
+                with self._lock:
+                    if self.running:
+                        # Capture started mid-stream: end this preview stream so the
+                        # producer is not kept alive during capture.
+                        break
                 with self._monitor_lock:
                     frame = self._latest_frame_bytes
                 if frame is not None:
@@ -557,18 +610,14 @@ class TimelapseController:
                         + frame
                         + b"\r\n"
                     )
-                # Wait briefly for the next update or stop
-                if stop_event.wait(0.4):
-                    break
+                # Brief pause before the next frame. On client disconnect the
+                # generator's close() runs the finally below.
+                time.sleep(0.4)
         finally:
-            with self._lock:
-                # decrement subscribers and possibly stop producer when no subscribers
-                self._preview_subscriber_count = max(0, self._preview_subscriber_count - 1)
-                if self._preview_subscriber_count == 0:
-                    # either stop immediately or let producer idle-timeout handle it
-                    self._stop_monitor_producer()
-                if self._monitor_stop_event is stop_event:
-                    self._monitor_stop_event = None
+            self._remove_subscriber(sid)
+            # Stop the producer only when no live subscriber remains.
+            if self._active_subscriber_count() == 0:
+                self._stop_monitor_producer()
 
     def _save_autonomous_request(self, request) -> None:
         AUTONOMOUS_PATH.parent.mkdir(parents=True, exist_ok=True)
