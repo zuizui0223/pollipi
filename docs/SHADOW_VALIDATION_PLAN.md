@@ -65,6 +65,27 @@ false_trigger_cause, notes
   対応する高解像度保存に **時刻近傍（±probe_interval/2 = ±2.5 秒）** で対応付ける。
 - `visit_labels.csv` は `device_id` ＋ `image_filename` で probe / decisions に結合する。
 
+### 4.1 v2 導入前の暫定結合アルゴリズム
+v1 ログに `saved_image_filename` / `run_id` 等が無いため、以下の手順で暫定結合し、
+品質を `join_confidence` として付与する。
+
+1. **機体識別（primary candidate）**: device の保存先（storage location）と device identity を
+   最初の機体識別に使う（ログは Pi ごとに保存されるため、保存元 Pi = `device_id`）。
+2. **probe row ↔ 高解像度 JPEG**: probe 行のうち **`actual_highres_saved=True`** を優先候補とする。
+3. **時差計算**: `probe_timestamp` と `highres_captured_at` の**絶対時差**を計算する。
+4. **基準**: **±`probe_interval_sec` / 2**（現在の標準設定なら **±2.5 秒**）。
+5. **同率候補の順位付け**: 複数候補があるときは
+   ① 時差最小 → ② `actual_highres_saved=True` → ③ ファイル mtime の順で順位付けする。
+6. **`join_confidence` の付与**:
+   - `high`: `actual_highres_saved=True` かつ時差 ≤ 2.5 秒
+   - `medium`: 時差 ≤ 5 秒だが直接対応列なし
+   - `low`: 時差 > 5 秒、または run 境界・再起動境界をまたぐ
+   - `unmatched`: 対応する probe または JPEG が無い
+
+**品質層の扱い**:
+- `low` / `unmatched` は主解析から**除外せず、品質層として別集計**する。
+- **`high` confidence のみの感度分析**を併せて行い、結合品質依存のバイアスを点検する。
+
 ## 5. event window 定義
 - **anchor window**: 各高解像度アンカー（既定 30 秒間隔）の `±15 秒` を 1 観測窓とする。
 - **candidate event**: local candidate（uncertain または strong）が連続する probe 区間を 1 イベント。

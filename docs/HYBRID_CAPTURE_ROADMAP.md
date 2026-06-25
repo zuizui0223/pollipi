@@ -35,6 +35,18 @@
 - adaptive burst の有無で観察確率が変わることを **補正可能**にするため。
 - pure trigger の検出漏れを評価する **基準**を残すため。
 
+## 3.1 方式比較の公平性（交絡の回避）
+- **最初の方式比較は、同一の固定アンカー JPEG と probe log から offline / virtual に再構成**する
+  （A=固定はそのまま、B=pure trigger・C=hybrid は同一データからの仮想再構成）。
+- これにより、**Module3 Wide / AI Camera(imx500) / NoIR の機種差、サイト・花種・時刻・天候の差**を
+  **方式差と混同しない**。
+- 実際の **live 比較**へ進む場合は、**同一 device 内で方式を日・時間帯・地点ごとに交互配置する
+  within-device counterbalance** を基本とする。
+- `device` / `site` / `date` / `time-of-day` / `camera profile` を、解析の
+  **層別因子またはランダム効果候補**として記録する。
+- **pure trigger と hybrid の比較**では、保存枚数だけでなく
+  **有効観測窓数・検出確率・欠損率**を併記する。
+
 ## 4. virtual burst shadow（まず shadow で推定）
 実際に burst を撮る前に、probe 判定列から「この判定なら追加 burst を撮っていた」を
 **オフライン（または on-Pi の追記列）で再構成**する。
@@ -85,6 +97,24 @@ Phase 0 の確認済み事実：
 - **3 枚・4 枚 burst** は、まず **virtual burst shadow** で見積もり、**field validation 後**の候補として扱う
   （即時の live 実装はしない）。
 - いずれも `live_allowed=false` を維持したまま、shadow / virtual で十分な根拠を得てから提案する。
+
+## 8.1 live burst 移行の定量 gate（将来決定）
+live adaptive / live burst を検討する前に、次の各項目について **事前登録（pre-registration）または
+事前合意**が必要とする。**数値は現時点で固定しない**（field validation の結果を見てから決める）。
+
+- 最小評価窓数
+- 最小調査日数
+- device / site / camera profile ごとの最小サンプル
+- candidate precision の下限
+- false trigger rate の上限
+- 短時間訪花の層別 recall の下限
+- unknown / low `join_confidence` の許容率
+- JPEG 欠損率の上限
+- 追加 burst による GB/day と Wh/day の上限
+- **R1（monitor subscriber 残留）が解消されていること**
+- 高解像度保存・Stop 後保持の **再現試験が複数機で通ること**
+
+> **これらの gate を満たすまで、live adaptive / live burst は有効化しない。**
 
 ## 9. 未決事項・前提
 - どの profile（default / sensitive）を主に検証するか。
