@@ -23,7 +23,14 @@ def test_json_policy_profiles_are_versioned_and_allowed() -> None:
         "three_stage_sensitive_v1",
     }
     assert all(profile.kind == "three_stage" for profile in profiles)
-    assert all(profile.live_allowed is False for profile in profiles)
+    # D1: existing (non-canary) profiles stay live_allowed=false; only an explicitly
+    # named canary profile may set it true (and even then it is one of three gates).
+    by_id = {p.profile_id: p for p in profiles}
+    assert by_id["three_stage_default_v1"].live_allowed is False
+    assert by_id["three_stage_sensitive_v1"].live_allowed is False
+    assert all(
+        "canary" in p.profile_id for p in profiles if p.live_allowed is True
+    )
 
 
 def _profile_payload(profile_id: str, simulation_run_id: str | None = None) -> dict:
@@ -62,14 +69,28 @@ def test_adding_one_json_profile_makes_it_available(monkeypatch, tmp_path: Path)
     }
 
 
-def test_live_allowed_true_profile_is_rejected(monkeypatch, tmp_path: Path) -> None:
+def test_live_allowed_true_profile_is_accepted(monkeypatch, tmp_path: Path) -> None:
+    # live_allowed=true is permitted at the profile layer; it is one of three gates
+    # and never enables live timing on its own (see capture_loop.live_adaptive_active).
+    profile_dir = tmp_path / "profiles"
+    _write_profile(profile_dir, "default.json", _profile_payload(DEFAULT_POLICY_PROFILE_ID))
+    payload = _profile_payload("three_stage_canary_v1", "run-canary")
+    payload["live_allowed"] = True
+    _write_profile(profile_dir, "canary.json", payload)
+    monkeypatch.setenv("POLLIPI_POLICY_PROFILE_DIR", str(profile_dir))
+
+    profiles = {p.profile_id: p for p in list_policy_profiles()}
+    assert profiles["three_stage_canary_v1"].live_allowed is True
+
+
+def test_live_allowed_non_bool_is_rejected(monkeypatch, tmp_path: Path) -> None:
     profile_dir = tmp_path / "profiles"
     payload = _profile_payload(DEFAULT_POLICY_PROFILE_ID)
-    payload["live_allowed"] = True
+    payload["live_allowed"] = "yes"
     _write_profile(profile_dir, "default.json", payload)
     monkeypatch.setenv("POLLIPI_POLICY_PROFILE_DIR", str(profile_dir))
 
-    with pytest.raises(ValueError, match="live_allowed=false"):
+    with pytest.raises(ValueError, match="live_allowed must be a bool"):
         list_policy_profiles()
 
 

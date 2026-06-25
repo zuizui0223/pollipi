@@ -31,9 +31,13 @@ def _client(monkeypatch, tmp_path: Path) -> TestClient:
     return TestClient(app_module.create_app())
 
 
+def _probe_log(images_dir: Path):
+    files = sorted(images_dir.glob("adaptive_probe_shadow_v2_*.csv"))
+    return files[0] if files else None
+
+
 def test_probes_outnumber_highres_saves_and_status_reports_would_be_mode(monkeypatch, tmp_path: Path) -> None:
     images_dir = tmp_path / "images"
-    probe_log = images_dir / "adaptive_probe_shadow-1.csv"
 
     with _client(monkeypatch, tmp_path) as client:
         # High-res every 1 s; probes every 0.02 s.
@@ -42,7 +46,8 @@ def test_probes_outnumber_highres_saves_and_status_reports_would_be_mode(monkeyp
         # The loop has a ~2 s startup wait; poll past it until probes accumulate.
         deadline = time.monotonic() + 6.0
         while time.monotonic() < deadline:
-            if probe_log.exists() and sum(1 for _ in probe_log.open(encoding="utf-8")) >= 6:
+            log = _probe_log(images_dir)
+            if log is not None and sum(1 for _ in log.open(encoding="utf-8")) >= 6:
                 break
             time.sleep(0.1)
 
@@ -52,11 +57,14 @@ def test_probes_outnumber_highres_saves_and_status_reports_would_be_mode(monkeyp
     # Shadow-only honesty: would-be mode present, live adaptive OFF, shadow ON.
     assert status["would_be_mode"] in {"LOW", "MID", "HIGH"}
     assert status["live_adaptive_enabled"] is False
+    assert status["live_adaptive_active"] is False
     assert status["mesh_shadow_mode"] is True
     assert status["probe_interval_sec"] == 0.02
     assert status["interval_sec"] == 1  # actual observed high-res gap stays fixed
 
-    # The probe log has one row per probe; high-res saves stay sparse.
+    # The per-run v2 probe log has one row per probe; high-res saves stay sparse.
+    probe_log = _probe_log(images_dir)
+    assert probe_log is not None
     rows = list(csv.DictReader(probe_log.open(encoding="utf-8")))
     assert len(rows) >= 5
     highres_saves = sum(1 for r in rows if r["actual_highres_saved"] == "True")

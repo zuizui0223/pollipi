@@ -1,0 +1,16 @@
+{
+  "schema": "pollipi-policy-profile-1",
+  "profile_id": "three_stage_canary_v1",
+  "simulation_run_id": "issue27-three-stage-canary",
+  "source_commit": "analysis-run-issue27-three-stage-baseline",
+  "kind": "three_stage",
+  "live_allowed": true,
+  "description": "Canary profile for a controlled live-interval mechanism test (30/15/5). live_allowed=true is only one of three gates; live timing applies only when POLLIPI_LIVE_ADAPTIVE_ENABLED=1 AND this profile is selected AND /start sets live_adaptive_requested=true. Not for production field validation.",
+  "parameters": {
+    "low_interval_sec": 30.0,
+    "mid_interval_sec": 15.0,
+    "high_interval_sec": 5.0,
+    "high_hard_cap_sec": 120.0,
+    "high_exit_quiet_probes": 3
+  }
+}
