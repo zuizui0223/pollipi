@@ -1,0 +1,3 @@
+label_id,reviewer_id,reviewed_at,device_id,run_id,image_filename,highres_captured_at,timezone,visit_present,visitor_taxon,visitor_count,behavior,on_focal_flower,confidence,image_quality,occlusion,false_trigger_cause,notes
+L0001,R01,2099-05-01T10:15:30+09:00,deviceA,run_0001,image_20990501_101530_000000.jpg,2099-05-01T10:15:30+09:00,Asia/Tokyo,1,Apis_sp,1,visiting,1,3,good,none,,example visit on focal flower
+L0002,R02,2099-05-01T10:20:10+09:00,deviceA,run_0001,image_20990501_102010_000000.jpg,2099-05-01T10:20:10+09:00,Asia/Tokyo,0,,0,none,0,2,good,partial,flower_sway,candidate window reviewed; no visit; flower swayed in wind
