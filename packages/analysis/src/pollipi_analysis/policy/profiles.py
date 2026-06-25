@@ -58,7 +58,10 @@ class PolicyProfile:
             simulation_run_id=str(data["simulation_run_id"]),
             source_commit=str(data["source_commit"]),
             kind=str(data["kind"]),
-            live_allowed=bool(data["live_allowed"]),
+            # Do not coerce: a stray truthy value (e.g. "yes", 1) must be rejected by
+            # validate(), not silently treated as a live-enable. JSON booleans map to
+            # Python bool, so well-formed profiles pass through unchanged.
+            live_allowed=data["live_allowed"],
             parameters=dict(data["parameters"]),
             description=str(data.get("description", "")),
         )
@@ -70,8 +73,11 @@ class PolicyProfile:
             raise ValueError(f"unsupported policy profile schema: {self.schema}")
         if self.kind not in ALLOWED_POLICY_KINDS:
             raise ValueError(f"unsupported policy profile kind: {self.kind}")
-        if self.live_allowed is not False:
-            raise ValueError(f"policy profile {self.profile_id} must set live_allowed=false")
+        # live_allowed may be true only for explicitly approved canary profiles. It
+        # is one of three gates (see capture_loop.live_adaptive_active) and never
+        # enables live timing on its own, so it is accepted as a plain bool here.
+        if not isinstance(self.live_allowed, bool):
+            raise ValueError(f"policy profile {self.profile_id} live_allowed must be a bool")
         if not self.profile_id:
             raise ValueError("policy profile_id is required")
         if not self.simulation_run_id:

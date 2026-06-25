@@ -104,7 +104,7 @@ def test_policy_profile_is_fixed_while_capture_runs(monkeypatch, tmp_path: Path)
 
 def test_probe_csv_logs_policy_profile_provenance(monkeypatch, tmp_path: Path) -> None:
     images_dir = tmp_path / "images"
-    probe_log = images_dir / "adaptive_probe_shadow-1.csv"
+    probe_log = None
 
     with _client(monkeypatch, tmp_path) as client:
         assert client.post(
@@ -114,10 +114,17 @@ def test_probe_csv_logs_policy_profile_provenance(monkeypatch, tmp_path: Path) -
 
         deadline = time.monotonic() + 6.0
         while time.monotonic() < deadline:
-            if probe_log.exists() and sum(1 for _ in probe_log.open(encoding="utf-8")) >= 4:
-                break
+            probe_logs = sorted(images_dir.glob("adaptive_probe_shadow_v2_*.csv"))
+            if len(probe_logs) == 1:
+                candidate = probe_logs[0]
+                if sum(1 for _ in candidate.open(encoding="utf-8")) >= 4:
+                    probe_log = candidate
+                    break
             time.sleep(0.1)
 
+        assert probe_log is not None, (
+            "Expected one v2 probe log with at least three records."
+        )
         status = client.get("/status").json()
         client.post("/stop")
 

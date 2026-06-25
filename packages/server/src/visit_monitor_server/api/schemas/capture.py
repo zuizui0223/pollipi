@@ -28,6 +28,10 @@ class StartRequest(BaseModel):
     camera_role: Optional[str] = None
     method_mode: Optional[str] = None
     policy_profile_id: Optional[str] = None
+    # Per-session opt-in for live adaptive timing. One of three gates; live timing
+    # applies only if POLLIPI_LIVE_ADAPTIVE_ENABLED=1 AND the selected profile has
+    # live_allowed=true AND this is true. Defaults false (shadow-only).
+    live_adaptive_requested: bool = False
 
 
 class StatusResponse(BaseModel):
@@ -88,6 +92,9 @@ class StatusResponse(BaseModel):
     would_be_mode: str = "LOW"
     would_be_interval_sec: Optional[float] = None
     live_adaptive_enabled: bool = False
+    # True only while all three live gates are satisfied for the running capture;
+    # then interval_sec reflects the adaptive interval actually being applied.
+    live_adaptive_active: bool = False
     policy_profile_id: str = "three_stage_default_v1"
     simulation_run_id: str = "issue27-three-stage-baseline"
     kind: str = "three_stage"
