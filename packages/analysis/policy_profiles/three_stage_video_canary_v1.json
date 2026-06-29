@@ -1,0 +1,20 @@
+{
+  "schema": "pollipi-policy-profile-1",
+  "profile_id": "three_stage_video_canary_v1",
+  "simulation_run_id": "issue27-three-stage-video-canary",
+  "source_commit": "analysis-run-issue27-three-stage-baseline",
+  "kind": "three_stage",
+  "live_allowed": true,
+  "description": "Mode (3) classified adaptive: LOW=30s stills (no_activity + environmental_noise), MID=10s stills (uncertain local activity), HIGH fires one 1080p/30fps ~10s video clip on strong local activity (then back to MID, with cooldown). A clip is a confirmation aid for strong local activity, NOT a confirmed pollinator visit. Live only with POLLIPI_LIVE_ADAPTIVE_ENABLED=1 AND /start live_adaptive_requested=true.",
+  "parameters": {
+    "low_interval_sec": 30.0,
+    "mid_interval_sec": 10.0,
+    "high_interval_sec": 5.0,
+    "high_hard_cap_sec": 120.0,
+    "high_exit_quiet_probes": 3,
+    "high_mode": "video",
+    "video_duration_sec": 10.0,
+    "video_fps": 30,
+    "video_cooldown_sec": 45.0
+  }
+}

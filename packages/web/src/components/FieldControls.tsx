@@ -2,8 +2,10 @@ import { h } from 'preact';
 import {
   approvedPolicyProfiles,
   autonomousMode,
+  CAPTURE_MODE_PROFILE,
+  captureMode,
   intervalSec,
-  policyProfileId,
+  type CaptureMode,
 } from '../state/session';
 import * as s from '../styles/components.css';
 
@@ -12,7 +14,26 @@ interface Props {
   onStopAll: () => Promise<void>;
 }
 
+const MODE_HINT: Record<CaptureMode, string> = {
+  plain: 'Fixed-interval stills only — no adaptation, no video.',
+  motion:
+    'Any motion (wind, shadow, insect alike) speeds up stills, then settles. No video. '
+    + 'Adaptive needs the Pi live env flag, else it falls back to the fixed interval.',
+  classified:
+    'Noise is filtered; ambiguous local motion speeds up stills; a strong candidate records a '
+    + 'short video clip (a confirmation aid, not a confirmed visit). Needs the Pi live env flag.',
+};
+
 export function FieldControls({ onStartAll, onStopAll }: Props) {
+  const mode = captureMode.value;
+  const profileId = CAPTURE_MODE_PROFILE[mode];
+  const profile = profileId
+    ? approvedPolicyProfiles.value.find((p) => p.profile_id === profileId)
+    : undefined;
+  const liveProfileMissing =
+    profileId != null
+    && approvedPolicyProfiles.value.length > 0
+    && (!profile || !profile.live_allowed);
   return (
     <section class={s.controlPanel} aria-label="field control">
       <div>
@@ -54,25 +75,28 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
           <span>Resume autonomously after Pi restart</span>
         </label>
         <label class={s.profileSelectWrap} style={{ gridColumn: '1 / -1' }}>
-          <span>Approved policy profile</span>
+          <span>Capture mode</span>
           <select
             class={s.profileSelect}
-            value={policyProfileId.value}
-            disabled={approvedPolicyProfiles.value.length === 0}
+            value={mode}
             onChange={(e) => {
-              policyProfileId.value = (e.target as HTMLSelectElement).value;
+              captureMode.value = (e.target as HTMLSelectElement).value as CaptureMode;
             }}
           >
-            {approvedPolicyProfiles.value.length === 0 && (
-              <option value="">Loading approved profiles</option>
-            )}
-            {approvedPolicyProfiles.value.map((profile) => (
-              <option value={profile.profile_id} key={profile.profile_id}>
-                {profile.profile_id}
-              </option>
-            ))}
+            <option value="plain">① Plain timelapse (fixed interval)</option>
+            <option value="motion">② Motion-reactive (faster on any motion, no video)</option>
+            <option value="classified">③ Classified adaptive (strong → video clip)</option>
           </select>
         </label>
+        <p class={s.hint} style={{ gridColumn: '1 / -1' }}>
+          {MODE_HINT[mode]}
+        </p>
+        {liveProfileMissing && (
+          <p class={s.hint} style={{ gridColumn: '1 / -1', color: '#c0392b' }}>
+            This mode's policy profile is unavailable or not live-allowed on the selected unit;
+            it will fall back to the fixed interval.
+          </p>
+        )}
       </div>
 
       <div class={s.groupActions}>

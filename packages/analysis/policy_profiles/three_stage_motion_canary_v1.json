@@ -1,0 +1,17 @@
+{
+  "schema": "pollipi-policy-profile-1",
+  "profile_id": "three_stage_motion_canary_v1",
+  "simulation_run_id": "issue27-three-stage-motion-canary",
+  "source_commit": "analysis-run-issue27-three-stage-baseline",
+  "kind": "three_stage",
+  "live_allowed": true,
+  "description": "Mode (2) motion-reactive (no classification): any motion at all - wind, shadow, camera shake, insect alike - escalates to the fast interval (30s -> 10s stills); settles back to the normal interval when quiet. No video. Does NOT distinguish noise from a visitor. Live only with POLLIPI_LIVE_ADAPTIVE_ENABLED=1 AND /start live_adaptive_requested=true.",
+  "parameters": {
+    "classify": false,
+    "low_interval_sec": 30.0,
+    "mid_interval_sec": 10.0,
+    "high_interval_sec": 5.0,
+    "high_hard_cap_sec": 120.0,
+    "high_exit_quiet_probes": 3
+  }
+}
