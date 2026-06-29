@@ -56,6 +56,11 @@ class ThreeStageConfig:
     video_duration_sec: float = 30.0
     video_fps: int = 30
     video_cooldown_sec: float = 45.0
+    # classify=True (default): mesh states are graded; environmental_noise is treated
+    # as quiet (mode ③ / the classified stills policy). classify=False (mode ②): any
+    # motion at all — wind, shadow, insect alike — escalates to the fast interval;
+    # there is no HIGH and no video. Two levels only: low_interval <-> mid_interval.
+    classify: bool = True
 
 
 @dataclass
@@ -105,9 +110,48 @@ class ThreeStageController:
         return {LOW: cfg.low_interval_sec, MID: cfg.mid_interval_sec, HIGH: cfg.high_interval_sec}[mode]
 
     def step(self, decision_state: DecisionState, now_sec: float) -> ThreeStageOutput:
+        if not self.config.classify:
+            return self._step_any_motion(decision_state, now_sec)
         if self.config.high_mode == "video":
             return self._step_video(decision_state, now_sec)
         return self._step_interval(decision_state, now_sec)
+
+    def _step_any_motion(self, decision_state: DecisionState, now_sec: float) -> ThreeStageOutput:
+        """Mode ②: any motion (noise included) -> fast interval; settle back when quiet.
+
+        No grading, no HIGH, no video. Two levels only: MID = mid_interval_sec (fast)
+        while anything moves, LOW = low_interval_sec (normal) once it has been quiet
+        for high_exit_quiet_probes in a row.
+        """
+        cfg = self.config
+        st = self.state
+        is_motion = decision_state != NO_ACTIVITY  # wind/shadow count as motion here
+
+        if is_motion:
+            st.mode = MID
+            st.quiet_streak = 0
+            reason = "any_motion_fast"
+        else:
+            st.quiet_streak += 1
+            if st.mode == MID and st.quiet_streak >= cfg.high_exit_quiet_probes:
+                st.mode = LOW
+                reason = "any_motion_settle_to_low"
+            elif st.mode == MID:
+                reason = f"any_motion_hold_fast_quiet_{st.quiet_streak}"
+            else:
+                reason = "any_motion_low"
+
+        return ThreeStageOutput(
+            mode=st.mode,
+            interval_sec=self._interval_for(st.mode),
+            reason=reason,
+            local_candidate_streak=0,
+            quiet_streak=st.quiet_streak,
+            high_elapsed_sec=0.0,
+            high_remaining_sec=0.0,
+            entered_high=False,
+            exited_high=False,
+        )
 
     def _step_video(self, decision_state: DecisionState, now_sec: float) -> ThreeStageOutput:
         """Video HIGH: mode is only LOW/MID; HIGH is an instantaneous clip event.

@@ -195,6 +195,7 @@ def three_stage_config_from_profile(profile: PolicyProfile) -> ThreeStageConfig:
         video_duration_sec=float(params.get("video_duration_sec", 30.0)),
         video_fps=int(params.get("video_fps", 30)),
         video_cooldown_sec=float(params.get("video_cooldown_sec", 45.0)),
+        classify=bool(params.get("classify", True)),
     )
 
 
