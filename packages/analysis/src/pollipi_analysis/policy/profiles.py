@@ -190,6 +190,11 @@ def three_stage_config_from_profile(profile: PolicyProfile) -> ThreeStageConfig:
         high_interval_sec=float(params["high_interval_sec"]),
         high_hard_cap_sec=float(params["high_hard_cap_sec"]),
         high_exit_quiet_probes=int(params["high_exit_quiet_probes"]),
+        # Optional video-HIGH params (absent -> interval mode, unchanged behaviour).
+        high_mode=str(params.get("high_mode", "interval")),
+        video_duration_sec=float(params.get("video_duration_sec", 30.0)),
+        video_fps=int(params.get("video_fps", 30)),
+        video_cooldown_sec=float(params.get("video_cooldown_sec", 45.0)),
     )
 
 

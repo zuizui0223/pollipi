@@ -71,6 +71,8 @@ ENABLE_LEGACY_ROUTES = env_bool("POLLIPI_ENABLE_LEGACY_ROUTES")
 # ---------------------------------------------------------------------------
 MONITOR_SIZE = (640, 360)
 MONITOR_FRAME_INTERVAL_SEC = 0.25
+# Main stream size for the video configuration used by HIGH=video runs (1080p).
+VIDEO_SIZE = (1920, 1080)
 
 AI_MONITOR_MODEL = "/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk"
 AI_MONITOR_THRESHOLD = 0.55

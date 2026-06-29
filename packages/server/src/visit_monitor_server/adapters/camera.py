@@ -45,3 +45,15 @@ class Camera(Protocol):
     def create_preview_configuration(self, **kwargs):  # noqa: ANN201
         """Return an opaque config object for preview / monitor."""
         ...
+
+    def create_video_configuration(self, **kwargs):  # noqa: ANN201
+        """Return an opaque config object for video (main + lores probe)."""
+        ...
+
+    def start_video_clip(self, path: str, *, fps: int = 30, bitrate: int = 0) -> None:
+        """Begin recording a video clip to *path* (non-blocking)."""
+        ...
+
+    def stop_video_clip(self) -> None:
+        """Finalize the in-progress video clip."""
+        ...

@@ -114,6 +114,13 @@ class _PreviewConfig:
         self.kwargs = kwargs
 
 
+class _VideoConfig:
+    def __init__(self, main: Optional[dict] = None, lores: Optional[dict] = None, **kwargs):
+        self.main = main or {}
+        self.lores = lores or {}
+        self.kwargs = kwargs
+
+
 # ---------------------------------------------------------------------------
 # FakeCamera
 # ---------------------------------------------------------------------------
@@ -131,6 +138,8 @@ class FakeCamera:
         self._width = 640
         self._height = 360
         self._started = False
+        self._recording = False
+        self._recording_path: Optional[str] = None
 
     # --- configuration helpers (mirror Picamera2) ---------------------------
 
@@ -143,8 +152,16 @@ class FakeCamera:
             self._width, self._height = main["size"]
         return cfg
 
+    def create_video_configuration(
+        self, main: Optional[dict] = None, lores: Optional[dict] = None, **kwargs
+    ) -> _VideoConfig:
+        return _VideoConfig(main=main, lores=lores, **kwargs)
+
     def configure(self, config) -> None:  # noqa: ANN001
+        # The lores stream drives the probe array size for both still and video config.
         if isinstance(config, _StillConfig) and config.lores.get("size"):
+            self._width, self._height = config.lores["size"]
+        elif isinstance(config, _VideoConfig) and config.lores.get("size"):
             self._width, self._height = config.lores["size"]
         elif isinstance(config, _PreviewConfig) and config.main.get("size"):
             self._width, self._height = config.main["size"]
@@ -161,6 +178,21 @@ class FakeCamera:
         self._started = False
 
     # --- capture ------------------------------------------------------------
+
+    # --- video recording (mirrors the Picamera2 recorder wrapper) -----------
+
+    def start_video_clip(self, path: str, *, fps: int = 30, bitrate: int = 0) -> None:
+        """Begin a synthetic video clip; the file is written on stop."""
+        self._recording = True
+        self._recording_path = path
+
+    def stop_video_clip(self) -> None:
+        """Finalize the synthetic clip by writing a tiny placeholder file."""
+        if self._recording and self._recording_path is not None:
+            Path(self._recording_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(self._recording_path).write_bytes(b"FAKEMP4\x00")
+        self._recording = False
+        self._recording_path = None
 
     def capture_file(self, path: str, *, name: str = "main") -> None:
         """Write a synthetic JPEG to *path*."""
