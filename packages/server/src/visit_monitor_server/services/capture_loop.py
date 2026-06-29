@@ -17,6 +17,10 @@ from typing import TYPE_CHECKING, Optional
 
 from pollipi_analysis.pipeline import analyze
 from pollipi_analysis.policy import create_policy_controller, get_policy_profile
+from pollipi_analysis.schemas.states import (
+    STRONG_VISITATION_CANDIDATE,
+    UNCERTAIN_LOCAL_ACTIVITY,
+)
 from visit_monitor_server.config import (
     ADAPTIVE_DECISION_LOG_PATH,
     CAMERA_LABEL,
@@ -230,6 +234,9 @@ PROBE_SHADOW_V2_COLUMNS = [
     "trigger_reason",
     "cooldown_active",
     "cooldown_remaining_sec",
+    "evidence_event_id",
+    "evidence_previous_filename",
+    "evidence_current_filename",
     "device_id",
     "policy_profile_id",
     "simulation_run_id",
@@ -295,6 +302,9 @@ def _write_probe_record_v2(
     trigger_reason: str = "",
     cooldown_active: bool = False,
     cooldown_remaining_sec: float = 0.0,
+    evidence_event_id: str = "",
+    evidence_previous_filename: str = "",
+    evidence_current_filename: str = "",
 ) -> None:
     """Append one row per low-resolution probe to the per-run v2 log."""
     write_header = not path.exists()
@@ -329,6 +339,9 @@ def _write_probe_record_v2(
             trigger_reason,
             cooldown_active,
             f"{cooldown_remaining_sec:.3f}",
+            evidence_event_id,
+            evidence_previous_filename,
+            evidence_current_filename,
             DEVICE_ID,
             policy_profile.profile_id,
             policy_profile.simulation_run_id,
@@ -338,6 +351,29 @@ def _write_probe_record_v2(
             getattr(policy_meta, "policy_version", "0"),
             getattr(policy_meta, "validation_status", "synthetic_only"),
         ])
+
+
+# Shadow evidence: a local-candidate "event" is a contiguous run of probes whose
+# mesh decision is uncertain/strong. One previous+current lores pair is saved at the
+# START of each event (never on no_activity/environmental_noise, never per-probe).
+SHADOW_EVIDENCE_SUBDIR = "shadow_evidence"
+_CANDIDATE_STATES = frozenset({UNCERTAIN_LOCAL_ACTIVITY, STRONG_VISITATION_CANDIDATE})
+
+
+def _save_lores_jpeg(lores_array, path: Path) -> None:
+    """Save the luminance (Y) plane of a YUV420 lores probe as a small grayscale JPEG.
+
+    Evidence only — a low-resolution review aid kept apart from the scientific
+    high-resolution timelapse record. Never raises into the capture loop.
+    """
+    import numpy as np
+    from PIL import Image
+
+    arr = np.asarray(lores_array)
+    y_rows = arr.shape[0] * 2 // 3  # YUV420: the Y plane is the top 2/3 of the rows
+    y_plane = np.clip(arr[:y_rows], 0, 255).astype("uint8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(y_plane, mode="L").save(str(path), format="JPEG", quality=80)
 
 
 def _record_clip(camera, camera_lock, clip_path, duration_sec, fps, stop_event) -> float:
@@ -464,6 +500,8 @@ def run_capture_loop(
         })
 
         last_highres_mono = None  # monotonic time of the last saved high-res frame
+        in_candidate_event = False  # currently inside an uncertain/strong run?
+        evidence_event_counter = 0
 
         while not stop_event.is_set():
             now_mono = time.monotonic()
@@ -489,9 +527,31 @@ def run_capture_loop(
                 previous_active_cells = set(decision.active_cells)
                 if decision.features.centroid_x is not None and decision.features.centroid_y is not None:
                     previous_centroid = (decision.features.centroid_x, decision.features.centroid_y)
+            prior_lores = previous_frame  # the immediately previous probe frame
             previous_frame = frame
 
             out = three.step(decision_state, now_mono)
+
+            # Shadow evidence: on ENTERING a local-candidate event (uncertain/strong),
+            # save the previous + current lores frames once. No saves on
+            # no_activity/environmental_noise, and none while the event continues.
+            evidence_event_id = ""
+            evidence_previous_filename = ""
+            evidence_current_filename = ""
+            is_candidate = decision_state in _CANDIDATE_STATES
+            if is_candidate and not in_candidate_event and prior_lores is not None:
+                evidence_event_counter += 1
+                evidence_event_id = f"{run_id}_evt{evidence_event_counter:03d}"
+                prev_rel = f"{SHADOW_EVIDENCE_SUBDIR}/{evidence_event_id}_prev.jpg"
+                curr_rel = f"{SHADOW_EVIDENCE_SUBDIR}/{evidence_event_id}_curr.jpg"
+                try:
+                    _save_lores_jpeg(prior_lores, image_dir / prev_rel)
+                    _save_lores_jpeg(frame, image_dir / curr_rel)
+                    evidence_previous_filename = prev_rel
+                    evidence_current_filename = curr_rel
+                except Exception:
+                    evidence_event_id = ""  # evidence is best-effort; never break capture
+            in_candidate_event = is_candidate
 
             # Desired high-res interval: the three-stage interval when live adaptive
             # is active, otherwise the fixed scheduled interval.
@@ -570,6 +630,9 @@ def run_capture_loop(
                 video_started_at=video_started_at, video_duration_sec=video_duration_str,
                 video_fps=video_fps_str, trigger_reason=trigger_reason,
                 cooldown_active=out.cooldown_active, cooldown_remaining_sec=out.cooldown_remaining_sec,
+                evidence_event_id=evidence_event_id,
+                evidence_previous_filename=evidence_previous_filename,
+                evidence_current_filename=evidence_current_filename,
             )
 
             mesh_state = {
