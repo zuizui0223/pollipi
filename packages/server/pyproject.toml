@@ -16,6 +16,9 @@ dependencies = [
 dev = [
   "httpx>=0.27,<1.0",
   "numpy>=1.26,<3",
+  # Pillow encodes the shadow-evidence lores JPEGs. Like numpy it is system-provided
+  # on the Pi (picamera2 stack); declared here so CI/tests have it.
+  "pillow>=10,<13",
   "pytest>=8,<9",
 ]
 
