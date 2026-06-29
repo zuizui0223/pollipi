@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 
-import type { Camera, DeviceInfo, StatusResponse } from '../api/types';
+import type { Camera, DeviceInfo, StartPayload, StatusResponse } from '../api/types';
 import {
   deleteCoordinatorDevice,
   deviceUrl,
@@ -14,8 +14,8 @@ import {
 } from '../api/client';
 import {
   autonomousMode,
+  captureModeStartFields,
   intervalSec,
-  policyProfileId,
 } from '../state/session';
 import { removeCamera } from '../state/devices';
 import { coordinatorBaseUrl } from '../state/coordinator';
@@ -39,15 +39,14 @@ function buildStartPayload() {
     return null;
   }
 
-  const payload = {
+  const payload: StartPayload = {
     interval_sec: interval,
     autonomous_mode: autonomousMode.value,
     adaptive_timelapse_mode: false,
     mesh_shadow_mode: true,
+    ...captureModeStartFields(),
   };
-  return policyProfileId.value
-    ? { ...payload, policy_profile_id: policyProfileId.value }
-    : payload;
+  return payload;
 }
 
 function applyDeviceInfo(camera: Camera, device: DeviceInfo) {

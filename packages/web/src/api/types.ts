@@ -179,4 +179,5 @@ export interface StartPayload {
   adaptive_timelapse_mode: boolean;
   mesh_shadow_mode: boolean;
   policy_profile_id?: string;
+  live_adaptive_requested?: boolean;
 }
