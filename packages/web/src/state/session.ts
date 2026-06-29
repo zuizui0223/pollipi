@@ -3,7 +3,8 @@ import type { PolicyProfile, StartPayload } from '../api/types';
 
 // Active field controls. The old ROI / ML / motion-trigger mode state was removed
 // because the active workflow is scheduled mesh timelapse with shadow-mode validation.
-export const intervalSec = signal<number>(30);
+export const intervalSec = signal<number>(30); // normal (baseline / LOW) interval
+export const fastIntervalSec = signal<number>(10); // high-frequency (MID) interval; must be < normal
 export const autonomousMode = signal<boolean>(false);
 export const policyProfileId = signal<string>('');
 export const approvedPolicyProfiles = signal<PolicyProfile[]>([]);
@@ -21,10 +22,16 @@ export const CAPTURE_MODE_PROFILE: Record<CaptureMode, string | null> = {
   classified: 'three_stage_video_canary_v1',
 };
 
-/** Start-payload fields for the selected capture mode (profile + live request). */
+/** Start-payload fields for the selected capture mode (profile + live request +
+ * the user's high-frequency interval). Plain mode sends none of these. */
 export function captureModeStartFields(): Partial<StartPayload> {
   const profile = CAPTURE_MODE_PROFILE[captureMode.value];
-  return profile ? { policy_profile_id: profile, live_adaptive_requested: true } : {};
+  if (!profile) return {};
+  return {
+    policy_profile_id: profile,
+    live_adaptive_requested: true,
+    fast_interval_sec: fastIntervalSec.value,
+  };
 }
 
 export const syncLabel = signal<string>('Loading status...');

@@ -4,6 +4,7 @@ import {
   autonomousMode,
   CAPTURE_MODE_PROFILE,
   captureMode,
+  fastIntervalSec,
   intervalSec,
   type CaptureMode,
 } from '../state/session';
@@ -34,6 +35,8 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
     profileId != null
     && approvedPolicyProfiles.value.length > 0
     && (!profile || !profile.live_allowed);
+  const adaptive = mode !== 'plain';
+  const fastTooHigh = adaptive && fastIntervalSec.value >= intervalSec.value;
   return (
     <section class={s.controlPanel} aria-label="field control">
       <div>
@@ -52,8 +55,30 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
               intervalSec.value = Number((e.target as HTMLInputElement).value);
             }}
           />
-          <span>sec baseline</span>
+          <span>sec normal interval</span>
         </label>
+        {adaptive && (
+          <label class={s.intervalInputWrap}>
+            <input
+              class={s.intervalInputField}
+              id="fast-interval-input"
+              type="number"
+              min={1}
+              max={3600}
+              inputMode="decimal"
+              value={fastIntervalSec.value}
+              onInput={(e) => {
+                fastIntervalSec.value = Number((e.target as HTMLInputElement).value);
+              }}
+            />
+            <span>sec fast interval (active motion)</span>
+          </label>
+        )}
+        {fastTooHigh && (
+          <p class={s.hint} style={{ color: '#c0392b' }}>
+            Fast interval must be shorter than the normal interval.
+          </p>
+        )}
         <p class={s.hint}>
           Shadow mode logs mesh decisions while the high-res timelapse interval stays fixed.
         </p>
@@ -100,7 +125,7 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
       </div>
 
       <div class={s.groupActions}>
-        <button class={s.btnPrimary} type="button" onClick={onStartAll}>
+        <button class={s.btnPrimary} type="button" onClick={onStartAll} disabled={fastTooHigh}>
           Start all
         </button>
         <button class={s.btnDanger} type="button" onClick={onStopAll}>

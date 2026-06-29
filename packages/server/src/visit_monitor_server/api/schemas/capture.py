@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StartRequest(BaseModel):
@@ -11,6 +11,7 @@ class StartRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # The normal (baseline) capture interval. Also the LOW interval for live modes.
     interval_sec: float = Field(..., ge=1, le=3600)
     autonomous_mode: bool = False
     adaptive_timelapse_mode: bool = False
@@ -32,6 +33,15 @@ class StartRequest(BaseModel):
     # applies only if POLLIPI_LIVE_ADAPTIVE_ENABLED=1 AND the selected profile has
     # live_allowed=true AND this is true. Defaults false (shadow-only).
     live_adaptive_requested: bool = False
+    # High-frequency interval used while active in live modes (the MID interval).
+    # When omitted, the profile's mid_interval_sec is used. Must be < interval_sec.
+    fast_interval_sec: Optional[float] = Field(default=None, ge=1, le=3600)
+
+    @model_validator(mode="after")
+    def _fast_below_normal(self) -> "StartRequest":
+        if self.fast_interval_sec is not None and self.fast_interval_sec >= self.interval_sec:
+            raise ValueError("fast_interval_sec must be less than interval_sec")
+        return self
 
 
 class StatusResponse(BaseModel):

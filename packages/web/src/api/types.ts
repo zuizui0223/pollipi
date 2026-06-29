@@ -180,4 +180,5 @@ export interface StartPayload {
   mesh_shadow_mode: boolean;
   policy_profile_id?: string;
   live_adaptive_requested?: boolean;
+  fast_interval_sec?: number;
 }

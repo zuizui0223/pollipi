@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -402,6 +403,18 @@ def run_capture_loop(
         # Live adaptive timing applies only behind the three-gate guard. When it is
         # off (the default) the high-res interval stays fixed (shadow-only).
         live_active = live_adaptive_active(request, policy_profile)
+        # In live modes both intervals are user-set: the normal interval (interval_sec)
+        # is LOW, and the high-frequency interval (fast_interval_sec, validated < normal)
+        # is MID. When fast is omitted the profile's mid_interval_sec stays the default.
+        if live_active:
+            fast = (
+                float(request.fast_interval_sec)
+                if getattr(request, "fast_interval_sec", None)
+                else three.config.mid_interval_sec
+            )
+            three.config = replace(
+                three.config, low_interval_sec=hires_interval, mid_interval_sec=fast
+            )
         # Video clips need the video configuration (1080p main + lores probe). Only a
         # live video-mode run switches to it; every other run keeps the original
         # still configuration (full-resolution stills) unchanged.
