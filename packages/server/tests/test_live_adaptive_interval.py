@@ -9,7 +9,9 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 
 def _clear() -> None:
@@ -109,6 +111,51 @@ def test_default_run_is_shadow_only_fixed_interval(monkeypatch, tmp_path) -> Non
     assert all(r["applied_interval_sec"] == "1.000" for r in rows)  # fixed, not adaptive
 
 
+def test_fast_interval_must_be_below_normal(monkeypatch) -> None:
+    _clear()
+    from visit_monitor_server.api.schemas.capture import StartRequest
+
+    # fast >= normal is rejected.
+    with pytest.raises(ValidationError):
+        StartRequest(interval_sec=10, fast_interval_sec=10)
+    with pytest.raises(ValidationError):
+        StartRequest(interval_sec=10, fast_interval_sec=20)
+    # fast < normal is accepted; omitting it is accepted (profile default used).
+    assert StartRequest(interval_sec=30, fast_interval_sec=10).fast_interval_sec == 10
+    assert StartRequest(interval_sec=30).fast_interval_sec is None
+
+
+def test_fast_interval_overrides_mid_in_live_run(monkeypatch, tmp_path) -> None:
+    """In a live run, LOW = interval_sec and MID = fast_interval_sec (overriding profile)."""
+    app = _client(monkeypatch, tmp_path, live_env=True)
+    images_dir = tmp_path / "images"
+    with TestClient(app) as client:
+        # Use the no-classification motion profile so any fake-scene motion shows MID.
+        started = client.post(
+            "/start",
+            json={
+                "interval_sec": 30,
+                "fast_interval_sec": 7,
+                "policy_profile_id": "three_stage_motion_canary_v1",
+                "live_adaptive_requested": True,
+            },
+        )
+        assert started.status_code == 200
+        deadline = time.monotonic() + 6.0
+        while time.monotonic() < deadline:
+            log = _probe_log(images_dir)
+            if log is not None and sum(1 for _ in log.open(encoding="utf-8")) >= 6:
+                break
+            time.sleep(0.1)
+        client.post("/stop")
+
+    rows = list(csv.DictReader(_probe_log(images_dir).open(encoding="utf-8")))
+    applied = {r["applied_interval_sec"] for r in rows}
+    # Only the user-set LOW (30) and fast MID (7) may appear — never the profile's 10.
+    assert applied <= {"30.000", "7.000"}
+    assert "10.000" not in applied
+
+
 def test_canary_live_applies_adaptive_interval(monkeypatch, tmp_path) -> None:
     app = _client(monkeypatch, tmp_path, live_env=True)
     images_dir = tmp_path / "images"
@@ -116,7 +163,7 @@ def test_canary_live_applies_adaptive_interval(monkeypatch, tmp_path) -> None:
         started = client.post(
             "/start",
             json={
-                "interval_sec": 1,
+                "interval_sec": 30,
                 "policy_profile_id": "three_stage_canary_v1",
                 "live_adaptive_requested": True,
             },
@@ -131,13 +178,12 @@ def test_canary_live_applies_adaptive_interval(monkeypatch, tmp_path) -> None:
         status = client.get("/status").json()
         client.post("/stop")
 
-    # Live gate satisfied: status and log report it, and the applied interval is the
-    # three-stage interval (LOW=30 for a quiet scene), not the fixed 1 s request.
+    # Live gate satisfied; a quiet fake scene stays LOW, and LOW is the user's normal
+    # interval (interval_sec=30), which live mode applies to the schedule.
     assert status["live_adaptive_active"] is True
     assert status["live_allowed"] is True
     rows = list(csv.DictReader(_probe_log(images_dir).open(encoding="utf-8")))
     assert rows and all(r["live_adaptive_active"] == "True" for r in rows)
     assert rows[0]["schema_version"] == "probe-shadow-2"
     assert "run_id" in rows[0] and rows[0]["run_id"]
-    # Quiet fake scene stays LOW; applied interval is the profile LOW (30s), not 1s.
     assert all(r["applied_interval_sec"] == "30.000" for r in rows)
