@@ -20,7 +20,7 @@ from typing import Any, Optional
 from pollipi_analysis.schemas.decision import MeshDecision
 from pollipi_analysis.schemas.states import DecisionState
 
-SHADOW_LOG_VERSION = "shadow-2"
+SHADOW_LOG_VERSION = "shadow-3"
 
 # Default policy provenance until a simulation_informed policy artifact is loaded.
 DEFAULT_POLICY_NAME = "baseline_rule"
@@ -54,7 +54,7 @@ SHADOW_LOG_COLUMNS: tuple[str, ...] = (
     "centroid_y",
     "centroid_displacement",
     "path_efficiency",
-    "direction_reversal",
+    "active_set_jaccard",
     "global_synchrony",
     "estimated_global_shift",
     "cell_size",
@@ -119,7 +119,7 @@ class ShadowDecisionRecord:
             "centroid_y": f.centroid_y,
             "centroid_displacement": f.centroid_displacement,
             "path_efficiency": f.path_efficiency,
-            "direction_reversal": f.direction_reversal,
+            "active_set_jaccard": f.active_set_jaccard,
             "global_synchrony": f.global_synchrony,
             "estimated_global_shift": f.estimated_global_shift,
             "cell_size": f.cell_size,

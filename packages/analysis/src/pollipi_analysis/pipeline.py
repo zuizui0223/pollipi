@@ -39,8 +39,6 @@ class ClassifierConfig:
     broad_active_proportion: float = 0.45
     broad_component_fraction: float = 0.25
     shake_shift_px: float = 2.5
-    oscillation_overlap: float = 0.6
-    oscillation_persistence_max: float = 0.25
     scatter_spatial_concentration: float = 0.35
     # strong localised candidate gates
     strong_concentration: float = 0.35
@@ -85,8 +83,11 @@ def classify_features(features: MeshFeatures, cfg: ClassifierConfig) -> tuple[De
         return ENVIRONMENTAL_NOISE, "large_diffuse_connected_component"
     if f.estimated_global_shift >= cfg.shake_shift_px:
         return ENVIRONMENTAL_NOISE, "global_camera_shift"
-    if f.direction_reversal >= cfg.oscillation_overlap and f.persistence <= cfg.oscillation_persistence_max:
-        return ENVIRONMENTAL_NOISE, "oscillation_return_to_origin"
+    # NOTE: a former "oscillation_return_to_origin" rule
+    # (active_set_jaccard >= 0.6 AND persistence <= 0.25) was removed: with the
+    # current metric definitions it is unsatisfiable (Jaccard >= 0.6 forces
+    # persistence >= 0.6), so it never fired. Genuine multi-frame oscillation /
+    # return-to-origin discrimination is a V2 candidate, not implemented in V1.
     if f.spatial_concentration < cfg.scatter_spatial_concentration:
         return ENVIRONMENTAL_NOISE, "spatially_scattered_motion"
 

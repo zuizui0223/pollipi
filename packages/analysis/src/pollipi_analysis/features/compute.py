@@ -89,14 +89,24 @@ def compute_features(
     offset_active = active_coords(offset, threshold=cfg.active_cell_threshold)
     active_prop = len(active) / max(1, len(primary))
     offset_prop = len(offset_active) / max(1, len(offset))
-    offset_agreement = 1.0 - min(1.0, abs(active_prop - offset_prop) * 4.0)
+    # Spatial agreement between the primary and half-cell-offset meshes: do BOTH
+    # meshes place their activity at the same image location? We compare the
+    # score-weighted image-space centroids of each mesh's active cells (not their
+    # activity *proportions* — the old metric compared only proportions and so
+    # scored two equal-but-displaced activities as fully agreeing). A compact
+    # target seen by both meshes scores high; activity at disjoint locations
+    # scores low. The strong gate's spatial_concentration check guarantees the
+    # primary activity is one compact blob before this is read downstream.
+    offset_agreement = _spatial_offset_agreement(
+        primary, active, offset, offset_active, cell_size=cfg.cell_size
+    )
 
     largest = largest_connected_component(active)
     concentration = _concentration(primary)
     spatial_concentration = _spatial_concentration(primary, active)
     centroid = _centroid(primary)
     persistence = _persistence(active, previous_active_cells)
-    direction_reversal = _return_to_origin(active, previous_active_cells)
+    active_set_jaccard = _active_set_jaccard(active, previous_active_cells)
     centroid_displacement = _displacement(centroid, previous_centroid)
 
     # A/B cell-aggregation experiment (shadow-only; does NOT affect the decision).
@@ -126,7 +136,7 @@ def compute_features(
         centroid_y=centroid[1],
         centroid_displacement=centroid_displacement,
         path_efficiency=None,  # filled by the track runner over a window
-        direction_reversal=direction_reversal,
+        active_set_jaccard=active_set_jaccard,
         global_synchrony=global_synchrony,
         estimated_global_shift=float(shift_mag),
         cell_size=cfg.cell_size,
@@ -191,10 +201,58 @@ def _persistence(active: set[tuple[int, int]], previous: Optional[set[tuple[int,
     return cont / max(1, len(active))
 
 
-def _return_to_origin(active: set[tuple[int, int]], previous: Optional[set[tuple[int, int]]]) -> float:
+def _active_set_jaccard(active: set[tuple[int, int]], previous: Optional[set[tuple[int, int]]]) -> float:
+    """Jaccard overlap ``|A∩P| / |A∪P|`` of the active-cell sets across the two
+    consecutive frames. Logged as explainable evidence only — the V1 runtime
+    decision does NOT use it (genuine multi-frame trajectory / oscillation
+    discrimination is a V2 candidate, not implemented here)."""
     if not previous or not active:
         return 0.0
     return len(active & previous) / max(1, len(active | previous))
+
+
+def _active_centroid(
+    cells: list[dict[str, Any]], active: set[tuple[int, int]]
+) -> Optional[tuple[float, float]]:
+    """Score-weighted image-space (x, y) centroid of the active cells, or None."""
+    total = 0.0
+    sx = sy = 0.0
+    for cell in cells:
+        if cell["coord"] in active:
+            s = cell["score"]
+            cx, cy = cell["center"]
+            sx += cx * s
+            sy += cy * s
+            total += s
+    if total <= 0:
+        return None
+    return sx / total, sy / total
+
+
+def _spatial_offset_agreement(
+    primary: list[dict[str, Any]],
+    active: set[tuple[int, int]],
+    offset: list[dict[str, Any]],
+    offset_active: set[tuple[int, int]],
+    *,
+    cell_size: int,
+) -> float:
+    """Spatial co-location of primary vs offset mesh activity, in ``[0, 1]``.
+
+    ``1.0`` means both meshes are centred on the same image location; ``0.0``
+    means their activity sits in disjoint locations (or one mesh sees nothing).
+    Computed as the score-weighted active-cell centroid distance normalised over
+    two cells, so a single compact target (sub-cell centroid offset) stays high
+    while spatially separated activity of the same magnitude falls off — the
+    property the old proportion-difference metric lacked.
+    """
+    pc = _active_centroid(primary, active)
+    oc = _active_centroid(offset, offset_active)
+    if pc is None or oc is None:
+        return 0.0
+    dist = math.hypot(pc[0] - oc[0], pc[1] - oc[1])
+    scale = 2.0 * max(1, cell_size)
+    return max(0.0, 1.0 - dist / scale)
 
 
 def _displacement(

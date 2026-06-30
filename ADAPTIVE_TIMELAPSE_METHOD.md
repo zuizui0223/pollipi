@@ -82,20 +82,31 @@ Whole-frame **overlapping spatial meshes**, not manually drawn floral ROI:
 ### Explainable features (`pollipi_analysis.schemas.features.MeshFeatures`)
 
 cell-level residual activity, active-cell proportion, connected-component size,
-concentration, spatial concentration, offset-mesh agreement, persistence,
-centroid displacement, path efficiency (track-level), direction reversal /
-oscillation, global synchrony, estimated global camera shift. Every decision logs
-these values so it is auditable after the fact.
+concentration, spatial concentration, offset-mesh agreement (a *spatial*
+co-location score: the score-weighted active-cell centroid distance between the
+primary and half-cell-offset meshes, normalised over ~2 cells — high when both
+meshes localise activity to the same place, low for equal-magnitude activity at
+different places), global synchrony, estimated global camera shift. The vector
+also logs, as **evidence only** (not used by the V1 decision), persistence,
+centroid displacement, the active-set Jaccard overlap across frames, and the
+shadow-only track-window path efficiency. Every decision logs these values so it
+is auditable after the fact.
 
 ### Rule cascade
 
 The cascade (`classify_features`) is intentionally ordered: resting → common-mode
 rejection (broad synchrony, broad active proportion, large diffuse component,
-global camera shift, oscillation return-to-origin, spatial scatter) → strong
-localised candidate (concentration + spatial concentration + offset agreement +
-bounded active proportion) → uncertain residual. The track-level path-efficiency
-override in shadow mode reclassifies a sustained low-path-efficiency "candidate"
-as oscillation-driven `environmental_noise`.
+global camera shift, spatial scatter) → strong localised candidate (concentration
++ spatial concentration + spatial offset agreement + bounded active proportion) →
+uncertain residual.
+
+> **V1 scope (honest):** the V1 runtime decision uses **no multi-frame trajectory
+> reasoning**. There is no oscillation / return-to-origin rejection (an earlier
+> such rule was unsatisfiable under the current metric definitions and was
+> removed) and no path-efficiency override in the runtime path — the
+> path-efficiency track override exists only in offline shadow-mode analysis and
+> does not affect live capture. Genuine multi-frame trajectory / oscillation
+> discrimination is a **V2 candidate**, deliberately not implemented here.
 
 ## 5. Current simulation conclusion
 

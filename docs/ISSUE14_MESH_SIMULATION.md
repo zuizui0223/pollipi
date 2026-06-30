@@ -5,6 +5,16 @@ analysis only writes compact metadata and can shorten or lengthen the next
 scheduled interval; it does not create an unbounded image-per-event stream and it
 does not claim a confirmed visit.
 
+> **Scope note.** This page documents the original Issue-14 mesh-motion
+> calibration (`pollipi_analysis.mesh.motion`), an exploratory standalone path.
+> It is **not** the production Mode-③ runtime classifier
+> (`pollipi_analysis.pipeline.classify_features`), which is described in
+> `ADAPTIVE_TIMELAPSE_METHOD.md`. The production runtime uses a **spatial**
+> offset-mesh agreement (centroid co-location, not proportion difference) and
+> performs **no** oscillation / return-to-origin rejection — that is a V2
+> candidate. The `return-to-origin` / `oscillation` items below apply only to
+> this legacy calibration module.
+
 The current implementation is a deterministic rectangular mesh baseline with a
 half-cell offset mesh. Hex cells remain the preferred final layout, but the
 rectangular baseline is easier to test on the existing Pi/server stack and keeps
