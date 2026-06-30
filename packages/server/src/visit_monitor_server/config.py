@@ -40,8 +40,11 @@ LIVE_ADAPTIVE_ENABLED = env_bool("POLLIPI_LIVE_ADAPTIVE_ENABLED", False)
 # Versioned mesh policy artifact loaded at startup (Issue #21). When present the
 # Pi builds its analysis configuration from this JSON; otherwise a built-in
 # baseline rule config is used. The Pi never runs the simulation/search itself.
+# The official artifact is the Mode-3 runtime-bridge export
+# (mode3_runtime_bridge_policy_v1.json); the legacy pairwise search writes a
+# separate legacy_pairwise_policy.json that the Pi does NOT load.
 POLICY_PATH = Path(
-    os.getenv("POLLIPI_POLICY_PATH", str(IMAGE_DIR.parent / "simulation_informed_policy.json"))
+    os.getenv("POLLIPI_POLICY_PATH", str(IMAGE_DIR.parent / "mode3_runtime_bridge_policy_v1.json"))
 ).expanduser()
 
 WEB_DIR = Path(

@@ -4,8 +4,10 @@ The bridge runs the *exact* Pi runtime decision path on each consecutive frame
 pair — ``pollipi_analysis.pipeline.analyze`` — and feeds the resulting per-probe
 decision states into the *same* ``ThreeStageController`` (video mode) the Pi uses.
 It then searches only the Pi-loadable ``FeatureConfig`` / ``ClassifierConfig``
-parameters and writes the best as ``simulation_informed_policy.json`` via
-``pollipi_analysis.policy.artifact.write_policy``.
+parameters and writes the best as ``mode3_runtime_bridge_policy_v1.json`` via
+``pollipi_analysis.policy.artifact.write_policy``. This is the SINGLE official
+policy-export path for the Pi runtime (the legacy pairwise search in
+``simulation/run.py`` writes a separate ``legacy_pairwise_policy.json``).
 
 Scale note: the R5 study renders at 72x112 in [0, 1], but the Pi runtime's
 ``cell_size`` (px) and ``pixel_difference`` (0-255) live at the camera luminance
@@ -238,10 +240,13 @@ def generate_policy(
     seed: int = SEED,
     n_reps: int = 4,
     grid: Optional[SearchGrid] = None,
-    policy_name: str = "simulation_informed_mode3_video",
+    policy_name: str = "mode3_runtime_bridge_v1",
     policy_version: str = "1",
 ) -> tuple[Path, PipelineConfig, dict[str, float]]:
-    """Run the search and write ``simulation_informed_policy.json``."""
+    """Run the search and write the official Mode-3 runtime policy artifact
+    (``mode3_runtime_bridge_policy_v1.json``). This bridge is the SOLE official
+    policy-export path for the Pi runtime; the legacy pairwise search in
+    ``simulation/run.py`` emits a separate, clearly-named exploratory artifact."""
     config, metrics, _rows = search(grid, n_reps=n_reps, seed=seed)
     meta = PolicyMeta(
         policy_name=policy_name,
@@ -257,7 +262,7 @@ def generate_policy(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Mode-3 simulation->Pi runtime bridge.")
-    parser.add_argument("--output", type=Path, default=Path("simulation_informed_policy.json"))
+    parser.add_argument("--output", type=Path, default=Path("mode3_runtime_bridge_policy_v1.json"))
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--n-reps", type=int, default=4)
     args = parser.parse_args()
