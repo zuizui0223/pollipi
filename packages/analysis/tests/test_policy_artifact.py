@@ -65,3 +65,13 @@ def test_unvalidated_status_words_are_rejected() -> None:
 def test_bad_schema_fails_loudly() -> None:
     with pytest.raises(ValueError):
         load_policy({"schema": "policy-999", "feature": {}, "classifier": {}, "policy_name": "x", "policy_version": "1"})
+
+
+def test_loader_tolerates_retired_legacy_fields() -> None:
+    # An older artifact may carry numeric gates that have since been removed
+    # (the retired oscillation_* rule). Loading must drop them, not crash.
+    policy = build_policy(PipelineConfig(), PolicyMeta(policy_name="p", policy_version="1"))
+    policy["classifier"]["oscillation_overlap"] = 0.6
+    policy["classifier"]["oscillation_persistence_max"] = 0.25
+    loaded_config, _ = load_policy(policy)
+    assert loaded_config.classifier == ClassifierConfig()

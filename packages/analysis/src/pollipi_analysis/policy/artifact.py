@@ -16,7 +16,7 @@ on the Pi pulls in no simulation dependencies.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields as dataclass_fields
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -60,10 +60,22 @@ def build_policy(config: PipelineConfig, meta: PolicyMeta) -> dict[str, Any]:
     }
 
 
+def _known_fields(cls: type, values: dict[str, Any]) -> dict[str, Any]:
+    """Keep only keys that are still fields of ``cls``.
+
+    Tolerates forward/backward schema drift: an older artifact may carry numeric
+    fields that have since been removed (e.g. the retired oscillation_* gates), so
+    we drop unknown keys rather than crash, while still honouring every field the
+    current dataclass defines.
+    """
+    allowed = {f.name for f in dataclass_fields(cls)}
+    return {k: v for k, v in values.items() if k in allowed}
+
+
 def policy_to_pipeline_config(policy: dict[str, Any]) -> PipelineConfig:
     """Reconstruct a :class:`PipelineConfig` from a policy dict."""
-    feature = FeatureConfig(**policy["feature"])
-    classifier = ClassifierConfig(**policy["classifier"])
+    feature = FeatureConfig(**_known_fields(FeatureConfig, policy["feature"]))
+    classifier = ClassifierConfig(**_known_fields(ClassifierConfig, policy["classifier"]))
     return PipelineConfig(features=feature, classifier=classifier)
 
 

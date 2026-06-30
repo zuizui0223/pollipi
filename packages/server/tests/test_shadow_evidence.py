@@ -42,7 +42,7 @@ def _features() -> MeshFeatures:
         centroid_y=4.0,
         centroid_displacement=0.0,
         path_efficiency=0.0,
-        direction_reversal=0.0,
+        active_set_jaccard=0.0,
         global_synchrony=0.01,
         estimated_global_shift=0.0,
         cell_size=32,

@@ -26,7 +26,9 @@ class MeshFeatures:
     centroid_y: Optional[float]
     centroid_displacement: Optional[float]
     path_efficiency: Optional[float]
-    direction_reversal: float
+    # Jaccard overlap of active-cell sets across consecutive frames. Logged as
+    # explainable evidence only; NOT used by the V1 runtime decision.
+    active_set_jaccard: float
     # --- global / common-mode evidence (used to reject noise) ---
     global_synchrony: float
     estimated_global_shift: float
