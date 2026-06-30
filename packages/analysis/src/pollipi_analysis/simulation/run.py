@@ -130,16 +130,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         features=FeatureConfig(cell_size=best["cell_size"], pixel_difference=best["pixel_difference"]),
         classifier=ClassifierConfig(strong_spatial_concentration=best["strong_spatial_concentration"]),
     )
+    # LEGACY/exploratory pairwise (single-frame) cost-weighted search. This is NOT the
+    # official Pi runtime policy — that is exported by simulation/runtime_bridge.py as
+    # mode3_runtime_bridge_policy_v1.json. Kept for scenario/exploratory history and
+    # written under a distinct name so the Pi never confuses the two artifacts.
     policy_path = write_policy(
-        out_dir / "simulation_informed_policy.json",
+        out_dir / "legacy_pairwise_policy.json",
         chosen_config,
         PolicyMeta(
-            policy_name="simulation_informed",
+            policy_name="legacy_pairwise_v1",
             policy_version="1",
             validation_status="synthetic_only",
             seed=args.seed,
             generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            notes="cost-weighted selection over synthetic labelled scenarios; not field-validated",
+            notes="LEGACY exploratory single-frame-pair cost-weighted search; NOT the official "
+            "Mode-3 runtime policy (runtime_bridge -> mode3_runtime_bridge_policy_v1.json); not field-validated",
         ),
     )
 

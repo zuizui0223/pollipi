@@ -1,8 +1,10 @@
 """Load the Pi's mesh policy artifact at startup (Issue #21).
 
-The Pi reads a ``simulation_informed_policy.json`` (if present) to construct its
-``PipelineConfig``. It NEVER runs the simulation, parameter search, pandas, or
-matplotlib — it only loads numeric thresholds and classifies real images.
+The Pi reads the official Mode-3 runtime-bridge artifact
+(``mode3_runtime_bridge_policy_v1.json``, the ``POLICY_PATH`` default) if present to
+construct its ``PipelineConfig``. It NEVER runs the simulation, parameter search,
+pandas, or matplotlib — it only loads numeric thresholds and classifies real images.
+The legacy pairwise export (``legacy_pairwise_policy.json``) is NOT loaded here.
 
 If no policy file is present (or it fails to parse), a built-in baseline rule
 config is used so the device always has a safe, working configuration.
