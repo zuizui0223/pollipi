@@ -21,8 +21,11 @@ const MODE_HINT: Record<CaptureMode, string> = {
     'Any motion (wind, shadow, insect alike) speeds up stills, then settles. No video. '
     + 'Adaptive needs the Pi live env flag, else it falls back to the fixed interval.',
   classified:
-    'Noise is filtered; ambiguous local motion speeds up stills; a strong candidate records a '
-    + 'short video clip (a confirmation aid, not a confirmed visit). Needs the Pi live env flag.',
+    'Noise is filtered; a local candidate speeds up stills (no video). '
+    + 'Adaptive needs the Pi live env flag, else it falls back to the fixed interval.',
+  video:
+    'Like Classified, but a strong candidate also records a short video clip (a confirmation '
+    + 'aid and high-info visit footage, not a confirmed visit). Needs the Pi live env flag.',
 };
 
 export function FieldControls({ onStartAll, onStopAll }: Props) {
@@ -110,7 +113,8 @@ export function FieldControls({ onStartAll, onStopAll }: Props) {
           >
             <option value="plain">① Plain timelapse (fixed interval)</option>
             <option value="motion">② Motion-reactive (faster on any motion, no video)</option>
-            <option value="classified">③ Classified adaptive (strong → video clip)</option>
+            <option value="classified">③ Classified adaptive (faster stills, no video)</option>
+            <option value="video">④ Classified + video (strong → video clip)</option>
           </select>
         </label>
         <p class={s.hint} style={{ gridColumn: '1 / -1' }}>
