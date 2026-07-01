@@ -23,6 +23,10 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=POLLIPI_HOME
+# Allow redirecting image storage onto an external USB drive from the web app.
+# The leading '-' keeps the unit from failing to start when the mount is absent.
+ReadWritePaths=-/media
+ReadWritePaths=-/mnt
 
 # Resource limits (adjust as needed for your Pi hardware)
 CPUQuota=75%

@@ -20,6 +20,7 @@ import {
 import { removeCamera } from '../state/devices';
 import { coordinatorBaseUrl } from '../state/coordinator';
 import { formatCaptureTime } from '../lib/formatting';
+import { StoragePanel } from './StoragePanel';
 import * as s from '../styles/components.css';
 
 interface Props {
@@ -482,6 +483,8 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
           Remove
         </button>
       </div>
+
+      <StoragePanel camera={camera} capturing={isCapturing} />
 
       <details class={s.debugDetails}>
         <summary class={s.debugDetailsSummary}>Connection details</summary>

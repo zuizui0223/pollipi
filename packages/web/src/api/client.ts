@@ -3,6 +3,7 @@ import type {
   StatusResponse,
   PolicyProfilesResponse,
   SystemInfo,
+  StorageInfo,
   ImagesResponse,
   DeleteImagesResponse,
   StartPayload,
@@ -115,6 +116,18 @@ export async function fetchPolicyProfiles(target: ApiTarget, options: RequestIni
 
 export async function fetchSystem(target: ApiTarget, options: RequestInit = {}): Promise<SystemInfo> {
   return apiRequest<SystemInfo>(target, '/system', options);
+}
+
+export async function fetchStorage(target: ApiTarget, options: RequestInit = {}): Promise<StorageInfo> {
+  return apiRequest<StorageInfo>(target, '/storage', options);
+}
+
+export async function setStorage(target: ApiTarget, path: string | null): Promise<StorageInfo> {
+  return apiRequest<StorageInfo>(target, '/storage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
 }
 
 export async function postStart(target: ApiTarget, payload: StartPayload): Promise<StatusResponse> {

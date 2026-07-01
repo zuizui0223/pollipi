@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from visit_monitor_server import __version__
 from visit_monitor_server.api.router import router
-from visit_monitor_server.config import ENABLE_LEGACY_ROUTES, IMAGE_DIR, WEB_DIR
+from visit_monitor_server.config import ENABLE_LEGACY_ROUTES, WEB_DIR, get_image_dir
 from visit_monitor_server.services import TimelapseController
 import visit_monitor_server.services as _services
 
@@ -18,7 +18,7 @@ import visit_monitor_server.services as _services
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
 
-    controller = TimelapseController(IMAGE_DIR)
+    controller = TimelapseController(get_image_dir())
 
     # Register the controller singleton so route handlers can call get_controller()
     _services._controller_singleton = controller

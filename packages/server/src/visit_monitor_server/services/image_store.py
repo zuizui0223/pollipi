@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from visit_monitor_server.config import IMAGE_DIR
+from visit_monitor_server.config import get_image_dir
 
 
 def image_file(filename: str) -> Path:
@@ -21,7 +21,7 @@ def image_file(filename: str) -> Path:
     """
     if Path(filename).name != filename or Path(filename).suffix.lower() not in {".jpg", ".jpeg"}:
         raise HTTPException(status_code=400, detail="Invalid image filename.")
-    path = IMAGE_DIR / filename
+    path = get_image_dir() / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Image not found.")
     return path

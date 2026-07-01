@@ -22,7 +22,7 @@ from pollipi_analysis.schemas.states import (
     UNCERTAIN_LOCAL_ACTIVITY,
 )
 from visit_monitor_server.config import (
-    ADAPTIVE_DECISION_LOG_PATH,
+    ADAPTIVE_DECISION_LOG_FILENAME,
     CAMERA_LABEL,
     CAMERA_MODEL,
     CAMERA_PROFILE,
@@ -32,7 +32,7 @@ from visit_monitor_server.config import (
     IS_NOIR,
     IS_WIDE,
     LIVE_ADAPTIVE_ENABLED,
-    METRICS_PATH,
+    METRICS_FILENAME,
     MONITOR_SIZE,
     PROBE_INTERVAL_SEC,
     USE_FAKE_CAMERA,
@@ -129,13 +129,19 @@ def _write_shadow_record(
     would_be_next_interval_sec: float,
     decision,
     request,
+    metrics_path: Path,
+    decision_log_path: Path,
     policy_meta=None,
     policy_profile=None,
 ) -> None:
-    """Append compact scheduled-image metadata.  No candidate-event image exists."""
-    write_header = not METRICS_PATH.exists()
+    """Append compact scheduled-image metadata.  No candidate-event image exists.
+
+    ``metrics_path`` / ``decision_log_path`` live under the active image dir so
+    the logs follow the photos when storage is redirected to external media.
+    """
+    write_header = not metrics_path.exists()
     features = decision.features
-    with METRICS_PATH.open("a", newline="", encoding="utf-8") as handle:
+    with metrics_path.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         if write_header:
             writer.writerow(SHADOW_COLUMNS)
@@ -179,8 +185,8 @@ def _write_shadow_record(
             getattr(policy_profile, "live_allowed", False),
         ])
 
-    decision_header = not ADAPTIVE_DECISION_LOG_PATH.exists()
-    with ADAPTIVE_DECISION_LOG_PATH.open("a", newline="", encoding="utf-8") as handle:
+    decision_header = not decision_log_path.exists()
+    with decision_log_path.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         if decision_header:
             writer.writerow([
@@ -419,6 +425,10 @@ def run_capture_loop(
 
     try:
         image_dir.mkdir(parents=True, exist_ok=True)
+        # Adaptive metadata logs live alongside the photos so they follow the
+        # active image dir when storage is redirected to external media.
+        metrics_path = image_dir / METRICS_FILENAME
+        decision_log_path = image_dir / ADAPTIVE_DECISION_LOG_FILENAME
 
         # Issue #21: load the (simulation-informed) policy artifact + selected profile
         # BEFORE configuring the camera, so a live video-HIGH run can pick the video
@@ -611,6 +621,8 @@ def run_capture_loop(
                             out.interval_sec,
                             decision,
                             request,
+                            metrics_path,
+                            decision_log_path,
                             policy_meta,
                             policy_profile,
                         )

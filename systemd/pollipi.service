@@ -23,6 +23,11 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=%h/pollipi_timelapse
+# Allow redirecting image storage onto an external USB drive from the web app.
+# ProtectSystem=strict makes the whole filesystem read-only except these paths;
+# the leading '-' keeps the unit from failing to start when the mount is absent.
+ReadWritePaths=-/media
+ReadWritePaths=-/mnt
 
 # Resource limits
 CPUQuota=75%

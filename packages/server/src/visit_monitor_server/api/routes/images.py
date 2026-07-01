@@ -25,9 +25,9 @@ from visit_monitor_server.api.schemas.images import (
     ImageListResponse,
 )
 from visit_monitor_server.config import (
-    ADAPTIVE_DECISION_LOG_PATH,
-    IMAGE_DIR,
-    METRICS_PATH,
+    get_adaptive_decision_log_path,
+    get_image_dir,
+    get_metrics_path,
 )
 from visit_monitor_server.services import get_controller
 from visit_monitor_server.services.image_store import image_file
@@ -36,9 +36,10 @@ router = APIRouter(tags=["images"], dependencies=[Depends(require_device_secret)
 
 
 def _scheduled_images() -> list[Path]:
-    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    image_dir = get_image_dir()
+    image_dir.mkdir(parents=True, exist_ok=True)
     return sorted(
-        (p for p in IMAGE_DIR.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg"}),
+        (p for p in image_dir.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg"}),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -59,7 +60,7 @@ def list_images(limit: int = Query(default=40, ge=1, le=200)) -> ImageListRespon
         for path in image_paths[:limit]
     ]
     return ImageListResponse(
-        image_dir=str(IMAGE_DIR),
+        image_dir=str(get_image_dir()),
         image_count=len(image_paths),
         total_size_bytes=sum(p.stat().st_size for p in image_paths),
         images=images,
@@ -81,14 +82,14 @@ def get_image(filename: str, download: bool = Query(default=False)) -> FileRespo
 def download_images_archive() -> FileResponse:
     image_paths = sorted(_scheduled_images(), key=lambda p: p.stat().st_mtime)
     with tempfile.NamedTemporaryFile(
-        prefix="pollipi_images_", suffix=".zip", dir=IMAGE_DIR.parent, delete=False
+        prefix="pollipi_images_", suffix=".zip", dir=get_image_dir().parent, delete=False
     ) as tmp:
         archive_path = Path(tmp.name)
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in image_paths:
             archive.write(path, arcname=f"images/{path.name}")
         # Include the adaptive/shadow metadata logs so a session is self-contained.
-        for log_path in (ADAPTIVE_DECISION_LOG_PATH, METRICS_PATH):
+        for log_path in (get_adaptive_decision_log_path(), get_metrics_path()):
             if log_path.is_file():
                 archive.write(log_path, arcname=f"logs/{log_path.name}")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
