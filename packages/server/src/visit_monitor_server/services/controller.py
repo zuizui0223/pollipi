@@ -24,6 +24,18 @@ from visit_monitor_server.config import (
 
 STOP_JOIN_TIMEOUT_SEC = 8.0
 
+# Unattended-field resilience. The capture loop runs in a daemon thread; when a
+# transient camera/write error makes it raise, only that thread dies — the uvicorn
+# process stays alive, so `systemd Restart=always` never fires and autonomous
+# resume (which runs at service startup) never re-arms. Without supervision one
+# glitch would silently stop capture for the rest of a field session. The
+# supervisor therefore auto-restarts the loop after a short backoff. A run that
+# lasted at least CAPTURE_LOOP_HEALTHY_RUN_SEC resets the restart budget, so the
+# cap only trips on repeated fast crashes (a genuinely broken camera).
+CAPTURE_LOOP_MAX_RESTARTS = 20
+CAPTURE_LOOP_RESTART_DELAY_SEC = 5.0
+CAPTURE_LOOP_HEALTHY_RUN_SEC = 120.0
+
 
 class TimelapseController:
     """Own camera lifecycle and expose lightweight status/preview state.
@@ -278,23 +290,43 @@ class TimelapseController:
 
     def _run_loop(self, stop_event: threading.Event, request) -> None:
         from visit_monitor_server.services.capture_loop import run_capture_loop
+        restarts = 0
         try:
-            run_capture_loop(
-                stop_event=stop_event,
-                request=request,
-                image_dir=self.image_dir,
-                camera_lock=self._camera_lock,
-                set_camera=self._set_camera,
-                update_state=self._apply_state_update,
-                set_message=self._set_message,
-            )
-        except Exception as exc:
-            with self._lock:
-                self.running = False
-                self.lifecycle_state = "error"
-                self.last_error = f"{type(exc).__name__}: {exc}"
-                self.message = f"Capture loop failed: {exc}"
-            raise
+            while not stop_event.is_set():
+                started = time.monotonic()
+                try:
+                    run_capture_loop(
+                        stop_event=stop_event,
+                        request=request,
+                        image_dir=self.image_dir,
+                        camera_lock=self._camera_lock,
+                        set_camera=self._set_camera,
+                        update_state=self._apply_state_update,
+                        set_message=self._set_message,
+                    )
+                    return  # clean exit: stop was requested
+                except Exception as exc:
+                    # A transient camera/write error crashed the loop. Its own
+                    # finally already released the camera. Auto-restart after a
+                    # backoff instead of dying, so an unattended field Pi keeps
+                    # capturing (see the module note on why systemd won't help).
+                    if time.monotonic() - started >= CAPTURE_LOOP_HEALTHY_RUN_SEC:
+                        restarts = 0  # ran healthily before this crash; fresh budget
+                    restarts += 1
+                    with self._lock:
+                        self.last_error = f"{type(exc).__name__}: {exc}"
+                        self.message = (
+                            f"Capture loop crashed; auto-restart "
+                            f"{restarts}/{CAPTURE_LOOP_MAX_RESTARTS}: {exc}"
+                        )
+                    if restarts >= CAPTURE_LOOP_MAX_RESTARTS:
+                        with self._lock:
+                            self.running = False
+                            self.lifecycle_state = "error"
+                            self.message = f"Capture loop failed after {restarts} restarts: {exc}"
+                        raise
+                    if stop_event.wait(CAPTURE_LOOP_RESTART_DELAY_SEC):
+                        return  # stop requested during backoff -> clean exit
         finally:
             with self._lock:
                 if self._thread is threading.current_thread() and self.lifecycle_state != "error":
