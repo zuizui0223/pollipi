@@ -23,7 +23,7 @@ mode in shadow mode only. A mesh state is never a confirmed pollinator visit.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 from pollipi_analysis.schemas.states import (
@@ -38,6 +38,10 @@ LOW = "LOW"
 MID = "MID"
 HIGH = "HIGH"
 Mode = str
+
+# Mode ordering for capture-on-escalation: the instant activity raises the mode,
+# a still is grabbed immediately (see ThreeStageController.step / force_capture).
+_MODE_RANK = {LOW: 0, MID: 1, HIGH: 2}
 
 _LOCAL_CANDIDATES = frozenset({UNCERTAIN_LOCAL_ACTIVITY, STRONG_VISITATION_CANDIDATE})
 _QUIET = frozenset({NO_ACTIVITY, ENVIRONMENTAL_NOISE})
@@ -89,6 +93,10 @@ class ThreeStageOutput:
     trigger_video: bool = False
     cooldown_active: bool = False
     cooldown_remaining_sec: float = 0.0
+    # capture-on-escalation: True on the probe where the mode first rises (activity
+    # detected). The scheduler grabs a still immediately instead of waiting out the
+    # interval, so a short visit's entry frame is never missed.
+    force_capture: bool = False
 
 
 class ThreeStageController:
@@ -110,11 +118,24 @@ class ThreeStageController:
         return {LOW: cfg.low_interval_sec, MID: cfg.mid_interval_sec, HIGH: cfg.high_interval_sec}[mode]
 
     def step(self, decision_state: DecisionState, now_sec: float) -> ThreeStageOutput:
+        prev_mode = self.state.mode
         if not self.config.classify:
-            return self._step_any_motion(decision_state, now_sec)
-        if self.config.high_mode == "video":
-            return self._step_video(decision_state, now_sec)
-        return self._step_interval(decision_state, now_sec)
+            out = self._step_any_motion(decision_state, now_sec)
+        elif self.config.high_mode == "video":
+            out = self._step_video(decision_state, now_sec)
+        else:
+            out = self._step_interval(decision_state, now_sec)
+        # Capture-on-escalation: the moment activity raises the mode (LOW->MID or
+        # ->HIGH), grab a still immediately rather than waiting out the interval, so
+        # a short visit's entry is never missed. Not on a video-trigger probe (the
+        # clip is that probe's record). Shared by the Pi runtime and the simulation.
+        if (
+            not out.force_capture
+            and not out.trigger_video
+            and _MODE_RANK.get(out.mode, 0) > _MODE_RANK.get(prev_mode, 0)
+        ):
+            out = replace(out, force_capture=True)
+        return out
 
     def _step_any_motion(self, decision_state: DecisionState, now_sec: float) -> ThreeStageOutput:
         """Mode ②: any motion (noise included) -> fast interval; settle back when quiet.

@@ -602,9 +602,12 @@ def run_capture_loop(
             else:
                 # Re-derive the next high-res due time every probe from the last save
                 # plus the current desired interval, so a mode change shortens the very
-                # next capture instead of waiting out the old interval.
+                # next capture instead of waiting out the old interval. When live
+                # adaptive is active, capture-on-escalation (out.force_capture) also
+                # grabs a still the instant the mode rises, so a short visit's entry is
+                # not missed; in shadow the fixed interval is left unchanged.
                 due_mono = compute_next_due(last_highres_mono, desired_interval, now_mono)
-                if now_mono >= due_mono:
+                if now_mono >= due_mono or (live_active and out.force_capture):
                     filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
                     image_path = image_dir / filename
                     with camera_lock:
