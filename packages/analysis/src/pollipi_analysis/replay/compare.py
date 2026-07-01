@@ -188,7 +188,16 @@ def replay_any_motion(probes: list[Probe], base: ThreeStageConfig) -> list[Captu
 
 
 def replay_classified(probes: list[Probe], base: ThreeStageConfig) -> list[CaptureEvent]:
-    """③ classified adaptive: noise filtered, local -> fast, strong -> video clip."""
+    """③ classified adaptive, STILLS only: noise filtered, local candidate -> faster
+    stills (HIGH is a 5 s burst of stills), no video. This is the classification arm
+    of the ①②③ comparison without the video confounder."""
+    from dataclasses import replace
+    return _replay_controller(probes, replace(base, classify=True, high_mode="interval"), is_video=False)
+
+
+def replay_video(probes: list[Probe], base: ThreeStageConfig) -> list[CaptureEvent]:
+    """④ classified + video hybrid: like ③, but a sustained strong candidate also
+    fires one short video clip (then cooldown)."""
     from dataclasses import replace
     return _replay_controller(probes, replace(base, classify=True, high_mode="video"), is_video=True)
 
@@ -291,13 +300,15 @@ def compare(
 ) -> Comparison:
     base = config or ThreeStageConfig()
     cost = cost or CostModel()
-    # ASCII labels (1/2/3) so the report prints safely on any console encoding
-    # (a Windows cp932 terminal garbles the circled ①②③ glyphs).
+    # ASCII labels (1/2/3/4) so the report prints safely on any console encoding
+    # (a Windows cp932 terminal garbles the circled ①②③④ glyphs).
+    # ①②③ are stills-only (the clean capture-cost comparison); ④ adds video.
     results = [
         _summarize("1 fixed", replay_fixed(probes, fixed_interval_sec), cost),
         _summarize("2 any-motion", replay_any_motion(probes, base), cost),
         _summarize("3 classified", replay_classified(probes, base), cost),
-        _summarize("3 actual(log)", actual_from_log(probes), cost),
+        _summarize("4 video", replay_video(probes, base), cost),
+        _summarize("actual(log)", actual_from_log(probes), cost),
     ]
     if visits:
         for r in results:

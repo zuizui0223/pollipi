@@ -22,6 +22,7 @@ from pollipi_analysis.replay.compare import (
     replay_any_motion,
     replay_classified,
     replay_fixed,
+    replay_video,
 )
 from pollipi_analysis.policy.three_stage import ThreeStageConfig
 from pollipi_analysis.schemas.states import (
@@ -61,12 +62,15 @@ def test_any_motion_wastes_captures_on_environmental_noise() -> None:
     assert all(e.kind != "video" for e in three)  # noise never fires a clip
 
 
-def test_classified_fires_video_on_sustained_strong_where_fixed_would_not() -> None:
-    # Two consecutive local probes incl. strong -> ③ fires one clip.
+def test_video_fires_on_sustained_strong_but_classified_stills_does_not() -> None:
+    # Two consecutive local probes incl. strong -> ④ fires one clip; ③ (stills)
+    # escalates to a fast still burst instead, never a clip.
     seq = [NO_ACTIVITY, UNCERTAIN_LOCAL_ACTIVITY, STRONG_VISITATION_CANDIDATE] + [NO_ACTIVITY] * 5
     probes = _probes(seq)
+    four = replay_video(probes, ThreeStageConfig())
     three = replay_classified(probes, ThreeStageConfig())
-    assert sum(1 for e in three if e.kind == "video") == 1
+    assert sum(1 for e in four if e.kind == "video") == 1
+    assert all(e.kind != "video" for e in three)  # ③ is stills-only
 
 
 def test_visit_capture_rate_rewards_escalation() -> None:
@@ -78,7 +82,8 @@ def test_visit_capture_rate_rewards_escalation() -> None:
     cmp = compare(probes, fixed_interval_sec=60.0, visits=visits)
     by_name = {r.name: r for r in cmp.results}
     assert by_name["1 fixed"].visit_capture_rate == 0.0
-    assert by_name["3 classified"].visit_capture_rate == 1.0
+    assert by_name["3 classified"].visit_capture_rate == 1.0   # ③ stills escalates
+    assert by_name["4 video"].visit_capture_rate == 1.0        # ④ also captures
 
 
 def test_storage_proxy_tracks_stills_and_video() -> None:
@@ -110,7 +115,7 @@ def test_round_trip_through_csv_and_actual_cross_check(tmp_path) -> None:
     probes = load_probe_log(path)
     assert [p.elapsed_sec for p in probes] == [0.0, 5.0, 10.0]
     cmp = compare(probes)
-    actual = next(r for r in cmp.results if r.name == "3 actual(log)")
+    actual = next(r for r in cmp.results if r.name == "actual(log)")
     assert actual.stills == 1 and actual.video_clips == 1 and actual.video_seconds == 30.0
 
     # ISO visit annotations resolve against the run start.
