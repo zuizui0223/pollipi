@@ -129,6 +129,10 @@ class ScoreWeights:
     strong_video: float = 1.0
     noise_reject: float = 0.5
     false_video: float = 4.0  # a false clip costs power/storage; penalise most.
+    # Worst-case (min over target TYPES) recall. Mean target recall alone lets the
+    # optimiser abandon the single hardest class (e.g. low-SNR targets) for free;
+    # rewarding the minimum forces the policy not to give up any target type.
+    worst_case_target: float = 1.0
 
 
 def evaluate_config(
@@ -145,6 +149,7 @@ def evaluate_config(
     noise_total = noise_fired = 0
     target_total = target_signal = 0
     strong_seqs = strong_fired = 0
+    per_type_signal: dict[str, list[int]] = {}  # target scenario name -> [signal, total]
 
     for scenario_index, (name, truth) in enumerate(SCENARIOS.items()):
         for rep in range(n_reps):
@@ -155,6 +160,9 @@ def evaluate_config(
             else:
                 target_total += 1
                 target_signal += int(res.reached_mid_or_video)
+                bucket = per_type_signal.setdefault(name, [0, 0])
+                bucket[0] += int(res.reached_mid_or_video)
+                bucket[1] += 1
             if res.produced_strong:
                 strong_seqs += 1
                 strong_fired += int(res.fired_video)
@@ -163,8 +171,13 @@ def evaluate_config(
     false_video_trigger_rate = noise_fired / noise_total if noise_total else 0.0
     target_mid_or_video_rate = target_signal / target_total if target_total else 0.0
     strong_to_video_rate = strong_fired / strong_seqs if strong_seqs else 0.0
+    # Worst-case recall over target TYPES: the hardest class the policy still catches.
+    worst_case_target_recall = (
+        min(s / t for s, t in per_type_signal.values()) if per_type_signal else 0.0
+    )
     score = (
         weights.target_signal * target_mid_or_video_rate
+        + weights.worst_case_target * worst_case_target_recall
         + weights.strong_video * strong_to_video_rate
         + weights.noise_reject * noise_no_video_rate
         - weights.false_video * false_video_trigger_rate
@@ -172,6 +185,7 @@ def evaluate_config(
     return {
         "noise_no_video_rate": noise_no_video_rate,
         "target_mid_or_video_rate": target_mid_or_video_rate,
+        "worst_case_target_recall": worst_case_target_recall,
         "strong_to_video_rate": strong_to_video_rate,
         "false_video_trigger_rate": false_video_trigger_rate,
         "score": score,
@@ -182,8 +196,10 @@ def evaluate_config(
 class SearchGrid:
     """Search space — ONLY Pi-loadable FeatureConfig / ClassifierConfig values."""
 
-    pixel_difference: tuple[int, ...] = (20, 25, 30)
-    active_cell_threshold: tuple[float, ...] = (0.06, 0.10)
+    # Includes lower pixel_difference / active_cell_threshold so the search can
+    # recover faint (low-SNR) targets the previous grid could not represent.
+    pixel_difference: tuple[int, ...] = (15, 18, 20, 25, 30)
+    active_cell_threshold: tuple[float, ...] = (0.04, 0.06, 0.10)
     strong_spatial_concentration: tuple[float, ...] = (0.60, 0.75)
     shake_shift_px: tuple[float, ...] = (2.5, 3.5)
 

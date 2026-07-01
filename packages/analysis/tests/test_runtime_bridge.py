@@ -49,13 +49,36 @@ def test_evaluate_config_metrics_are_rates() -> None:
     for key in (
         "noise_no_video_rate",
         "target_mid_or_video_rate",
+        "worst_case_target_recall",
         "strong_to_video_rate",
         "false_video_trigger_rate",
     ):
         assert 0.0 <= m[key] <= 1.0
+    # Worst-case (min over target types) can never exceed the mean target recall.
+    assert m["worst_case_target_recall"] <= m["target_mid_or_video_rate"] + 1e-9
     # Default config must reject noise: no false video triggers on the noise set.
     assert m["false_video_trigger_rate"] == 0.0
     assert m["noise_no_video_rate"] == 1.0
+
+
+def test_worst_case_objective_penalises_abandoning_a_target_type() -> None:
+    # Two policies with the SAME mean target recall but different worst-case recall:
+    # the worst-case term must rank the more uniform one higher.
+    w = rb.ScoreWeights()
+    even = {"target_mid_or_video_rate": 0.8, "worst_case_target_recall": 0.8,
+            "strong_to_video_rate": 0.0, "false_video_trigger_rate": 0.0, "noise_no_video_rate": 1.0}
+    lopsided = {**even, "worst_case_target_recall": 0.0}  # one class fully abandoned
+
+    def score(m):
+        return (
+            w.target_signal * m["target_mid_or_video_rate"]
+            + w.worst_case_target * m["worst_case_target_recall"]
+            + w.strong_video * m["strong_to_video_rate"]
+            + w.noise_reject * m["noise_no_video_rate"]
+            - w.false_video * m["false_video_trigger_rate"]
+        )
+
+    assert score(even) > score(lopsided)
 
 
 def test_search_is_deterministic_and_picks_a_config() -> None:
