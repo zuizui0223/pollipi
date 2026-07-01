@@ -156,17 +156,22 @@ The detailed field readiness and disconnect/reboot tests are in [FIELD_READINESS
 
 ```text
 packages/
-  analysis/     Pure shared mesh analysis, policy, shadow runner, simulation
-  server/       Raspberry Pi FastAPI runtime
-  web/          iPad PWA
+  analysis/     Pure shared mesh analysis + classifier (pipeline), policy/controller,
+                simulation->runtime bridge, replay comparison, shadow runner
+  server/       Raspberry Pi FastAPI runtime (the deployed device server)
+  web/          iPad / browser field console (PWA)
   contracts/    Shared browser/API contracts
+  coordinator/  Optional central coordinator server — NOT required for field-LAN use
 
 dist/           Generated deployable server artifact (pollipi_api_server.py)
-tools/          Fleet deploy utility and service template
+tools/          Fleet deploy utility (pollipi_fleet_deploy.py) + fleet configs + service template
 docs/           Operation, deployment, validation, and field-readiness documents
 ```
 
-New development belongs in `packages/`. The deployment artifact is generated from `packages/server` into `dist/pollipi_api_server.py`.
+The field runtime is exactly three packages: **`analysis` + `server` + `web`**. `coordinator`
+is an optional multi-site control plane and plays no part in the direct iPad-to-Pi field-LAN
+workflow. New development belongs in `packages/`; the deployment artifact is generated from
+`packages/server` (with the embedded web build) into `dist/pollipi_api_server.py`.
 
 ## Build and deploy
 
