@@ -8,6 +8,11 @@ from visit_monitor_server.api.schemas.images import (
     ImageInfo,
     ImageListResponse,
 )
+from visit_monitor_server.api.schemas.storage import (
+    SetStorageRequest,
+    StorageInfoResponse,
+    StorageTarget,
+)
 
 __all__ = [
     "StartRequest",
@@ -19,4 +24,7 @@ __all__ = [
     "DeleteImageResponse",
     "ImageInfo",
     "ImageListResponse",
+    "SetStorageRequest",
+    "StorageInfoResponse",
+    "StorageTarget",
 ]

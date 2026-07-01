@@ -12,10 +12,10 @@ from visit_monitor_server.config import (
     CAMERA_PROFILE,
     DEVICE_ID,
     DEVICE_NAME,
-    IMAGE_DIR,
     IS_AI_CAMERA,
     IS_NOIR,
     IS_WIDE,
+    get_image_dir,
 )
 
 router = APIRouter(tags=["device"])
@@ -38,7 +38,7 @@ def get_device() -> DeviceInfoResponse:
 
 @router.get("/system", response_model=SystemInfoResponse)
 def get_system_info() -> SystemInfoResponse:
-    storage = disk_usage(IMAGE_DIR)
+    storage = disk_usage(get_image_dir())
     power = throttle_status()
     return SystemInfoResponse(
         **storage,

@@ -6,10 +6,12 @@ without worrying about env-var plumbing.
 """
 from __future__ import annotations
 
+import json
 import os
 import socket
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -22,14 +24,87 @@ def env_bool(name: str, default: bool = False) -> bool:
 # ---------------------------------------------------------------------------
 # Storage layout
 # ---------------------------------------------------------------------------
-IMAGE_DIR = Path(
+# The image directory is the ONLY path that can be redirected at runtime (for
+# example onto an external USB drive) through the /storage API. Everything else
+# — the policy artifact, the autonomous-run flag, and the persisted storage
+# choice itself — is anchored to BASE_DIR on the SD card so device-local state
+# survives an unplugged, swapped, or unwritable external drive.
+_DEFAULT_IMAGE_DIR = Path(
     os.getenv("POLLIPI_IMAGE_DIR", str(Path.home() / "pollipi_timelapse" / "images"))
 ).expanduser()
 
-METRICS_PATH = IMAGE_DIR / "adaptive_metrics.csv"
-ADAPTIVE_DECISION_LOG_PATH = IMAGE_DIR / "adaptive_decisions.csv"
-PROBE_SHADOW_LOG_PATH = IMAGE_DIR / "adaptive_probe_shadow-1.csv"
-AUTONOMOUS_PATH = IMAGE_DIR.parent / "autonomous_run.json"
+BASE_DIR = _DEFAULT_IMAGE_DIR.parent
+STORAGE_CONFIG_PATH = BASE_DIR / "storage_config.json"
+
+METRICS_FILENAME = "adaptive_metrics.csv"
+ADAPTIVE_DECISION_LOG_FILENAME = "adaptive_decisions.csv"
+
+
+def _load_persisted_image_dir() -> Optional[Path]:
+    """Return the web-selected image dir from storage_config.json, if any."""
+    try:
+        data = json.loads(STORAGE_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    raw = data.get("image_dir") if isinstance(data, dict) else None
+    if not raw:
+        return None
+    return Path(str(raw)).expanduser()
+
+
+# Runtime-mutable active image directory. A persisted web choice wins over the
+# env-var/default so the last /storage selection survives a restart; clearing
+# the persisted file (or selecting the default) falls back to the env var or the
+# built-in default.
+_active_image_dir: Path = _load_persisted_image_dir() or _DEFAULT_IMAGE_DIR
+
+
+def get_default_image_dir() -> Path:
+    """The SD-card image directory from the env var / built-in default."""
+    return _DEFAULT_IMAGE_DIR
+
+
+def get_image_dir() -> Path:
+    """The active image directory (may point at external storage)."""
+    return _active_image_dir
+
+
+def get_metrics_path() -> Path:
+    return _active_image_dir / METRICS_FILENAME
+
+
+def get_adaptive_decision_log_path() -> Path:
+    return _active_image_dir / ADAPTIVE_DECISION_LOG_FILENAME
+
+
+def set_image_dir(path: Path, *, persist: bool = True) -> Path:
+    """Point the active image directory at *path* and optionally persist it.
+
+    Callers must validate writability and ensure capture is stopped before
+    switching; this only updates process state and the on-disk
+    ``storage_config.json`` used to restore the choice after a restart. Selecting
+    the default clears the persisted override.
+    """
+    global _active_image_dir
+    resolved = Path(path).expanduser()
+    _active_image_dir = resolved
+    if persist:
+        try:
+            STORAGE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            if resolved == _DEFAULT_IMAGE_DIR:
+                STORAGE_CONFIG_PATH.unlink(missing_ok=True)
+            else:
+                STORAGE_CONFIG_PATH.write_text(
+                    json.dumps({"image_dir": str(resolved)}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+        except OSError:
+            # Persistence is best-effort; the in-process switch still applies.
+            pass
+    return _active_image_dir
+
+
+AUTONOMOUS_PATH = BASE_DIR / "autonomous_run.json"
 
 # Issue #27 probe-only three-stage shadow: low-resolution probes run every
 # PROBE_INTERVAL_SEC (no JPEG saved); high-resolution JPEGs stay on the fixed
@@ -44,7 +119,7 @@ LIVE_ADAPTIVE_ENABLED = env_bool("POLLIPI_LIVE_ADAPTIVE_ENABLED", False)
 # (mode3_runtime_bridge_policy_v1.json); the legacy pairwise search writes a
 # separate legacy_pairwise_policy.json that the Pi does NOT load.
 POLICY_PATH = Path(
-    os.getenv("POLLIPI_POLICY_PATH", str(IMAGE_DIR.parent / "mode3_runtime_bridge_policy_v1.json"))
+    os.getenv("POLLIPI_POLICY_PATH", str(BASE_DIR / "mode3_runtime_bridge_policy_v1.json"))
 ).expanduser()
 
 WEB_DIR = Path(

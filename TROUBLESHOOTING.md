@@ -144,11 +144,43 @@ curl -X DELETE http://localhost:8000/images \
   -d '{"confirm": "DELETE_ALL"}'
 ```
 
-To use external USB storage, set `POLLIPI_IMAGE_DIR` in the camera-profile drop-in:
+### Saving photos to an external USB drive instead of the SD card
+
+There are two ways to redirect where photos (and the adaptive metadata logs) are
+written. Both keep the policy artifact and autonomous-run state on the SD card so
+the device still works if the drive is removed.
+
+**A. From the web app (no SSH, switch anytime capture is stopped)**
+
+Each device card has a **Storage / USB** section. Open it to see the current
+target, the SD-card default, and any detected drives under `/media` and `/mnt`
+with free space. Pick a drive (or type a path such as
+`/media/your_user/USB128/images`) and press **Apply storage**. New captures go to
+the selected drive; the choice is remembered across restarts. Switching is only
+allowed while capture is **stopped** — stop the timelapse first. Under the hood
+this calls `GET`/`POST /storage`.
+
+**B. Fixed at boot via an environment variable**
 
 ```ini
 Environment="POLLIPI_IMAGE_DIR=/media/your_user/POLLIPI/images"
 ```
+
+**Both approaches require the service to be allowed to write to the mount.** The
+systemd unit runs with `ProtectSystem=strict`, so paths outside
+`~/pollipi_timelapse` are read-only unless listed in `ReadWritePaths`. The shipped
+unit already allows `/media` and `/mnt`:
+
+```ini
+ReadWritePaths=%h/pollipi_timelapse
+ReadWritePaths=-/media
+ReadWritePaths=-/mnt
+```
+
+If your drive mounts elsewhere, add that path with `systemctl edit pollipi` and
+run `systemctl daemon-reload && systemctl restart pollipi`. A `POST /storage` that
+returns *"not writable"* almost always means the mount is missing from
+`ReadWritePaths`.
 
 ### Images saved but not visible in PWA
 

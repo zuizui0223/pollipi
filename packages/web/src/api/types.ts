@@ -128,6 +128,31 @@ export interface SystemInfo {
   undervoltage_occurred: boolean;
 }
 
+/** A selectable image-storage target from GET /storage. */
+export interface StorageTarget {
+  path: string;
+  mount: string | null;
+  label: string;
+  kind: string;
+  exists: boolean;
+  writable: boolean;
+  is_mount: boolean;
+  is_current: boolean;
+  is_default: boolean;
+  storage_total_bytes: number;
+  storage_used_bytes: number;
+  storage_free_bytes: number;
+  storage_percent_used: number;
+}
+
+/** Storage location info from GET /storage and POST /storage. */
+export interface StorageInfo {
+  current_path: string;
+  default_path: string;
+  capture_running: boolean;
+  targets: StorageTarget[];
+}
+
 /** Scheduled image info from GET /images. */
 export interface ImageInfo {
   filename: string;

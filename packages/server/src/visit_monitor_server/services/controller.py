@@ -154,6 +154,17 @@ class TimelapseController:
             mesh_global_synchrony=self.mesh_global_synchrony,
         )
 
+    def set_image_dir(self, path: Path) -> None:
+        """Redirect where new captures are written (e.g. to external USB storage).
+
+        Only allowed while capture is stopped so no in-flight loop is redirected
+        mid-write; raises ``ValueError`` otherwise (surfaced as HTTP 409).
+        """
+        with self._lock:
+            if self.running or self._thread is not None:
+                raise ValueError("Stop capture before changing the storage location.")
+            self.image_dir = Path(path)
+
     def status(self):
         with self._lock:
             return self._build_status()
