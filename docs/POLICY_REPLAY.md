@@ -5,13 +5,15 @@ field recording, what would each capture policy have done?
 
 - **① fixed** — plain fixed-interval timelapse (no adaptation)
 - **② any-motion** — faster stills on ANY motion (wind / shadow / insect alike)
-- **③ classified** — noise filtered; local candidate → faster stills; strong → video clip
+- **③ classified** — noise filtered; local candidate → faster stills (STILLS only, no video)
+- **④ video** — like ③, but a sustained strong candidate also fires one short video clip
 
-Every policy is replayed through the *same* `ThreeStageController` the Pi runs, so
-the control logic is identical to production — only the decision-state sequence is
-read from the field log. This makes ③'s value measurable: fewer wasted captures
-than ② on wind/shadow, and escalation on real visits that ① at a slow interval
-misses (the capture-rate vs storage/energy balance).
+`①②③` are stills-only, so they compare apples-to-apples (capture-rate vs a fixed
+still budget); `④` adds video as a separate hybrid. Every policy is replayed through
+the *same* `ThreeStageController` the Pi runs, so the control logic is identical to
+production — only the decision-state sequence is read from the field log. This makes
+③'s value measurable: fewer wasted captures than ② on wind/shadow, and escalation on
+real visits that ① at a slow interval misses.
 
 ## Input
 
@@ -34,8 +36,9 @@ python -m pollipi_analysis.replay adaptive_probe_shadow_v2_<run_id>.csv --fixed-
 ```
 
 Output columns: `stills`, `clips`, `video_s`, `storage_MB` (and `visit%` / `lat_s`
-when annotations are supplied). `3 actual(log)` echoes what the run itself saved,
-as a fidelity cross-check against the replayed `3 classified`.
+when annotations are supplied). `actual(log)` echoes what the run itself saved, as
+a fidelity cross-check against the replayed policy that produced the log (`3
+classified` for a stills run, `4 video` for a video run).
 
 Useful flags: `--low/--mid/--video-duration/--cooldown` (override the ③ controller
 shape), `--still-kb/--video-mbps` (storage model), `--json`.

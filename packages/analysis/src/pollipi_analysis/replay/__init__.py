@@ -12,6 +12,7 @@ from pollipi_analysis.replay.compare import (
     replay_any_motion,
     replay_classified,
     replay_fixed,
+    replay_video,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "replay_any_motion",
     "replay_classified",
     "replay_fixed",
+    "replay_video",
 ]
