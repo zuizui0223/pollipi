@@ -111,3 +111,30 @@ def test_pi_and_simulation_share_identical_transitions() -> None:
     pi_trace = [pi.step(s, now_sec=i * PROBE).mode for i, s in enumerate(seq)]
     sim_trace = [sim.step(s, now_sec=i * PROBE).mode for i, s in enumerate(seq)]
     assert pi_trace == sim_trace
+
+
+# --- capture-on-escalation (force_capture) -----------------------------------
+
+def test_force_capture_fires_on_mode_escalation_only() -> None:
+    c = ThreeStageController()
+    # LOW -> LOW (quiet): no escalation, no forced capture.
+    assert c.step(NO_ACTIVITY, 0.0).force_capture is False
+    # LOW -> MID (local candidate): escalation -> forced capture.
+    up = c.step(UNCERTAIN_LOCAL_ACTIVITY, PROBE)
+    assert up.mode == MID and up.force_capture is True
+    # MID hold (still local): no further escalation.
+    assert c.step(UNCERTAIN_LOCAL_ACTIVITY, 2 * PROBE).force_capture is False
+    # MID -> HIGH (two local incl. strong): escalation -> forced capture.
+    hi = c.step(STRONG_VISITATION_CANDIDATE, 3 * PROBE)
+    assert hi.mode == HIGH and hi.force_capture is True
+    # HIGH hold: no escalation.
+    assert c.step(STRONG_VISITATION_CANDIDATE, 4 * PROBE).force_capture is False
+
+
+def test_force_capture_not_set_on_a_video_trigger_probe() -> None:
+    from pollipi_analysis.policy.three_stage import ThreeStageConfig
+    c = ThreeStageController(ThreeStageConfig(high_mode="video"))
+    c.step(UNCERTAIN_LOCAL_ACTIVITY, 0.0)          # LOW -> MID (forces a still)
+    out = c.step(STRONG_VISITATION_CANDIDATE, PROBE)  # two local incl. strong -> clip
+    assert out.trigger_video is True
+    assert out.force_capture is False              # the clip is the record, not a still

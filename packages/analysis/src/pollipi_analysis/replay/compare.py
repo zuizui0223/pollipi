@@ -175,7 +175,7 @@ def _replay_controller(
             last = p.elapsed_sec + config.video_duration_sec
             continue
         due = p.elapsed_sec if last is None else last + out.interval_sec
-        if p.elapsed_sec >= due:
+        if p.elapsed_sec >= due or out.force_capture:
             events.append(CaptureEvent(p.elapsed_sec, "image"))
             last = p.elapsed_sec
     return events
