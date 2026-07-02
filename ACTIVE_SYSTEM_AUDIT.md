@@ -48,8 +48,9 @@ manual ROI, candidate-event, or training workflow.
 - `packages/web/src/components/Gallery.tsx`, `EventReview.tsx`,
   `TrainingPanel.tsx`, `RoiEditor.tsx`: retained in source for compatibility and
   history, removed from active navigation.
-- Root `pollipi_api_server.py`, root `web/`, `dist/`, and `legacy/`: keep until
-  Issue #11 finishes artifact unification across all five Pi devices.
+- `dist/`: generated deployable artifact, not source; see
+  [REPO_CLEANUP_AUDIT.md](REPO_CLEANUP_AUDIT.md). `legacy/`: archived code kept
+  for history, not imported by any live package.
 
 ## Delete Later
 
