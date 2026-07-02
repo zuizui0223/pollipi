@@ -2,6 +2,13 @@
 
 This guide explains how to deploy web UI changes to your Raspberry Pi during development.
 
+> The fleet deploy tool below is the only deployment authority for the active
+> five-Pi fleet — see [DEPLOY_TO_PI.md](DEPLOY_TO_PI.md). The `scripts/*.sh`
+> helpers further down sync straight into the source directory on one Pi and
+> are a **local dev-only convenience**: fast for iterating on one Pi, but not
+> tracked by the fleet tool's backup/rollback/version-verification, and their
+> effect is overwritten by the next full or `--web-only` fleet deploy.
+
 ## Fleet Deployment (Recommended)
 
 Deploy the web UI to all five Pis in sequence with automatic verification and rollback:
@@ -45,9 +52,9 @@ What the function does:
 6. Syncs only `packages/web/dist/` to the five devices in `tools/fleet.zuizui.json`.
 7. Verifies `/app/` and `/app/build-info.json` over HTTP for each Pi and prints a success/failure list.
 
-## Quick Deployment (Single Pi)
+## Quick Deployment (Single Pi, dev-only)
 
-Deploy the current web UI build to one Pi:
+Deploy the current web UI build to one Pi without going through the fleet tool:
 
 ```bash
 ./scripts/deploy_web_only.sh -h zuizui.local -u zuizui0223
@@ -61,7 +68,7 @@ Both `-h` (host) and `-u` (user) are **required**. There are no defaults.
 3. Syncs `packages/web/dist/` to `/home/<user>/pollipi_timelapse/web/` on Pi
 4. Done — iPad will see changes on next page load
 
-## Continuous Auto-Sync (Development Mode)
+## Continuous Auto-Sync (Development Mode, dev-only)
 
 For iterative development, watch for changes and auto-sync to one Pi:
 

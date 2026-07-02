@@ -1,10 +1,8 @@
 # PolliPi Quickstart
 
-> **Note:** The single-file `install.sh` / `setup_device.sh` flow has been removed.
-> Deploy the packaged artifact via [docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md) and
-> `tools/pollipi_fleet_deploy.py`. The camera-setup steps below remain useful.
-
-This guide gets one Raspberry Pi running PolliPi from scratch in about 15 minutes.
+This guide gets one Raspberry Pi running PolliPi from scratch. It builds the
+packaged deployable artifact on your development machine and deploys it with
+`tools/pollipi_fleet_deploy.py`, per [docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md).
 For adding more devices to an existing fleet, see `DEVICE_ONBOARDING.md`.
 For troubleshooting, see `TROUBLESHOOTING.md`.
 
@@ -13,6 +11,7 @@ For troubleshooting, see `TROUBLESHOOTING.md`.
 - Raspberry Pi 5 (or Pi 4)
 - Raspberry Pi Camera Module 3 (Wide or standard), Camera Module 3 NoIR Wide, or Raspberry Pi AI Camera
 - Raspberry Pi OS Bookworm (64-bit recommended)
+- A development machine with Python and `pnpm` for building and deploying the artifact
 - iPad or any browser on the same Wi-Fi
 
 ## Step 1 — Confirm the camera works
@@ -34,51 +33,33 @@ sudo apt install -y imx500-all
 sudo reboot
 ```
 
-## Step 2 — Copy files to the Pi
-
-From your PC (replace `pi` with your Pi username and `pollipi1.local` with your Pi's hostname):
+## Step 2 — Build the artifacts on the development machine
 
 ```bash
-scp pollipi_api_server.py install.sh setup_device.sh pi@pollipi1.local:~/
-scp -r web pi@pollipi1.local:~/pollipi_timelapse/web 2>/dev/null || true
+pnpm install
+pnpm check:web
+pnpm build:artifacts
 ```
 
-Or clone directly on the Pi:
+This produces `dist/pollipi_api_server.py` (server, with the matching embedded
+web build) and `packages/web/dist/` (web build).
+
+## Step 3 — Configure and deploy with the fleet tool
+
+Copy `tools/fleet.example.json` to `tools/fleet.local.json`, set the Pi's
+host/IP, SSH user, and remote directory, then dry-run and deploy:
 
 ```bash
-git clone https://github.com/YOUR_FORK/pollipi.git ~/pollipi_timelapse
+python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json
+python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --execute --confirm-live-deploy
 ```
 
-## Step 3 — Install on the Pi
+This uploads the artifact and web build, installs the systemd service from
+`tools/pollipi.service.template`, and restarts it. See
+[DEVICE_ONBOARDING.md](DEVICE_ONBOARDING.md) for the camera-profile
+environment variables for your specific camera.
 
-SSH into the Pi:
-
-```bash
-ssh pi@pollipi1.local
-```
-
-Move files to the install directory and run:
-
-```bash
-mkdir -p ~/pollipi_timelapse
-mv ~/pollipi_api_server.py ~/install.sh ~/setup_device.sh ~/pollipi_timelapse/
-cd ~/pollipi_timelapse
-bash install.sh
-```
-
-## Step 4 — Configure device profile
-
-```bash
-bash ~/pollipi_timelapse/setup_device.sh pollipi1
-```
-
-`setup_device.sh` will ask you to:
-1. Choose your camera type (Module 3 Wide / NoIR Wide / AI Camera)
-2. Enter a display name for the device (shown in the PWA)
-
-It then writes the systemd service and camera-profile drop-in, and starts the service.
-
-## Step 5 — Verify
+## Step 4 — Verify
 
 ```bash
 curl http://localhost:8000/device
@@ -88,7 +69,7 @@ curl -o /tmp/preview.jpg http://localhost:8000/preview && file /tmp/preview.jpg
 
 Expected: `/device` returns JSON with your device_id and camera_profile; `/preview` is a JPEG image.
 
-## Step 6 — Open the PWA
+## Step 5 — Open the PWA
 
 On your iPad or browser, connect to the same Wi-Fi as the Pi, then open:
 
@@ -100,10 +81,13 @@ In Safari on iPad, use **Share → Add to Home Screen** to install it as an app 
 
 ## Field workflow
 
-1. **画角確認** — tap `画角を確認` in the PWA to open the live monitor. Aim the camera at your flower/target.
-2. **ROI指定** — tap `この画角でOK`, then draw a rectangle around the flower on the still frame. Tap `このROIで決定`.
-3. **撮影開始** — set interval, enable Autonomous mode, tap Start. The Pi records independently after this.
-4. **レビュー** — reconnect later, open EVENT REVIEW to check motion candidates. Correct labels as needed.
+1. Confirm the device card is online and aim the camera at your target.
+2. Choose **① Plain timelapse** and set the baseline interval (normally 30 sec) for routine field work.
+3. Enable **Resume autonomously after Pi restart** if reboot recovery is required.
+4. Tap **Start**. The Pi records independently after this — closing the PWA or losing Wi-Fi does not stop capture.
+5. Confirm `capturing`, the intended `High-res interval`, and advancing `Last saved` / `Saved photos` at least twice before leaving the system unattended.
+
+See [README.md](README.md) for the full description of capture modes ①②③④ and when to use each.
 
 ## Hotspot mode (offline field use)
 

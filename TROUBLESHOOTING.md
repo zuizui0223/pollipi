@@ -62,8 +62,8 @@ sudo journalctl -u pollipi.service -n 50 --no-pager
 
 Common causes:
 - Python path wrong: verify `.venv` exists in `WorkingDirectory`
-- Wrong `User=` in service file (should match the user who ran `install.sh`)
-- Missing `camera-profile.conf` drop-in — run `setup_device.sh` again
+- Wrong `User=` in the service file — should match the SSH/deploy user configured in the fleet config
+- Missing `camera-profile.conf` drop-in — see [DEVICE_ONBOARDING.md](DEVICE_ONBOARDING.md) §5
 - Camera not detected at boot — add `After=network-online.target` and ensure camera cable is seated
 
 ### Service starts but API returns errors
@@ -110,18 +110,18 @@ curl http://localhost:8000/device
 
 ---
 
-## Deployment issues (Windows)
+## Deployment issues
 
-### `deploy_pollipi_pi.ps1` fails with SSH error
+### `tools/pollipi_fleet_deploy.py` fails with SSH error
 
-- Set the password: `$env:POLLIPI_DEPLOY_PASSWORD = "your_password"`
-- Or configure SSH keys and remove `-o PreferredAuthentications=password` from the script
-- Check that `ssh your_user@your_hostname.local` works from PowerShell first
+- Confirm SSH key access is configured for the fleet's `ssh_user` — the deploy tool expects non-interactive (`BatchMode=yes`) SSH.
+- Check that `ssh <ssh_user>@<pi-host>` works manually first.
+- Confirm the deploy user has the configured `sudo systemctl restart <service_name>` permission (passwordless, scoped to that one command).
 
-### SCP times out or fails
+### SCP/upload times out or fails
 
-- Confirm Pi is reachable: `ping pollipi1.local`
-- Use IP address for `-HostName` if `.local` is not resolving: `.\deploy_pollipi_pi.ps1 -HostName 192.168.x.x -DeviceId pollipi1 -Preset module3-wide`
+- Confirm the Pi is reachable: `ping pollipi1.local`
+- Use an IP address instead of `.local` in the fleet config if mDNS is not resolving on the deploy machine's network.
 
 ---
 

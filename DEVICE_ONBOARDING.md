@@ -1,11 +1,10 @@
 # PolliPi Device Onboarding Guide
 
-> **Note:** The single-file `install.sh` / `setup_device.sh` / `deploy_pollipi_pi.ps1`
-> flow has been removed. Use the packaged artifact + `tools/pollipi.service.template`
-> and `tools/pollipi_fleet_deploy.py` per [docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md)
-> and [docs/FIELD_FLEET_DEPLOYMENT.md](docs/FIELD_FLEET_DEPLOYMENT.md).
-
-This document describes how to add a new Raspberry Pi camera unit to the PolliPi field observer system.
+This document describes how to add a new Raspberry Pi camera unit to the
+PolliPi field observer system, using the packaged artifact +
+`tools/pollipi.service.template` and `tools/pollipi_fleet_deploy.py` per
+[docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md) and
+[docs/FIELD_FLEET_DEPLOYMENT.md](docs/FIELD_FLEET_DEPLOYMENT.md).
 
 Use this when adding any new Pi — for example `pollipi2.local`, `pollipi3.local`, or any hostname you assign.
 
@@ -28,6 +27,18 @@ Default rule:
 - AI Camera: set `IS_AI_CAMERA=true`.
 - NoIR Wide: set `IS_NOIR=true`.
 - Module 3 Wide: set `IS_WIDE=true` and use `module3_wide_daylight` profile.
+
+### Current fleet (`tools/fleet.zuizui.json`)
+
+- `zuizui.local`, `zuizui4.local`, `zuizui5.local` — Camera Module 3 / Module 3
+  Wide, ordinary standard daylight units.
+- `zuizui2.local` — Raspberry Pi AI Camera (IMX500). Comparison / on-device
+  detection-test unit; the default IMX500 model is not an insect classifier,
+  so do not treat its output as species identification without a validated
+  dedicated model.
+- `zuizui3.local` — Camera Module 3 NoIR Wide, low-light/night-capable unit.
+  NoIR does not see in complete darkness without IR illumination; treat
+  NoIR/IR captures as a distinct condition from daylight RGB.
 
 ## 2. Confirm SSH access
 
@@ -61,54 +72,33 @@ Expected:
 
 Do not continue PolliPi setup until `rpicam-hello --timeout 3000` works.
 
-## 4. Install or update PolliPi code
+## 4. Build and deploy the packaged artifact
 
-### Option A: install.sh on the Pi directly
-
-Copy files to the Pi and run:
+On the development machine, build once:
 
 ```bash
-scp pollipi_api_server.py install.sh setup_device.sh pi@pollipi2.local:~/pollipi_timelapse/
-ssh pi@pollipi2.local "bash ~/pollipi_timelapse/install.sh"
+pnpm install
+pnpm check:web
+pnpm build:artifacts
 ```
 
-### Option B: git clone on the Pi
+Add the new Pi to your fleet configuration (copy `tools/fleet.example.json` to
+`tools/fleet.local.json` if you have not already), then dry-run and deploy:
 
 ```bash
-ssh pi@pollipi2.local
-git clone https://github.com/YOUR_FORK/pollipi.git ~/pollipi_timelapse
-bash ~/pollipi_timelapse/install.sh
+python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json
+python tools/pollipi_fleet_deploy.py --config tools/fleet.local.json --execute --confirm-live-deploy
 ```
 
-### Option C: Windows deployment helper
-
-From a Windows PC, the deployment helper copies source files, sets the camera profile, runs syntax checks, installs the service, and restarts PolliPi.
-
-Standard daylight Module 3 Wide example for `pollipi2.local`:
-
-```powershell
-$env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
-.\deploy_pollipi_pi.ps1 -HostName pollipi2.local -User pi -Preset module3-wide -DeviceId pollipi2 -InstallDependencies
-```
-
-After the first deployment, `-InstallDependencies` can usually be omitted:
-
-```powershell
-$env:POLLIPI_DEPLOY_PASSWORD = "your_pi_password"
-.\deploy_pollipi_pi.ps1 -HostName pollipi2.local -User pi -Preset module3-wide -DeviceId pollipi2
-```
-
-If `.local` name resolution is not working but the IP address is known:
-
-```powershell
-.\deploy_pollipi_pi.ps1 -HostName 192.168.1.25 -User pi -Preset module3-wide -DeviceId pollipi2
-```
+This uploads `dist/pollipi_api_server.py` and the web build, installs the
+service from `tools/pollipi.service.template`, and starts it. See
+[docs/DEPLOY_TO_PI.md](docs/DEPLOY_TO_PI.md) for the full deployment
+reference.
 
 ## 5. Configure device profile
 
-The easiest way is to run `setup_device.sh` on the Pi — it writes the service and drop-in interactively.
-
-To configure manually, create or edit the systemd drop-in file:
+Set the camera-specific environment variables as a systemd drop-in on the Pi.
+Create or edit:
 
 ```bash
 sudo mkdir -p /etc/systemd/system/pollipi.service.d
@@ -170,34 +160,13 @@ Important:
 
 ## 6. Configure systemd service
 
-If `pollipi.service` is not installed yet, create it:
+The fleet deploy in step 4 installs `pollipi.service` from
+`tools/pollipi.service.template` automatically. If you need to (re)install it
+by hand on the Pi:
 
 ```bash
-sudo nano /etc/systemd/system/pollipi.service
-```
-
-Recommended service (replace `pi` with your username):
-
-```ini
-[Unit]
-Description=PolliPi Field Observer API
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=pi
-WorkingDirectory=/home/pi/pollipi_timelapse
-ExecStart=/home/pi/pollipi_timelapse/.venv/bin/python -m uvicorn pollipi_api_server:app --host 0.0.0.0 --port 8000 --timeout-graceful-shutdown 3
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Then enable and start:
-
-```bash
+sudo cp tools/pollipi.service.template /etc/systemd/system/pollipi.service
+sudo sed -i "s|DEVICE_ID|pollipi2|; s|POLLIPI_HOME|/home/pi/pollipi_timelapse|g; s|CONFIG_FILE|/home/pi/pollipi_timelapse/config.env|" /etc/systemd/system/pollipi.service
 sudo systemctl daemon-reload
 sudo systemctl enable pollipi.service
 sudo systemctl restart pollipi.service
@@ -260,26 +229,17 @@ http://pollipi2.local:8000/app/
 
 Field usability test:
 
-1. Tap `画角を確認`.
-2. Confirm live monitor opens.
-3. Adjust camera angle.
-4. Tap `この画角でOK`.
-5. Confirm still-frame ROI editor opens.
-6. Draw or adjust ROI.
-7. Tap `この花を使う`.
-8. Confirm main screen shows ROI set.
-9. Start recording.
-10. Confirm `/status` updates.
+1. Confirm the device card appears and shows `online`.
+2. Choose **① Plain timelapse** and set the baseline interval (normally 30 sec).
+3. Enable **Resume autonomously after Pi restart** if reboot recovery is required.
+4. Tap **Start**.
+5. Confirm the card shows `capturing`, the intended `High-res interval`, and advancing `Last saved` / `Saved photos` at least twice.
 
 ## 10. Update project documents
 
-When adding a new permanent device, update:
-
-- `MASTER_SPEC.md`
-- `DECISIONS.md`
-- `FIELD_METHOD_ROADMAP.md` if needed
-- `HANDOFF.md`
-- `README.md` if the device list is shown there
+When adding a new permanent device, update the "Current fleet" table in
+section 1 of this document, and `README.md` if the device list is shown
+there.
 
 At minimum, record:
 
@@ -290,40 +250,7 @@ At minimum, record:
 - setup date
 - any special notes
 
-## 11. Recommended handoff entry
-
-Add a note like this to `HANDOFF.md`:
-
-```md
-## Handoff YYYY-MM-DD HH:MM JST
-
-### Owner
-Codex / Claude / ChatGPT / User
-
-### Task
-Added new PolliPi device `pollipi2.local`.
-
-### What changed
-- Configured as Module 3 Wide daylight unit.
-- Set `DEVICE_ID=pollipi2`.
-- Set `CAMERA_PROFILE=module3_wide_daylight`.
-
-### Tests run
-- `rpicam-hello --timeout 3000`
-- `/device`
-- `/status`
-- `/preview`
-- `/mjpeg` followed by `/preview`
-- iPad PWA test
-
-### Known issues
-- item if any
-
-### Next recommended task
-One task only.
-```
-
-## 12. Troubleshooting
+## 11. Troubleshooting
 
 ### `Camera __init__ sequence did not complete`
 

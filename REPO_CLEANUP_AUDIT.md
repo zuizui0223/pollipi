@@ -29,9 +29,32 @@ original single-file server and its bootstrap/deploy scripts have been removed:
 
 ## Legacy / compatibility (retained)
 
-- `legacy/`: compatibility material, if present.
-- Historical root docs such as `MASTER_SPEC.md`, `TASKS.md`, `CHANGELOG_AI.md`, `FIELD_METHOD_ROADMAP.md`, `MIGRATION_PLAN.md`, and `REQUIREMENT_NOTES.md`: keep as archive/reference. Active behavior is tracked in `ACTIVE_SYSTEM_AUDIT.md`, `ADAPTIVE_TIMELAPSE_METHOD.md`, `docs/ISSUE14_MESH_SIMULATION.md`, and GitHub issues.
-- `QUICKSTART.md`, `DEVICE_ONBOARDING.md`, `TROUBLESHOOTING.md`: retained for camera-setup and troubleshooting content, but their single-file install steps are superseded by the fleet/artifact deployment docs.
+- `legacy/`: archived code kept for history; see `legacy/README.md` for what moved there and why.
+- `QUICKSTART.md`, `DEVICE_ONBOARDING.md`, `TROUBLESHOOTING.md`: camera-setup and troubleshooting content, updated to the current fleet/artifact deployment flow (`tools/pollipi_fleet_deploy.py` + `tools/pollipi.service.template`).
+
+## Removed stale docs (2026-07-02 pass)
+
+These described an earlier ROI-drawing / motion-trigger / candidate-review / on-device
+ML training vision that predates the current shadow-mode mesh/adaptive-timelapse system
+(`ACTIVE_SYSTEM_AUDIT.md`, `ADAPTIVE_TIMELAPSE_METHOD.md`), or were one-off/non-reusable
+files mixed into the docs tree. They also referenced planning files (`TASKS.md`,
+`CHANGELOG_AI.md`, `HANDOFF.md`, `FIELD_METHOD_ROADMAP.md`) that never existed in this
+repository.
+
+- `MASTER_SPEC.md`, `DECISIONS.md` — superseded by `README.md`, `ACTIVE_SYSTEM_AUDIT.md`,
+  and `ADAPTIVE_TIMELAPSE_METHOD.md`. The still-live camera-hostname mapping moved to
+  `DEVICE_ONBOARDING.md` §1 ("Current fleet").
+- `REQUIREMENT_NOTES.md` — a one-off hardware-audit note (Chinese-language, mismatched with
+  the rest of the docs) that duplicated `QUICKSTART.md` / `DEVICE_ONBOARDING.md` content and
+  still referenced removed `install.sh`.
+- `docs/ISSUE12_PHASES.md` — described the retired candidate-event/ROI/ML-training phases as
+  active, contradicting `ACTIVE_SYSTEM_AUDIT.md`.
+- `DEPLOY_RUNBOOK.md` — a personal one-time runbook (hardcoded commit SHA, ad hoc SSH-key/sudo
+  setup) fully superseded by `docs/DEPLOY_TO_PI.md` and `docs/FIELD_FLEET_DEPLOYMENT.md`.
+- `.github/ISSUE_TEMPLATE/event-review-ui-bug.md` — tracked bugs in the candidate/event review
+  screen, which is compat-only and removed from active navigation.
+- `PULL_REQUEST_TEMPLATE.md` — was a specific historical PR description checked in as the
+  template; replaced with a generic reusable template.
 
 ## Cache / local metadata
 
