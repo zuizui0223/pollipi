@@ -91,11 +91,12 @@ def test_cooldown_blocks_second_clip_then_allows_after_window() -> None:
     assert all(not o.trigger_video for o in suppressed)
     assert all(o.cooldown_active for o in suppressed)
     assert any("cooldown" in o.reason for o in suppressed)
-    # Quiet resets the streak, then a fresh 2-consecutive-with-strong after the
-    # cooldown window (ends at 80.0) fires a second clip.
-    c.step(NO_ACTIVITY, 85.0)
-    c.step(UNCERTAIN_LOCAL_ACTIVITY, 90.0)
-    again = c.step(STRONG_VISITATION_CANDIDATE, 95.0)
+    # Sustained quiet beyond the gap tolerance (>2 probes) resets the streak; then a
+    # fresh 2-consecutive-with-strong after the cooldown window (ends 80.0) fires again.
+    for t in (85.0, 90.0, 95.0):
+        c.step(NO_ACTIVITY, t)
+    c.step(UNCERTAIN_LOCAL_ACTIVITY, 100.0)
+    again = c.step(STRONG_VISITATION_CANDIDATE, 105.0)
     assert again.trigger_video is True  # firing here proves the cooldown had cleared
 
 
@@ -116,3 +117,31 @@ def test_interval_mode_unchanged_default() -> None:
     out = c.step(STRONG_VISITATION_CANDIDATE, PROBE)
     assert out.mode == HIGH and out.interval_sec == 5.0
     assert out.trigger_video is False
+
+
+def test_video_gap_tolerance_bridges_wind_interrupted_candidates() -> None:
+    # A wind-buffeted target yields isolated strong frames split by ~2 noise probes
+    # (S E E S). With video_gap_tolerance=2 the run still reaches the two-candidate
+    # trigger and fires a clip.
+    c = ThreeStageController(ThreeStageConfig(high_mode="video", video_gap_tolerance=2))
+    seq = [STRONG_VISITATION_CANDIDATE, ENVIRONMENTAL_NOISE, ENVIRONMENTAL_NOISE, STRONG_VISITATION_CANDIDATE]
+    outs = [c.step(s, i * 5.0) for i, s in enumerate(seq)]
+    assert any(o.trigger_video for o in outs)
+
+
+def test_video_gap_tolerance_still_requires_a_strong_frame() -> None:
+    # Uncertain-only candidates across a gap must NEVER fire a clip (noise safety):
+    # the trigger requires a strong frame, which environmental noise never produces.
+    c = ThreeStageController(ThreeStageConfig(high_mode="video", video_gap_tolerance=2))
+    seq = [UNCERTAIN_LOCAL_ACTIVITY, ENVIRONMENTAL_NOISE, ENVIRONMENTAL_NOISE, UNCERTAIN_LOCAL_ACTIVITY]
+    outs = [c.step(s, i * 5.0) for i, s in enumerate(seq)]
+    assert not any(o.trigger_video for o in outs)
+
+
+def test_video_gap_beyond_tolerance_resets_the_run() -> None:
+    # Three intervening noise probes exceed tolerance=2, so two strongs split that
+    # far apart do not fire (the streak resets between them).
+    c = ThreeStageController(ThreeStageConfig(high_mode="video", video_gap_tolerance=2))
+    seq = [STRONG_VISITATION_CANDIDATE] + [ENVIRONMENTAL_NOISE] * 3 + [STRONG_VISITATION_CANDIDATE]
+    outs = [c.step(s, i * 5.0) for i, s in enumerate(seq)]
+    assert not any(o.trigger_video for o in outs)
