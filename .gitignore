@@ -28,6 +28,7 @@ Desktop.ini
 .ruff_cache/
 node_modules/
 dist/
+build/
 sim_out/
 coverage/
 *.egg-info/

@@ -6,8 +6,8 @@ decision states into the *same* ``ThreeStageController`` (video mode) the Pi use
 It then searches only the Pi-loadable ``FeatureConfig`` / ``ClassifierConfig``
 parameters and writes the best as ``mode3_runtime_bridge_policy_v1.json`` via
 ``pollipi_analysis.policy.artifact.write_policy``. This is the SINGLE official
-policy-export path for the Pi runtime (the legacy pairwise search in
-``simulation/run.py`` writes a separate ``legacy_pairwise_policy.json``).
+policy-export path for the Pi runtime (the legacy pairwise search, archived under
+``legacy/packages/analysis/simulation/run.py``, wrote a separate ``legacy_pairwise_policy.json``).
 
 Scale note: the R5 study renders at 72x112 in [0, 1], but the Pi runtime's
 ``cell_size`` (px) and ``pixel_difference`` (0-255) live at the camera luminance
@@ -318,8 +318,8 @@ def generate_policy(
 ) -> tuple[Path, PipelineConfig, dict[str, float]]:
     """Run the search and write the official Mode-3 runtime policy artifact
     (``mode3_runtime_bridge_policy_v1.json``). This bridge is the SOLE official
-    policy-export path for the Pi runtime; the legacy pairwise search in
-    ``simulation/run.py`` emits a separate, clearly-named exploratory artifact."""
+    policy-export path for the Pi runtime; the legacy pairwise search (archived
+    under ``legacy/``) emitted a separate, clearly-named exploratory artifact."""
     config, metrics, _rows = search(grid, n_reps=n_reps, seed=seed)
     meta = PolicyMeta(
         policy_name=policy_name,

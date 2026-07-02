@@ -88,7 +88,7 @@ def test_policy_profile_is_fixed_while_capture_runs(monkeypatch, tmp_path: Path)
         )
         changed = client.post(
             "/start",
-            json={"interval_sec": 30, "policy_profile_id": "three_stage_sensitive_v1"},
+            json={"interval_sec": 30, "policy_profile_id": "three_stage_canary_v1"},
         )
         status = client.get("/status").json()
         client.post("/stop")
@@ -109,7 +109,7 @@ def test_probe_csv_logs_policy_profile_provenance(monkeypatch, tmp_path: Path) -
     with _client(monkeypatch, tmp_path) as client:
         assert client.post(
             "/start",
-            json={"interval_sec": 1, "policy_profile_id": "three_stage_sensitive_v1"},
+            json={"interval_sec": 1, "policy_profile_id": "three_stage_default_v1"},
         ).status_code == 200
 
         deadline = time.monotonic() + 6.0
@@ -128,14 +128,14 @@ def test_probe_csv_logs_policy_profile_provenance(monkeypatch, tmp_path: Path) -
         status = client.get("/status").json()
         client.post("/stop")
 
-    assert status["policy_profile_id"] == "three_stage_sensitive_v1"
-    assert status["simulation_run_id"] == "issue27-three-stage-sensitive"
+    assert status["policy_profile_id"] == "three_stage_default_v1"
+    assert status["simulation_run_id"] == "issue27-three-stage-baseline"
     assert status["kind"] == "three_stage"
     assert status["live_allowed"] is False
     rows = list(csv.DictReader(probe_log.open(encoding="utf-8")))
     assert rows
-    assert {row["policy_profile_id"] for row in rows} == {"three_stage_sensitive_v1"}
-    assert {row["simulation_run_id"] for row in rows} == {"issue27-three-stage-sensitive"}
+    assert {row["policy_profile_id"] for row in rows} == {"three_stage_default_v1"}
+    assert {row["simulation_run_id"] for row in rows} == {"issue27-three-stage-baseline"}
     assert {row["kind"] for row in rows} == {"three_stage"}
     assert {row["live_allowed"] for row in rows} == {"False"}
 
@@ -148,4 +148,4 @@ def test_pwa_uses_policy_profiles_api_instead_of_hardcoded_profiles() -> None:
 
     assert "fetchPolicyProfiles" in client_source
     assert "fetchPolicyProfiles" in app_source
-    assert "three_stage_sensitive_v1" not in session_source
+    assert "three_stage_default_v1" not in session_source
