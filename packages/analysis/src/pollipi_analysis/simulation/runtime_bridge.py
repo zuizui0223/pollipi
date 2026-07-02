@@ -135,46 +135,54 @@ class ScoreWeights:
     worst_case_target: float = 1.0
 
 
-def evaluate_config(
+def evaluate_by_scenario(
     pipeline_config: PipelineConfig,
     *,
     n_reps: int = 4,
     seed: int = SEED,
     three_config: Optional[ThreeStageConfig] = None,
-    weights: Optional[ScoreWeights] = None,
-) -> dict[str, float]:
-    """The four Mode-③ video metrics + a combined score for one Pi config."""
-    weights = weights or ScoreWeights()
+) -> dict[str, dict[str, Any]]:
+    """Per-scenario outcome counts for one Pi config (the basis for composition-
+    robust selection). Deterministic: seed = ``seed + scenario_index*1000 + rep``."""
     tc = three_config or default_video_config()
-    noise_total = noise_fired = 0
-    target_total = target_signal = 0
-    strong_seqs = strong_fired = 0
-    per_type_signal: dict[str, list[int]] = {}  # target scenario name -> [signal, total]
-
+    out: dict[str, dict[str, Any]] = {}
     for scenario_index, (name, truth) in enumerate(SCENARIOS.items()):
+        fired = signal = strong = strong_fired = 0
         for rep in range(n_reps):
             res = run_sequence(name, truth, seed + scenario_index * 1000 + rep, pipeline_config, tc)
-            if truth == "noise":
-                noise_total += 1
-                noise_fired += int(res.fired_video)
-            else:
-                target_total += 1
-                target_signal += int(res.reached_mid_or_video)
-                bucket = per_type_signal.setdefault(name, [0, 0])
-                bucket[0] += int(res.reached_mid_or_video)
-                bucket[1] += 1
+            fired += int(res.fired_video)
+            signal += int(res.reached_mid_or_video)
             if res.produced_strong:
-                strong_seqs += 1
+                strong += 1
                 strong_fired += int(res.fired_video)
+        out[name] = {"truth": truth, "n": n_reps, "fired": fired,
+                     "signal": signal, "strong": strong, "strong_fired": strong_fired}
+    return out
 
+
+def metrics_over(per_scenario: dict[str, dict[str, Any]], names: list[str],
+                 weights: Optional[ScoreWeights] = None) -> dict[str, float]:
+    """Aggregate the Mode-③ metrics + combined score over a SUBSET of scenarios.
+    Used both for the full-set score and for leave-one-out robustness folds."""
+    weights = weights or ScoreWeights()
+    noise_total = noise_fired = target_total = target_signal = strong_seqs = strong_fired = 0
+    per_type: dict[str, float] = {}
+    for name in names:
+        x = per_scenario[name]
+        if x["truth"] == "noise":
+            noise_total += x["n"]
+            noise_fired += x["fired"]
+        else:
+            target_total += x["n"]
+            target_signal += x["signal"]
+            per_type[name] = x["signal"] / x["n"]
+        strong_seqs += x["strong"]
+        strong_fired += x["strong_fired"]
     noise_no_video_rate = 1.0 - noise_fired / noise_total if noise_total else 0.0
     false_video_trigger_rate = noise_fired / noise_total if noise_total else 0.0
     target_mid_or_video_rate = target_signal / target_total if target_total else 0.0
     strong_to_video_rate = strong_fired / strong_seqs if strong_seqs else 0.0
-    # Worst-case recall over target TYPES: the hardest class the policy still catches.
-    worst_case_target_recall = (
-        min(s / t for s, t in per_type_signal.values()) if per_type_signal else 0.0
-    )
+    worst_case_target_recall = min(per_type.values()) if per_type else 0.0
     score = (
         weights.target_signal * target_mid_or_video_rate
         + weights.worst_case_target * worst_case_target_recall
@@ -190,6 +198,19 @@ def evaluate_config(
         "false_video_trigger_rate": false_video_trigger_rate,
         "score": score,
     }
+
+
+def evaluate_config(
+    pipeline_config: PipelineConfig,
+    *,
+    n_reps: int = 4,
+    seed: int = SEED,
+    three_config: Optional[ThreeStageConfig] = None,
+    weights: Optional[ScoreWeights] = None,
+) -> dict[str, float]:
+    """The Mode-③ video metrics + a combined score for one Pi config (full set)."""
+    per = evaluate_by_scenario(pipeline_config, n_reps=n_reps, seed=seed, three_config=three_config)
+    return metrics_over(per, list(SCENARIOS), weights)
 
 
 @dataclass(frozen=True)
@@ -233,6 +254,42 @@ def search(
         rows.append({**feature_kwargs, **classifier_kwargs, **metrics})
         if best is None or metrics["score"] > best[1]["score"]:
             best = (cfg, metrics)
+    assert best is not None
+    return best[0], best[1], rows
+
+
+def search_robust(
+    grid: Optional[SearchGrid] = None, *, n_reps: int = 4, seed: int = SEED,
+    weights: Optional[ScoreWeights] = None,
+) -> tuple[PipelineConfig, dict[str, float], list[dict[str, Any]]]:
+    """Composition-robust selection: pick the config with the highest WORST
+    leave-one-scenario-out fold score, not just the best full-set mean.
+
+    A single fixed scenario set makes the selection composition-sensitive (the
+    chosen config can flip if the mix is reweighted). Maximising the worst fold
+    yields a policy that stays good no matter which single scenario is emphasised;
+    each row also carries ``worst_fold_score`` for the reported robustness margin.
+    """
+    grid = grid or SearchGrid()
+    weights = weights or ScoreWeights()
+    base = PipelineConfig()
+    names = list(SCENARIOS)
+    rows: list[dict[str, Any]] = []
+    best: Optional[tuple[PipelineConfig, dict[str, float], float]] = None
+    for feature_kwargs, classifier_kwargs in grid.iter_configs():
+        cfg = PipelineConfig(
+            features=replace(base.features, **feature_kwargs),
+            classifier=replace(base.classifier, **classifier_kwargs),
+        )
+        per = evaluate_by_scenario(cfg, n_reps=n_reps, seed=seed)
+        full = metrics_over(per, names, weights)
+        worst_fold = min(
+            metrics_over(per, [n for n in names if n != held_out], weights)["score"]
+            for held_out in names
+        )
+        rows.append({**feature_kwargs, **classifier_kwargs, **full, "worst_fold_score": worst_fold})
+        if best is None or worst_fold > best[2]:
+            best = (cfg, {**full, "worst_fold_score": worst_fold}, worst_fold)
     assert best is not None
     return best[0], best[1], rows
 

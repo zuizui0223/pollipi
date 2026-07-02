@@ -118,3 +118,24 @@ def test_generate_policy_writes_loadable_simulation_informed_json(tmp_path) -> N
     assert loaded_config.features == config.features
     assert loaded_config.classifier == config.classifier
     assert meta.validation_status == "simulation_informed"
+
+
+def test_search_robust_selects_by_worst_leave_one_out_fold() -> None:
+    grid = rb.SearchGrid(
+        pixel_difference=(20, 25),
+        active_cell_threshold=(0.06,),
+        strong_spatial_concentration=(0.70,),
+        shake_shift_px=(2.5,),
+    )
+    cfg, metrics, rows = rb.search_robust(grid, n_reps=2, seed=11)
+    assert isinstance(cfg, PipelineConfig)
+    assert len(rows) == 2
+    assert all("worst_fold_score" in r for r in rows)
+    # The selected config maximises the worst leave-one-out fold across the grid.
+    assert metrics["worst_fold_score"] == max(r["worst_fold_score"] for r in rows)
+
+
+def test_metrics_over_matches_evaluate_config() -> None:
+    # The refactor must not change evaluate_config's numbers.
+    per = rb.evaluate_by_scenario(PipelineConfig(), n_reps=2, seed=rb.SEED)
+    assert rb.metrics_over(per, list(SCENARIOS)) == rb.evaluate_config(PipelineConfig(), n_reps=2, seed=rb.SEED)
