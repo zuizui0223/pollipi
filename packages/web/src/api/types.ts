@@ -121,11 +121,20 @@ export interface PolicyProfilesResponse {
   profiles: PolicyProfile[];
 }
 
-/** System info from GET /system. */
+/** System info from GET /system. Storage fields describe the ACTIVE capture
+ * directory (the USB drive when storage is switched to it, else the SD card). */
 export interface SystemInfo {
+  storage_path: string;
+  storage_total_bytes: number;
+  storage_used_bytes: number;
   storage_free_bytes: number;
-  undervoltage_now: boolean;
-  undervoltage_occurred: boolean;
+  storage_percent_used: number;
+  /** Pi 5 input 5V-rail voltage (battery-health proxy); null without a PMIC. */
+  supply_voltage_v: number | null;
+  undervoltage_now: boolean | null;
+  undervoltage_occurred: boolean | null;
+  throttled_raw: string | null;
+  power_message: string;
 }
 
 /** A selectable image-storage target from GET /storage. */

@@ -20,19 +20,51 @@ def disk_usage(path: Path) -> dict:
     }
 
 
+def supply_voltage_v() -> Optional[float]:
+    """Return the Pi 5 input 5V-rail voltage (``EXT5V_V``) from the PMIC, or None.
+
+    A plain USB power bank exposes no state-of-charge, but on a Pi 5 the PMIC
+    reports the actual input rail voltage. As a battery drains its output sags
+    toward the undervoltage threshold (~4.6-4.8V), so this reading is the best
+    available proxy for "battery health" when no fuel-gauge HAT is present.
+    Older Pis without ``pmic_read_adc`` (or non-Pi hosts) return None.
+    """
+    try:
+        result = subprocess.run(
+            ["vcgencmd", "pmic_read_adc"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=True,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+    # lines look like: "     EXT5V_V volt(24)=5.06386000V"
+    for line in result.stdout.splitlines():
+        if "EXT5V_V" in line and "=" in line:
+            try:
+                return round(float(line.split("=")[-1].strip().rstrip("V")), 3)
+            except ValueError:
+                return None
+    return None
+
+
 def throttle_status() -> dict:
     """
-    Query ``vcgencmd get_throttled`` and return parsed flags.
+    Query ``vcgencmd get_throttled`` (+ PMIC input voltage) and return parsed flags.
 
     Returns a dict with keys:
     - ``throttled_raw``: raw output string (or ``None`` if unavailable)
     - ``undervoltage_now``: bool or None
     - ``undervoltage_occurred``: bool or None
+    - ``supply_voltage_v``: float input 5V-rail voltage, or None (battery proxy)
     - ``power_message``: human-readable summary
     """
     throttled_raw: Optional[str] = None
     undervoltage_now: Optional[bool] = None
     undervoltage_occurred: Optional[bool] = None
+    voltage = supply_voltage_v()
+    volt_txt = f" ({voltage:.2f}V in)" if voltage is not None else ""
     power_message = "Battery percentage is unavailable without a telemetry-capable power source."
 
     try:
@@ -48,11 +80,11 @@ def throttle_status() -> dict:
         undervoltage_now = bool(flags & 0x1)
         undervoltage_occurred = bool(flags & 0x10000)
         if undervoltage_now:
-            power_message = "Undervoltage detected now; check battery output and cable."
+            power_message = f"Undervoltage detected now{volt_txt}; check battery output and cable."
         elif undervoltage_occurred:
-            power_message = "Undervoltage occurred since boot; check battery output and cable."
+            power_message = f"Undervoltage occurred since boot{volt_txt}; check battery output and cable."
         else:
-            power_message = "Voltage OK; battery percentage requires telemetry hardware."
+            power_message = f"Voltage OK{volt_txt}; battery percentage requires telemetry hardware."
     except (FileNotFoundError, subprocess.SubprocessError, ValueError):
         pass
 
@@ -60,5 +92,6 @@ def throttle_status() -> dict:
         "throttled_raw": throttled_raw,
         "undervoltage_now": undervoltage_now,
         "undervoltage_occurred": undervoltage_occurred,
+        "supply_voltage_v": voltage,
         "power_message": power_message,
     }

@@ -2,13 +2,14 @@ import { h } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 
-import type { Camera, DeviceInfo, StartPayload, StatusResponse } from '../api/types';
+import type { Camera, DeviceInfo, StartPayload, StatusResponse, SystemInfo } from '../api/types';
 import {
   deleteCoordinatorDevice,
   deviceUrl,
   fetchDevice,
   getMjpegStreamUrl,
   fetchStatus,
+  fetchSystem,
   postStart,
   postStop,
 } from '../api/client';
@@ -19,7 +20,7 @@ import {
 } from '../state/session';
 import { removeCamera } from '../state/devices';
 import { coordinatorBaseUrl } from '../state/coordinator';
-import { formatCaptureTime } from '../lib/formatting';
+import { formatBytes, formatCaptureTime } from '../lib/formatting';
 import { StoragePanel } from './StoragePanel';
 import * as s from '../styles/components.css';
 
@@ -98,6 +99,7 @@ function latestImageUrl(camera: Camera, status: StatusResponse): string {
 export function DeviceCard({ camera, index, onUpdated }: Props) {
   const busy = useSignal(false);
   const status = useSignal<StatusResponse | null>(null);
+  const system = useSignal<SystemInfo | null>(null);
   const message = useSignal('Reading status...');
   const connectionState = useSignal<ConnectionState>('stale');
   const previewReady = useSignal(false);
@@ -159,13 +161,15 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
 
     try {
       connectionState.value = status.value ? 'reconnecting' : 'stale';
-      const [device, next] = await Promise.all([
+      const [device, next, sys] = await Promise.all([
         fetchDevice(camera, { signal: controller.signal }).catch(() => null),
         fetchStatus(camera, { signal: controller.signal }),
+        fetchSystem(camera, { signal: controller.signal }).catch(() => null),
       ]);
       if (generation !== refreshGeneration.current) return;
 
       if (device) applyDeviceInfo(camera, device);
+      if (sys) system.value = sys;
       updateFromStatus(next);
       connectionState.value = 'online';
       pollDelayMs.current = document.hidden ? 15000 : 5000;
@@ -351,6 +355,29 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
   const shadowOnly = current
     ? current.mesh_shadow_mode && !current.adaptive_timelapse_mode && !current.live_adaptive_enabled
     : null;
+
+  // Storage of the ACTIVE capture directory (USB when switched to it, else SD).
+  const sys = system.value;
+  const onUsb = sys ? /\/(media|mnt)\//.test(sys.storage_path) : false;
+  const storageText = sys
+    ? `${formatBytes(sys.storage_free_bytes)} free`
+    : '-';
+  const storageSub = sys ? `${onUsb ? 'USB' : 'SD'} · ${sys.storage_percent_used}% used` : '';
+  // Power: no fuel gauge on a plain power bank, so show input-rail voltage
+  // (battery-health proxy) + undervoltage flag. null voltage = no PMIC.
+  const undervolt = sys?.undervoltage_now
+    ? 'low now'
+    : sys?.undervoltage_occurred
+      ? 'dipped'
+      : sys
+        ? 'OK'
+        : '';
+  const powerText = sys && sys.supply_voltage_v != null
+    ? `${sys.supply_voltage_v.toFixed(2)}V`
+    : sys
+      ? undervolt || 'n/a'
+      : '-';
+  const powerBad = Boolean(sys?.undervoltage_now || sys?.undervoltage_occurred);
   const pillClass = connectionState.value === 'offline'
     ? s.pillOffline
     : !current
@@ -450,6 +477,22 @@ export function DeviceCard({ camera, index, onUpdated }: Props) {
         <div class={s.metricsCell}>
           <dt class={s.metricsDt}>Policy profile</dt>
           <dd class={s.metricsDd}>{current?.policy_profile_id || 'unknown'}</dd>
+        </div>
+        <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>Storage free</dt>
+          <dd class={s.metricsDd}>
+            {storageText}
+            {storageSub && <span class={s.metricsSub}>{storageSub}</span>}
+          </dd>
+        </div>
+        <div class={s.metricsCell}>
+          <dt class={s.metricsDt}>Power (in)</dt>
+          <dd class={s.metricsDd} style={powerBad ? 'color:var(--danger,#c0392b)' : undefined}>
+            {powerText}
+            {sys && sys.supply_voltage_v != null && (
+              <span class={s.metricsSub}>{undervolt}</span>
+            )}
+          </dd>
         </div>
       </dl>
 
