@@ -10,6 +10,7 @@ from pollipi_analysis.schemas.states import (
     ENVIRONMENTAL_NOISE,
     NO_ACTIVITY,
     STRONG_VISITATION_CANDIDATE,
+    UNCERTAIN_LOCAL_ACTIVITY,
 )
 from pollipi_analysis.simulation.scenarios import LABELED_SCENARIOS
 from pollipi_analysis.simulation.synthetic import simulate_pair
@@ -63,3 +64,33 @@ def test_brightness_normalisation_keeps_small_target_not_median_subtraction() ->
     # brightness normalisation only and must still retain a clean small target.
     background, frame = simulate_pair("localized_trajectory", seed=11)
     assert analyze(frame, background).state == STRONG_VISITATION_CANDIDATE
+
+
+# --- faint-compact target recovery (max-pool gate) ---------------------------
+from pollipi_analysis.pipeline import ClassifierConfig, classify_features
+from pollipi_analysis.schemas.features import MeshFeatures
+
+
+def _quiet_features(**over) -> MeshFeatures:
+    base = dict(
+        active_cell_proportion=0.0, largest_component_cells=0, concentration=0.0,
+        spatial_concentration=0.0, offset_active_cell_proportion=0.0, offset_agreement=0.0,
+        persistence=0.0, centroid_x=None, centroid_y=None, centroid_displacement=None,
+        path_efficiency=None, active_set_jaccard=0.0, global_synchrony=0.0,
+        estimated_global_shift=0.0, cell_size=32,
+    )
+    base.update(over)
+    return MeshFeatures(**base)
+
+
+def test_faint_compact_max_pool_recovers_a_low_snr_peak() -> None:
+    cfg = ClassifierConfig()
+    # Quiet frame (mean activity ~0) but a small compact max-pool peak -> uncertain.
+    faint = _quiet_features(active_cell_proportion=0.0, active_proportion_max=0.03)
+    assert classify_features(faint, cfg)[0] == UNCERTAIN_LOCAL_ACTIVITY
+    # Genuinely quiet (no max-pool peak) stays no-activity.
+    quiet = _quiet_features(active_cell_proportion=0.0, active_proportion_max=0.0)
+    assert classify_features(quiet, cfg)[0] == NO_ACTIVITY
+    # A large (broad) max-pool proportion is not a faint compact peak -> no-activity.
+    broad = _quiet_features(active_cell_proportion=0.0, active_proportion_max=0.30)
+    assert classify_features(broad, cfg)[0] == NO_ACTIVITY
