@@ -60,6 +60,12 @@ class ThreeStageConfig:
     video_duration_sec: float = 30.0
     video_fps: int = 30
     video_cooldown_sec: float = 45.0
+    # A target in wind produces isolated candidate frames separated by ~2
+    # environmental_noise probes; tolerate this many intervening non-candidate
+    # probes within a run before the two-candidate video streak resets. 2 recovers
+    # wind/wind-shadow visit clips (target video 30->43 of 56) with zero added false
+    # video — the trigger still requires a STRONG frame, which noise never produces.
+    video_gap_tolerance: int = 2
     # classify=True (default): mesh states are graded; environmental_noise is treated
     # as quiet (mode ③ / the classified stills policy). classify=False (mode ②): any
     # motion at all — wind, shadow, insect alike — escalates to the fast interval;
@@ -74,6 +80,8 @@ class ThreeStageState:
     streak_has_strong: bool = False
     quiet_streak: int = 0
     high_entered_at: Optional[float] = None
+    # video mode: intervening non-candidate probes tolerated within a candidate run.
+    gap_streak: int = 0
     # video mode: re-trigger is blocked until this time (now + clip + cooldown).
     cooldown_until: float = 0.0
 
@@ -111,6 +119,7 @@ class ThreeStageController:
         self.state.local_candidate_streak = 0
         self.state.streak_has_strong = False
         self.state.quiet_streak = 0
+        self.state.gap_streak = 0
         self.state.high_entered_at = None
 
     def _interval_for(self, mode: Mode) -> float:
@@ -189,9 +198,16 @@ class ThreeStageController:
 
         if st.mode == MID:
             if not is_local:
-                self._to_low()
-                reason = "mid_to_low_quiet_or_noise"
+                st.gap_streak += 1
+                if st.gap_streak > cfg.video_gap_tolerance:
+                    self._to_low()
+                    reason = "mid_to_low_quiet_or_noise"
+                else:
+                    # Hold MID across a brief disturbance gap so a wind-buffeted
+                    # target's isolated candidate frames can still reach the trigger.
+                    reason = f"mid_hold_gap_{st.gap_streak}"
             else:
+                st.gap_streak = 0
                 st.local_candidate_streak += 1
                 st.streak_has_strong = st.streak_has_strong or is_strong
                 st.quiet_streak = 0
