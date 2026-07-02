@@ -17,7 +17,7 @@
 
 - `sec baseline`: 保存する高解像度JPEGの間隔。通常は **30 sec**。
 - `Resume autonomously after Pi restart`: ONにしてStartすると、Pi再起動後に同じ撮影設定で再開するための設定を保存します。
-- `Approved policy profile`: 最初は `three_stage_default_v1` を選びます。`three_stage_sensitive_v1` は比較用で、先に固定30秒データとshadowログを集めてから使います。
+- `Approved policy profile`: Webの4モード（①plain／②motion／③classified／④video）は対応する canary プロファイルを自動選択します。コード既定は `three_stage_default_v1`。
 - `Start all` / `Stop all`: iPadに登録されたPiへ直接送信します。中央サーバーを経由しません。
 
 ### 各Piカード

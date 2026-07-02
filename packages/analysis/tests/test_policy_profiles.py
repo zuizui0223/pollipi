@@ -20,14 +20,12 @@ def test_json_policy_profiles_are_versioned_and_allowed() -> None:
 
     assert {profile.profile_id for profile in profiles} >= {
         "three_stage_default_v1",
-        "three_stage_sensitive_v1",
     }
     assert all(profile.kind == "three_stage" for profile in profiles)
     # D1: existing (non-canary) profiles stay live_allowed=false; only an explicitly
     # named canary profile may set it true (and even then it is one of three gates).
     by_id = {p.profile_id: p for p in profiles}
     assert by_id["three_stage_default_v1"].live_allowed is False
-    assert by_id["three_stage_sensitive_v1"].live_allowed is False
     assert all(
         "canary" in p.profile_id for p in profiles if p.live_allowed is True
     )
