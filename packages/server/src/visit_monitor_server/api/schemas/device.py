@@ -35,6 +35,7 @@ class SystemInfoResponse(BaseModel):
     storage_free_bytes: int
     storage_percent_used: float
     battery_percent: Optional[float] = None
+    supply_voltage_v: Optional[float] = None
     undervoltage_now: Optional[bool]
     undervoltage_occurred: Optional[bool]
     throttled_raw: Optional[str]

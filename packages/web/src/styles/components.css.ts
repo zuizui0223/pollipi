@@ -401,6 +401,14 @@ export const metricsDd = style({
   whiteSpace: 'nowrap',
 });
 
+export const metricsSub = style({
+  display: 'block',
+  marginTop: '2px',
+  color: 'var(--muted)',
+  fontSize: '11px',
+  fontWeight: '600',
+});
+
 export const cardActions = style({
   display: 'grid',
   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
