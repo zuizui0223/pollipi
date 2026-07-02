@@ -34,6 +34,12 @@ class ClassifierConfig:
     # resting / no-activity gate
     quiet_synchrony: float = 0.0015
     quiet_active_proportion: float = 0.015
+    # faint-compact target recovery: a low-SNR target's cell-mean activity can fall
+    # below the quiet threshold while the per-cell max-pool aggregation still keeps
+    # its small compact hot-spot. On an otherwise-quiet frame a max-pool peak in
+    # (0, faint_max_pool_proportion] with low mean activity escalates to uncertain.
+    faint_max_pool_proportion: float = 0.06
+    faint_local_active_proportion: float = 0.02
     # broad common-mode (environmental noise) gates
     broad_synchrony: float = 0.18
     broad_active_proportion: float = 0.45
@@ -72,6 +78,16 @@ def classify_features(features: MeshFeatures, cfg: ClassifierConfig) -> tuple[De
         f.global_synchrony < cfg.quiet_synchrony
         or f.active_cell_proportion < cfg.quiet_active_proportion
     ) and f.global_synchrony < cfg.broad_synchrony:
+        # Faint-compact target recovery: the cell mean missed it, but the max-pool
+        # aggregation kept a small compact peak (a low-SNR visitor). Escalate to
+        # uncertain instead of resting. Uncertain only — never strong/video — so a
+        # stray quiet-frame peak costs at most a faster still, never a clip.
+        max_pool = f.active_proportion_max or 0.0
+        if (
+            0.0 < max_pool <= cfg.faint_max_pool_proportion
+            and f.active_cell_proportion <= cfg.faint_local_active_proportion
+        ):
+            return UNCERTAIN_LOCAL_ACTIVITY, "faint_compact_max_pool"
         return NO_ACTIVITY, "below_active_cell_threshold"
 
     # 2. broad / common-mode motion -> environmental noise
