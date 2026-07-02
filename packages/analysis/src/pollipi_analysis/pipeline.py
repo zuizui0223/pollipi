@@ -46,8 +46,11 @@ class ClassifierConfig:
     broad_component_fraction: float = 0.25
     shake_shift_px: float = 2.5
     scatter_spatial_concentration: float = 0.35
-    # strong localised candidate gates
-    strong_concentration: float = 0.35
+    # strong localised candidate gates. strong_concentration 0.40 (not 0.35): a
+    # swaying flower produced a low-concentration (~0.38) compact blob that squeaked
+    # past 0.35 and fired a false video; real targets sit at >=0.49, so 0.40 rejects
+    # the sway with no measured loss of real-target strong detection.
+    strong_concentration: float = 0.40
     strong_spatial_concentration: float = 0.70
     strong_offset_agreement: float = 0.45
     local_active_proportion_max: float = 0.25

@@ -94,3 +94,19 @@ def test_faint_compact_max_pool_recovers_a_low_snr_peak() -> None:
     # A large (broad) max-pool proportion is not a faint compact peak -> no-activity.
     broad = _quiet_features(active_cell_proportion=0.0, active_proportion_max=0.30)
     assert classify_features(broad, cfg)[0] == NO_ACTIVITY
+
+
+def _strong_candidate_features(concentration: float) -> MeshFeatures:
+    # A compact localised blob that passes every strong gate except (maybe) concentration.
+    return _quiet_features(
+        global_synchrony=0.05, active_cell_proportion=0.021, largest_component_cells=1,
+        concentration=concentration, spatial_concentration=1.0, offset_agreement=0.65,
+    )
+
+
+def test_strong_concentration_gate_rejects_low_concentration_sway() -> None:
+    cfg = ClassifierConfig()
+    # A swaying-flower-like blob (concentration ~0.38) is NOT a strong candidate.
+    assert classify_features(_strong_candidate_features(0.38), cfg)[0] == UNCERTAIN_LOCAL_ACTIVITY
+    # A genuinely concentrated target (>=0.49) still fires strong.
+    assert classify_features(_strong_candidate_features(0.50), cfg)[0] == STRONG_VISITATION_CANDIDATE
