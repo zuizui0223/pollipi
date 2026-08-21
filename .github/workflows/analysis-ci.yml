@@ -53,3 +53,23 @@ jobs:
                   recovered = sum(row.pollipi_state in {'strong_visitation_candidate','uncertain_local_activity'} for row in family_rows)
                   print("POLLIPI_V4_TEST_FAMILY", family, f"visit_recall={recovered/len(family_rows):.3f}")
           PY
+      - name: Export V4 trace artifact
+        env:
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p benchmark-artifacts
+          python - <<'PY'
+          import os
+          from pollipi_analysis.simulation.factorial_benchmark_v4 import write_factorial_trace_jsonl
+          write_factorial_trace_jsonl(
+              "benchmark-artifacts/pollipi_factorial_v4.jsonl",
+              source_commit=os.environ.get("SOURCE_COMMIT"),
+          )
+          PY
+      - name: Upload V4 trace artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pollipi-factorial-v4-trace
+          path: benchmark-artifacts/pollipi_factorial_v4.jsonl
+          if-no-files-found: error
+          retention-days: 90
