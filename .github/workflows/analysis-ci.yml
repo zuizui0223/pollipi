@@ -1,0 +1,33 @@
+name: Analysis CI
+
+on:
+  pull_request:
+    paths:
+      - "packages/analysis/**"
+      - ".github/workflows/analysis-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/analysis/**"
+      - ".github/workflows/analysis-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install analysis package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "packages/analysis[dev]"
+      - name: Compile analysis package
+        run: python -m compileall -q packages/analysis/src
+      - name: Run analysis tests
+        run: pytest packages/analysis/ -q
