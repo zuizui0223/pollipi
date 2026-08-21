@@ -1,11 +1,13 @@
 """Run the held-out factorial V4 pixels through PolliPi's unchanged front end."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 from collections import Counter
+from dataclasses import asdict, dataclass
+import json
+from pathlib import Path
 
 from pollipi_analysis.pipeline import analyze
-from pollipi_analysis.simulation.factorial_world_v4 import build_registry, render_condition
+from pollipi_analysis.simulation.factorial_world_v4 import build_registry, render_condition, suite_fingerprint
 
 SCHEMA = "pollipi-insepi-factorial-v4"
 
@@ -56,6 +58,30 @@ def run_factorial_v4(split: str | None = None) -> list[PolliPiFactorialResult]:
             estimated_global_shift=features.estimated_global_shift,
         ))
     return rows
+
+
+def write_factorial_trace_jsonl(path: str | Path, *, source_commit: str | None = None) -> Path:
+    """Write the portable V4 trace consumed by sibling benchmark tooling.
+
+    The trace contains PolliPi outputs and benchmark provenance only. It contains
+    no InsePi logic and therefore preserves the independent-observer boundary.
+    """
+
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    provenance = {
+        "record_type": "provenance",
+        "schema": SCHEMA,
+        "world_fingerprint": suite_fingerprint(),
+        "source_commit": source_commit,
+    }
+    with output.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(provenance, sort_keys=True) + "\n")
+        for row in run_factorial_v4():
+            payload = row.to_dict()
+            payload["record_type"] = "result"
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    return output
 
 
 def summarize_factorial_v4(rows: list[PolliPiFactorialResult]) -> dict[str, object]:
