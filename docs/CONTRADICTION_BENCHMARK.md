@@ -73,14 +73,24 @@ Do **not** tune PolliPi thresholds to agree with InsePi. Repeated disagreement i
 first logged as evidence. A rule is changed only after independent truth/audit
 shows that one failure mode is systematic.
 
-## Next layers
+## Validation layers
 
 1. **V1 policy contradiction:** current module; deterministic latent conditions.
 2. **V2 visual contradiction:** render the same pixels and run both front ends.
-3. **V3 replay:** run both on fixed-interval flower-camera sequences with human
-   visit labels and condition labels.
-4. **V4 field allocation:** compare fixed, PolliPi-only, InsePi audit-priority,
-   and disagreement-priority capture under the same storage/power budget.
+3. **V3 equal-budget development:** compare uniform, each single observer,
+   Boolean combinations, and disagreement under the same capture budget.
+4. **V4 factorial development holdout:** use 120 provenance-matched conditions
+   to expose and repair complementary observer failures. Because V4 was
+   inspected during development, it is not final validation.
+5. **V5 locked validation:** freeze both source commits, derive a shifted
+   180-condition world from that exact commit pair, and run the comparison once.
+
+V5 covers 12 disturbance families at exact 20%, 50%, and 80% event prevalence,
+with 10%, 25%, and 50% capture budgets. Its formal trace writer refuses a source
+SHA that differs from the PolliPi checkout `HEAD`, refuses uncommitted tracked
+changes, records the commit-derived world fingerprint, and will not overwrite an
+existing locked artifact. PolliPi emits only its own decisions; InsePi applies
+its independent observer and the preregistered cross-repository gate later.
 
 The main scientific endpoint is not agreement. It is whether disagreement
 predicts false visits, missed visits, attribution failures, or biased ecological
