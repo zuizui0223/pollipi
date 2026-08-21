@@ -31,15 +31,25 @@ jobs:
         run: python -m compileall -q packages/analysis/src
       - name: Run analysis tests
         run: pytest packages/analysis/ -q
-      - name: Print V2 visual benchmark ledger
+      - name: Print V2/V4 benchmark ledger
         run: |
           python - <<'PY'
-          from pollipi_analysis.simulation.portable_visual_v2 import suite_fingerprint
+          from pollipi_analysis.simulation.portable_visual_v2 import suite_fingerprint as v2_fingerprint
           from pollipi_analysis.simulation.visual_contradiction_v2 import run_visual_contradiction_v2
-          print("portable_visual_v2_sha256", suite_fingerprint())
+          from pollipi_analysis.simulation.factorial_world_v4 import suite_fingerprint as v4_fingerprint
+          from pollipi_analysis.simulation.factorial_benchmark_v4 import run_factorial_v4, summarize_factorial_v4
+          print("portable_visual_v2_sha256", v2_fingerprint())
           for row in run_visual_contradiction_v2():
               print(row.scenario_id, row.true_visit, row.pollipi_state, row.pollipi_reason,
                     f"active={row.active_cell_proportion:.4f}",
                     f"global={row.global_synchrony:.4f}",
                     f"shift={row.estimated_global_shift:.3f}")
+          rows = run_factorial_v4()
+          print("factorial_v4_sha256", v4_fingerprint())
+          print("POLLIPI_V4_SUMMARY", summarize_factorial_v4(rows))
+          for family in sorted({row.disturbance_family for row in rows if row.split == 'test'}):
+              family_rows = [row for row in rows if row.split == 'test' and row.disturbance_family == family and row.true_visit]
+              if family_rows:
+                  recovered = sum(row.pollipi_state in {'strong_visitation_candidate','uncertain_local_activity'} for row in family_rows)
+                  print("POLLIPI_V4_TEST_FAMILY", family, f"visit_recall={recovered/len(family_rows):.3f}")
           PY
