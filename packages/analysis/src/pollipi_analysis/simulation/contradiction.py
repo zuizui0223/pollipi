@@ -97,6 +97,11 @@ def synthesize_mesh_features(scenario: ContrastScenario) -> MeshFeatures:
         spatial = 0.55 + 0.32 * visibility
         offset_active = active * 0.95
         offset_agreement = 0.20 + 0.58 * visibility
+        # A visible local event still contributes some frame-level synchrony.
+        # Without this measurement consequence the existing PolliPi quiet gate
+        # would (correctly for its inputs) interpret an impossible combination:
+        # high compact activity with essentially zero global residual signal.
+        global_sync = max(global_sync, 0.003 + 0.035 * visibility)
         max_pool = max(0.018, 0.065 * visibility)
 
     source = scenario.noise_source
@@ -214,9 +219,9 @@ def run_contradiction_scenarios(
                 noise_source=scenario.noise_source,
                 noise_confidence=scenario.noise_confidence,
                 event_visibility=scenario.event_visibility,
-                pollipi_state=str(state),
+                pollipi_state=state,
                 pollipi_reason=reason,
-                capture_posture=capture_posture_for_state(str(state)),
+                capture_posture=capture_posture_for_state(state),
             )
         )
     return rows
