@@ -13,7 +13,7 @@ import json
 
 import numpy as np
 
-FACTORIAL_V4_FINGERPRINT = "fa7b3e8fc124cdef62387473b55da6bc04e343d384a108c6cd1d19a2dbeb69ce"
+FACTORIAL_V4_FINGERPRINT = "10e38358499b79829876752986492c6a69b3ab15ec7b6756e6ae7ad75b314193"
 
 
 @dataclass(frozen=True, slots=True)
