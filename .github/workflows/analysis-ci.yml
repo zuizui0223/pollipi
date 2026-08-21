@@ -31,3 +31,15 @@ jobs:
         run: python -m compileall -q packages/analysis/src
       - name: Run analysis tests
         run: pytest packages/analysis/ -q
+      - name: Print V2 visual benchmark ledger
+        run: |
+          python - <<'PY'
+          from pollipi_analysis.simulation.portable_visual_v2 import suite_fingerprint
+          from pollipi_analysis.simulation.visual_contradiction_v2 import run_visual_contradiction_v2
+          print("portable_visual_v2_sha256", suite_fingerprint())
+          for row in run_visual_contradiction_v2():
+              print(row.scenario_id, row.true_visit, row.pollipi_state, row.pollipi_reason,
+                    f"active={row.active_cell_proportion:.4f}",
+                    f"global={row.global_synchrony:.4f}",
+                    f"shift={row.estimated_global_shift:.3f}")
+          PY
