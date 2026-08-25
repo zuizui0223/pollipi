@@ -27,6 +27,7 @@ from pollipi_analysis.schemas import (
 )
 from pollipi_analysis.shadow import run_shadow_mode
 from pollipi_analysis.abtest import ABComparison, compare_policies
+from pollipi_analysis.target_evidence import TargetEvidenceRecord, to_target_evidence
 
 __version__ = "0.2.0"
 
@@ -44,6 +45,8 @@ __all__ = [
     "MeshDecision",
     "MeshFeatures",
     "ShadowDecisionRecord",
+    "TargetEvidenceRecord",
+    "to_target_evidence",
     "NO_ACTIVITY",
     "ENVIRONMENTAL_NOISE",
     "UNCERTAIN_LOCAL_ACTIVITY",
