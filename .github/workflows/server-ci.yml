@@ -30,6 +30,11 @@ on:
         required: false
         type: boolean
         default: false
+      real_camera_smoke:
+        description: "Require a physical Camera Module and validate real-camera TNOA Phase-A output"
+        required: false
+        type: boolean
+        default: false
       pi_target:
         description: "SSH target for Pi deployment (user@host), leave blank to skip"
         required: false
@@ -164,13 +169,14 @@ jobs:
     needs: ci
     if: github.event_name == 'workflow_dispatch' && inputs.run_pi_smoke
     runs-on: [self-hosted, linux, arm64, raspberry-pi]
-    continue-on-error: true
     timeout-minutes: 10
 
     env:
       SERVER_PORT: "8765"
       SERVER_HOST: "127.0.0.1"
       BUNDLE_PATH: "dist/pollipi_api_server.py"
+      POLLIPI_PROBE_INTERVAL_SEC: "1"
+      POLLIPI_LIVE_ADAPTIVE_ENABLED: "0"
 
     steps:
       - name: Checkout repository
@@ -185,10 +191,25 @@ jobs:
       - name: Confirm artifact present
         run: ls -lh dist/pollipi_api_server.py
 
-      - name: Check picamera2 availability
+      - name: Require physical camera for real-camera smoke
+        if: inputs.real_camera_smoke
         run: |
-          python3 -c "import picamera2; print('picamera2 OK')" \
-            || echo "picamera2 not available - using fake camera"
+          if systemctl is-active --quiet pollipi.service 2>/dev/null; then
+            echo "pollipi.service is active and may own the camera; refusing to stop a live service automatically."
+            echo "Stop the service intentionally, then rerun this manual smoke."
+            exit 2
+          fi
+          python3 - <<'PY'
+          from picamera2 import Picamera2
+          info = Picamera2.global_camera_info()
+          if not info:
+              raise SystemExit("No Raspberry Pi camera detected")
+          print("Detected camera(s):", info)
+          PY
+
+      - name: Report fake-camera smoke mode
+        if: ${{ !inputs.real_camera_smoke }}
+        run: echo "Running self-hosted Pi smoke with FakeCamera; set real_camera_smoke=true for physical sensor validation."
 
       - name: Install/verify uvicorn
         run: pip3 install --quiet "uvicorn[standard]>=0.30,<1.0"
@@ -202,7 +223,7 @@ jobs:
 
       - name: Start uvicorn server
         env:
-          POLLIPI_FAKE_CAMERA: "1"
+          POLLIPI_FAKE_CAMERA: ${{ inputs.real_camera_smoke && '0' || '1' }}
         run: |
           uvicorn --app-dir dist pollipi_api_server:app \
             --host "$SERVER_HOST" \
@@ -232,10 +253,10 @@ jobs:
         run: |
           curl -sf -X POST \
             -H "Content-Type: application/json" \
-            -d '{"interval_sec": 5, "auto_mode": false}' \
+            -d '{"interval_sec":5,"site_id":"pi-smoke-site","flower_id":"pi-smoke-flower","comparison_session_id":"tnoa-real-pi-smoke","camera_role":"primary","method_mode":"plain"}' \
             "http://${SERVER_HOST}:${SERVER_PORT}/start" | python3 -m json.tool
 
-      - name: Wait 8 s for at least one image to be captured
+      - name: Wait for multiple physical or fake probes
         run: sleep 8
 
       - name: "Smoke: GET /images"
@@ -243,6 +264,46 @@ jobs:
 
       - name: "Smoke: POST /stop"
         run: curl -sf -X POST "http://${SERVER_HOST}:${SERVER_PORT}/stop" | python3 -m json.tool
+
+      - name: Validate TNOA Phase-A smoke record
+        run: |
+          python3 - <<'PY'
+          import csv
+          import os
+          from pathlib import Path
+
+          image_dir = Path(os.environ["IMAGE_DIR"])
+          files = sorted(image_dir.glob("tnoa_observation_v1_*.csv"))
+          assert len(files) == 1, f"expected one TNOA log, found {len(files)}: {files}"
+          with files[0].open(newline="", encoding="utf-8") as handle:
+              rows = list(csv.DictReader(handle))
+          assert len(rows) >= 3, f"expected >=3 probe rows, got {len(rows)}"
+
+          for row in rows:
+              assert row["log_schema_version"] == "tnoa-observation-log-1"
+              assert row["schema_version"] == "tnoa-shadow-1"
+              assert row["calibration_status"] == "unavailable"
+              assert row["observation_state"] == "U"
+              assert row["would_be_action"] == "observe_only"
+              assert row["action_applied"] == "False"
+              assert row["target_calibrated_support"] == ""
+              assert row["nuisance_calibrated_support"] == ""
+              assert row["observability_calibrated_support"] == ""
+              assert row["coupled_calibrated_support"] == ""
+              assert row["absence_calibrated_support"] == ""
+              assert row["coupled_available"] == "False"
+              assert row["absence_available"] == "False"
+              assert row["site_id"] == "pi-smoke-site"
+              assert row["flower_id"] == "pi-smoke-flower"
+              assert row["comparison_session_id"] == "tnoa-real-pi-smoke"
+              assert row["camera_role"] == "primary"
+              assert row["method_mode"] == "plain"
+              assert row["observability_frame_available"] == "True"
+
+          timed = [r for r in rows if r["observability_actual_probe_interval_sec"]]
+          assert timed, "no measured probe interval was recorded"
+          print(f"TNOA Pi smoke OK: {len(rows)} rows, fail-closed U/observe_only, file={files[0].name}")
+          PY
 
       - name: Stop server
         if: always()
@@ -260,11 +321,11 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Upload captured images
+      - name: Upload Pi smoke record
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pi-captured-images
+          name: pi-tnoa-smoke-record
           path: ${{ env.IMAGE_DIR }}/
           retention-days: 7
           if-no-files-found: ignore
