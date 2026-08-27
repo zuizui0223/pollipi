@@ -21,6 +21,7 @@ from pollipi_analysis.schemas.states import (
     STRONG_VISITATION_CANDIDATE,
     UNCERTAIN_LOCAL_ACTIVITY,
 )
+from pollipi_analysis.tnoa_shadow import build_tnoa_shadow_record
 from visit_monitor_server.config import (
     ADAPTIVE_DECISION_LOG_FILENAME,
     CAMERA_LABEL,
@@ -37,6 +38,10 @@ from visit_monitor_server.config import (
     PROBE_INTERVAL_SEC,
     USE_FAKE_CAMERA,
     VIDEO_SIZE,
+)
+from visit_monitor_server.services.tnoa_shadow_log import (
+    tnoa_log_path,
+    write_tnoa_shadow_record,
 )
 
 if TYPE_CHECKING:
@@ -97,7 +102,7 @@ class _Picamera2Recorder:
         self._cam = picam2
         self._recording = False
 
-    def __getattr__(self, name):  # delegate all non-video methods to Picamera2
+    def __getattr__(self, name):
         return getattr(self._cam, name)
 
     def start_video_clip(self, path: str, *, fps: int = 30, bitrate: int = 6_000_000) -> None:
@@ -134,11 +139,7 @@ def _write_shadow_record(
     policy_meta=None,
     policy_profile=None,
 ) -> None:
-    """Append compact scheduled-image metadata.  No candidate-event image exists.
-
-    ``metrics_path`` / ``decision_log_path`` live under the active image dir so
-    the logs follow the photos when storage is redirected to external media.
-    """
+    """Append compact scheduled-image metadata.  No candidate-event image exists."""
     write_header = not metrics_path.exists()
     features = decision.features
     with metrics_path.open("a", newline="", encoding="utf-8") as handle:
@@ -207,11 +208,6 @@ def _write_shadow_record(
         ])
 
 
-# Per-run probe shadow log (data contract v2). A new file is created for each run
-# (adaptive_probe_shadow_v2_<run_id>.csv); the legacy mixed-schema v1 file is no
-# longer appended to. saved_image_filename / scheduled_highres_timestamp / run_id
-# give a robust join key, and applied_interval_sec / live_adaptive_active record
-# the interval actually used so "why 5 s" is traceable after the fact.
 PROBE_SHADOW_V2_SCHEMA = "probe-shadow-2"
 PROBE_SHADOW_V2_COLUMNS = [
     "schema_version",
@@ -259,12 +255,7 @@ def probe_log_path(image_dir: Path, run_id: str) -> Path:
 
 
 def live_adaptive_active(request, policy_profile) -> bool:
-    """Live adaptive timing applies only when ALL three gates are true:
-
-    POLLIPI_LIVE_ADAPTIVE_ENABLED=1 AND profile.live_allowed=true AND the
-    /start request set live_adaptive_requested=true. Otherwise capture timing is
-    the fixed scheduled interval (shadow-only) and this returns False.
-    """
+    """Live adaptive timing applies only when all three safety gates are true."""
     return bool(
         LIVE_ADAPTIVE_ENABLED
         and getattr(policy_profile, "live_allowed", False)
@@ -273,12 +264,6 @@ def live_adaptive_active(request, policy_profile) -> bool:
 
 
 def compute_next_due(last_highres_mono: Optional[float], desired_interval_sec: float, now_mono: float) -> float:
-    """Next high-res due time = last save + the *current* desired interval.
-
-    Recomputed every probe so a mode change (e.g. -> HIGH/5 s) takes effect on the
-    next probe instead of waiting out a previously scheduled longer interval.
-    The first frame (no prior save) is due immediately.
-    """
     if last_highres_mono is None:
         return now_mono
     return last_highres_mono + desired_interval_sec
@@ -312,7 +297,6 @@ def _write_probe_record_v2(
     evidence_previous_filename: str = "",
     evidence_current_filename: str = "",
 ) -> None:
-    """Append one row per low-resolution probe to the per-run v2 log."""
     write_header = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -359,36 +343,22 @@ def _write_probe_record_v2(
         ])
 
 
-# Shadow evidence: a local-candidate "event" is a contiguous run of probes whose
-# mesh decision is uncertain/strong. One previous+current lores pair is saved at the
-# START of each event (never on no_activity/environmental_noise, never per-probe).
 SHADOW_EVIDENCE_SUBDIR = "shadow_evidence"
 _CANDIDATE_STATES = frozenset({UNCERTAIN_LOCAL_ACTIVITY, STRONG_VISITATION_CANDIDATE})
 
 
 def _save_lores_jpeg(lores_array, path: Path) -> None:
-    """Save the luminance (Y) plane of a YUV420 lores probe as a small grayscale JPEG.
-
-    Evidence only — a low-resolution review aid kept apart from the scientific
-    high-resolution timelapse record. Never raises into the capture loop.
-    """
     import numpy as np
     from PIL import Image
 
     arr = np.asarray(lores_array)
-    y_rows = arr.shape[0] * 2 // 3  # YUV420: the Y plane is the top 2/3 of the rows
+    y_rows = arr.shape[0] * 2 // 3
     y_plane = np.clip(arr[:y_rows], 0, 255).astype("uint8")
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(y_plane, mode="L").save(str(path), format="JPEG", quality=80)
 
 
 def _record_clip(camera, camera_lock, clip_path, duration_sec, fps, stop_event) -> float:
-    """Record one video clip, polling stop_event; always finalize the file.
-
-    Returns the actual recorded duration. stop_video_clip runs in a finally so a
-    stop request or error mid-clip never leaves the encoder running or the file
-    unflushed. The camera_lock is held only to start/stop, not for the whole clip.
-    """
     start = time.monotonic()
     with camera_lock:
         camera.start_video_clip(str(clip_path), fps=fps)
@@ -412,11 +382,7 @@ def run_capture_loop(
     set_message,
     trainer=None,
 ) -> None:
-    """Run scheduled capture and shadow-mode mesh analysis.
-
-    ``trainer`` remains a no-op compatibility argument while older controller
-    construction code is being removed.  The active runtime does not use ML.
-    """
+    """Run scheduled capture, existing mesh shadow analysis and TNOA Phase-A logging."""
     del trainer
     camera = None
     previous_frame = None
@@ -425,33 +391,18 @@ def run_capture_loop(
 
     try:
         image_dir.mkdir(parents=True, exist_ok=True)
-        # Adaptive metadata logs live alongside the photos so they follow the
-        # active image dir when storage is redirected to external media.
         metrics_path = image_dir / METRICS_FILENAME
         decision_log_path = image_dir / ADAPTIVE_DECISION_LOG_FILENAME
 
-        # Issue #21: load the (simulation-informed) policy artifact + selected profile
-        # BEFORE configuring the camera, so a live video-HIGH run can pick the video
-        # configuration up front (no mid-run reconfiguration). The Pi only consumes
-        # numeric thresholds here — no simulation/search runs.
         from visit_monitor_server.services.policy_runtime import get_active_policy
 
         policy_config, policy_meta = get_active_policy()
         policy_profile = get_policy_profile(request.policy_profile_id)
 
-        # Issue #27 probe-only three-stage shadow. Two clocks:
-        #  - low-resolution probe every PROBE_INTERVAL_SEC (no JPEG saved),
-        #  - high-resolution JPEG on the fixed scheduled interval.
         hires_interval = float(request.interval_sec)
         probe_interval = min(PROBE_INTERVAL_SEC, hires_interval)
         three = create_policy_controller(policy_profile)
-
-        # Live adaptive timing applies only behind the three-gate guard. When it is
-        # off (the default) the high-res interval stays fixed (shadow-only).
         live_active = live_adaptive_active(request, policy_profile)
-        # In live modes both intervals are user-set: the normal interval (interval_sec)
-        # is LOW, and the high-frequency interval (fast_interval_sec, validated < normal)
-        # is MID. When fast is omitted the profile's mid_interval_sec stays the default.
         if live_active:
             fast = (
                 float(request.fast_interval_sec)
@@ -461,14 +412,12 @@ def run_capture_loop(
             three.config = replace(
                 three.config, low_interval_sec=hires_interval, mid_interval_sec=fast
             )
-        # Video clips need the video configuration (1080p main + lores probe). Only a
-        # live video-mode run switches to it; every other run keeps the original
-        # still configuration (full-resolution stills) unchanged.
         use_video_config = live_active and three.config.high_mode == "video"
 
         run_started = datetime.now().astimezone()
         run_id = f"{DEVICE_ID}_{run_started.strftime('%Y%m%dT%H%M%S')}"
         probe_log = probe_log_path(image_dir, run_id)
+        tnoa_log = tnoa_log_path(image_dir, run_id)
 
         with camera_lock:
             camera = _open_camera()
@@ -490,7 +439,7 @@ def run_capture_loop(
 
         if stop_event.wait(2):
             return
-        set_message("Scheduled timelapse running; mesh decisions are logged in shadow mode.")
+        set_message("Scheduled timelapse running; mesh and TNOA evidence are logged in shadow mode.")
 
         update_state({
             "probe_interval_sec": probe_interval,
@@ -503,18 +452,23 @@ def run_capture_loop(
             "live_adaptive_active": live_active,
             "interval_sec": three.config.low_interval_sec if live_active else hires_interval,
             "message": (
-                "Probe-only three-stage; LIVE adaptive interval active."
+                "Probe-only three-stage; LIVE adaptive interval active; TNOA remains shadow-only."
                 if live_active
-                else "Probe-only three-stage shadow; high-res capture fixed."
+                else "Probe-only three-stage + TNOA shadow; high-res capture fixed."
             ),
         })
 
-        last_highres_mono = None  # monotonic time of the last saved high-res frame
-        in_candidate_event = False  # currently inside an uncertain/strong run?
+        last_highres_mono = None
+        last_probe_mono = None
+        in_candidate_event = False
         evidence_event_counter = 0
 
         while not stop_event.is_set():
             now_mono = time.monotonic()
+            actual_probe_interval = (
+                None if last_probe_mono is None else max(0.0, now_mono - last_probe_mono)
+            )
+            last_probe_mono = now_mono
             captured_at = datetime.now().astimezone()
 
             with camera_lock:
@@ -537,14 +491,19 @@ def run_capture_loop(
                 previous_active_cells = set(decision.active_cells)
                 if decision.features.centroid_x is not None and decision.features.centroid_y is not None:
                     previous_centroid = (decision.features.centroid_x, decision.features.centroid_y)
-            prior_lores = previous_frame  # the immediately previous probe frame
+            prior_lores = previous_frame
             previous_frame = frame
+
+            tnoa_record = build_tnoa_shadow_record(
+                decision,
+                frame,
+                expected_probe_interval_sec=probe_interval,
+                actual_probe_interval_sec=actual_probe_interval,
+                frame_format="YUV420",
+            )
 
             out = three.step(decision_state, now_mono)
 
-            # Shadow evidence: on ENTERING a local-candidate event (uncertain/strong),
-            # save the previous + current lores frames once. No saves on
-            # no_activity/environmental_noise, and none while the event continues.
             evidence_event_id = ""
             evidence_previous_filename = ""
             evidence_current_filename = ""
@@ -560,11 +519,9 @@ def run_capture_loop(
                     evidence_previous_filename = prev_rel
                     evidence_current_filename = curr_rel
                 except Exception:
-                    evidence_event_id = ""  # evidence is best-effort; never break capture
+                    evidence_event_id = ""
             in_candidate_event = is_candidate
 
-            # Desired high-res interval: the three-stage interval when live adaptive
-            # is active, otherwise the fixed scheduled interval.
             desired_interval = out.interval_sec if live_active else hires_interval
 
             record_kind = "image"
@@ -578,7 +535,6 @@ def run_capture_loop(
             scheduled_highres_timestamp = ""
 
             if use_video_config and out.trigger_video:
-                # HIGH = one video clip; no still this probe ("動画中は静止画不要").
                 clip_name = captured_at.strftime("clip_%Y%m%d_%H%M%S_") + run_id + ".mp4"
                 clip_path = image_dir / clip_name
                 video_started_at = captured_at.isoformat(timespec="seconds")
@@ -586,8 +542,6 @@ def run_capture_loop(
                     camera, camera_lock, clip_path,
                     three.config.video_duration_sec, three.config.video_fps, stop_event,
                 )
-                # The clip is the HIGH record; reset the still schedule so MID stills
-                # resume relative to the clip's end, not the moment it started.
                 last_highres_mono = time.monotonic()
                 record_kind = "video"
                 video_filename = clip_name
@@ -600,12 +554,6 @@ def run_capture_loop(
                     "last_image": str(clip_path),
                 })
             else:
-                # Re-derive the next high-res due time every probe from the last save
-                # plus the current desired interval, so a mode change shortens the very
-                # next capture instead of waiting out the old interval. When live
-                # adaptive is active, capture-on-escalation (out.force_capture) also
-                # grabs a still the instant the mode rises, so a short visit's entry is
-                # not missed; in shadow the fixed interval is left unchanged.
                 due_mono = compute_next_due(last_highres_mono, desired_interval, now_mono)
                 if now_mono >= due_mono or (live_active and out.force_capture):
                     filename = captured_at.strftime("image_%Y%m%d_%H%M%S_%f.jpg")
@@ -649,6 +597,24 @@ def run_capture_loop(
                 evidence_previous_filename=evidence_previous_filename,
                 evidence_current_filename=evidence_current_filename,
             )
+            write_tnoa_shadow_record(
+                tnoa_log,
+                run_id=run_id,
+                probe_at=captured_at,
+                record=tnoa_record,
+                device_id=DEVICE_ID,
+                device_name=DEVICE_NAME,
+                pollipi_decision_state=decision_state,
+                pollipi_decision_reason=decision_reason,
+                record_kind=record_kind,
+                saved_image_filename=saved_image_filename,
+                video_filename=video_filename,
+                evidence_event_id=evidence_event_id,
+                evidence_previous_filename=evidence_previous_filename,
+                evidence_current_filename=evidence_current_filename,
+                policy_profile_id=policy_profile.profile_id,
+                simulation_run_id=policy_profile.simulation_run_id,
+            )
 
             mesh_state = {
                 "mesh_decision": decision_state,
@@ -658,7 +624,7 @@ def run_capture_loop(
                 "mesh_global_synchrony": decision.features.global_synchrony if decision else 0.0,
             }
             update_state({
-                "interval_sec": desired_interval,  # interval actually applied to the schedule
+                "interval_sec": desired_interval,
                 "next_interval_sec": desired_interval,
                 "would_be_mode": out.mode,
                 "would_be_interval_sec": out.interval_sec,
@@ -668,18 +634,18 @@ def run_capture_loop(
                 "kind": policy_profile.kind,
                 "live_allowed": policy_profile.live_allowed,
                 "interval_reason": (
-                    f"LIVE adaptive: mode {out.mode} -> {desired_interval:.0f}s; {decision_reason}."
+                    f"LIVE adaptive: mode {out.mode} -> {desired_interval:.0f}s; {decision_reason}; "
+                    "TNOA shadow does not control capture."
                     if live_active
                     else (
                         f"Probe shadow: would-be {out.mode} ({out.interval_sec:.0f}s); "
-                        f"{decision_reason}; high-res fixed at {hires_interval:.0f}s."
+                        f"{decision_reason}; high-res fixed at {hires_interval:.0f}s; "
+                        "TNOA=U pending field calibration."
                     )
                 ),
                 **mesh_state,
             })
 
-            # The probe cadence governs the loop; high-res timing follows
-            # desired_interval (fixed unless the live-adaptive guard is satisfied).
             if stop_event.wait(probe_interval):
                 break
 
