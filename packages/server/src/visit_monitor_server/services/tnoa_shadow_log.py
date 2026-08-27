@@ -8,12 +8,20 @@ from pathlib import Path
 from pollipi_analysis.tnoa_shadow import TNOAShadowRecord
 
 TNOA_SHADOW_PREFIX = "tnoa_observation_v1"
+LOG_SCHEMA_VERSION = "tnoa-observation-log-1"
 
 META_COLUMNS = [
+    "log_schema_version",
     "run_id",
     "probe_timestamp",
     "device_id",
     "device_name",
+    "site_id",
+    "flower_id",
+    "plant_species",
+    "comparison_session_id",
+    "camera_role",
+    "method_mode",
     "pollipi_decision_state",
     "pollipi_decision_reason",
     "record_kind",
@@ -39,6 +47,12 @@ def write_tnoa_shadow_record(
     record: TNOAShadowRecord,
     device_id: str,
     device_name: str,
+    site_id: str = "",
+    flower_id: str = "",
+    plant_species: str = "",
+    comparison_session_id: str = "",
+    camera_role: str = "",
+    method_mode: str = "",
     pollipi_decision_state: str,
     pollipi_decision_reason: str,
     record_kind: str = "image",
@@ -53,10 +67,17 @@ def write_tnoa_shadow_record(
     """Append one T/C/N/O/A- shadow record without changing capture behaviour."""
     flat = record.flat()
     row = {
+        "log_schema_version": LOG_SCHEMA_VERSION,
         "run_id": run_id,
         "probe_timestamp": probe_at.isoformat(timespec="seconds"),
         "device_id": device_id,
         "device_name": device_name,
+        "site_id": site_id,
+        "flower_id": flower_id,
+        "plant_species": plant_species,
+        "comparison_session_id": comparison_session_id,
+        "camera_role": camera_role,
+        "method_mode": method_mode,
         "pollipi_decision_state": pollipi_decision_state,
         "pollipi_decision_reason": pollipi_decision_reason,
         "record_kind": record_kind,

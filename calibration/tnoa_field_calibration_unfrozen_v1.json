@@ -1,0 +1,45 @@
+{
+  "schema": "tnoa-field-calibration-manifest-v1",
+  "status": "unfrozen_predata",
+  "source_observation_schema": "tnoa-shadow-1",
+  "source_log_schema": "tnoa-observation-log-1",
+  "truth_annotation_schema": "tnoa-independent-truth-1",
+  "independent_reference_truth_required": true,
+  "split_group": ["recording_day", "focal_scene_id", "recording_block"],
+  "minimum_double_annotation_fraction": 0.2,
+  "target": {
+    "high_threshold": null,
+    "low_threshold": null,
+    "operational_error_criterion": null
+  },
+  "nuisance": {
+    "familywise_false_attribution_alpha": null,
+    "families": [
+      "wind_target_motion",
+      "camera_shake",
+      "moving_shadow",
+      "illumination_change",
+      "occlusion",
+      "blur",
+      "non_target_actor",
+      "other_exogenous"
+    ]
+  },
+  "observability": {
+    "support_rule": null,
+    "observable_thresholds": null,
+    "unobservable_thresholds": null
+  },
+  "coupled": {
+    "response_threshold": null,
+    "target_link_threshold": null,
+    "enabled_for_target_rescue": false
+  },
+  "target_absence": {
+    "channel_status": "unavailable",
+    "rule": null
+  },
+  "heldout_scoring_allowed": false,
+  "live_tnoa_capture_actions_allowed": false,
+  "note": "Numeric field thresholds and claim criteria must be frozen only after development/calibration data and before held-out scoring. V14b synthetic thresholds are not field defaults."
+}
