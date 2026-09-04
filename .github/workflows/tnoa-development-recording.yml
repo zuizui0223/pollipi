@@ -8,11 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       collection_id:
-        description: 'Prospective collection ID (must be assigned before recording)'
+        description: 'Prospective collection ID (letters/numbers/._- only)'
         required: true
         type: string
       prospective_role:
-        description: 'Development role; heldout is intentionally not available here'
+        description: 'Development role; heldout is intentionally unavailable here'
         required: true
         type: choice
         options:
@@ -28,7 +28,7 @@ on:
         required: true
         type: string
       flower_id:
-        description: 'Focal flower/scene object identifier'
+        description: 'Focal flower/object identifier'
         required: true
         type: string
       plant_species:
@@ -37,33 +37,33 @@ on:
         type: string
         default: ''
       focal_scene_id:
-        description: 'Focal scene identifier used in grouped split'
+        description: 'Focal scene identifier for grouped split'
         required: true
         type: string
       recording_block:
-        description: 'Recording block identifier used in grouped split'
+        description: 'Recording block identifier for grouped split'
         required: true
         type: string
       comparison_session_id:
-        description: 'Comparison session identifier written into every Pi row'
+        description: 'Comparison session ID written into each Phase-A row'
         required: true
         type: string
       reference_source_id:
-        description: 'Independent reference camera/source identifier'
+        description: 'Independent reference camera/source ID'
         required: true
         type: string
       reference_ready:
-        description: 'Confirm the independent reference channel is physically ready before primary recording starts'
+        description: 'Confirm independent reference channel is physically ready before primary recording'
         required: true
         type: boolean
         default: false
       duration_seconds:
-        description: 'Primary development recording duration in seconds (10-3600)'
+        description: 'Primary recording duration, 10-3600 seconds'
         required: true
         type: number
         default: 300
       capture_interval_sec:
-        description: 'Scheduled high-resolution capture interval in seconds (>=1)'
+        description: 'Scheduled high-resolution capture interval, >=1 second'
         required: true
         type: number
         default: 5
@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Confirm workflow remains development-only
+      - name: Confirm workflow remains development-only and fail-closed
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -87,14 +87,15 @@ jobs:
           assert '- development' in text
           assert '- calibration' in text
           assert '- heldout' not in text
-          assert 'POLLIPI_LIVE_ADAPTIVE_ENABLED: "0"' in text
-          assert "POLLIPI_FAKE_CAMERA: '0'" in text or 'POLLIPI_FAKE_CAMERA: "0"' in text
-          assert 'independent_reference_recorded' in text
+          assert "POLLIPI_LIVE_ADAPTIVE_ENABLED: '0'" in text
+          assert "POLLIPI_FAKE_CAMERA: '0'" in text
+          assert "independent_reference_recorded': False" in text
+          assert 'retention-days: 90' in text
           print('Development-only workflow contract OK')
           PY
 
   build:
-    name: Build pinned server bundle
+    name: Build server bundle
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -107,7 +108,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e 'packages/analysis'
           pip install -e 'packages/server'
-      - name: Build single-file server
+      - name: Build and hash single-file server
         run: |
           mkdir -p dist
           python -m visit_monitor_server.distribution.bundle_single_file \
@@ -135,18 +136,30 @@ jobs:
       POLLIPI_PROBE_INTERVAL_SEC: '1'
       POLLIPI_LIVE_ADAPTIVE_ENABLED: '0'
       POLLIPI_FAKE_CAMERA: '0'
+      IMAGE_DIR: /tmp/pollipi-tnoa-development-${{ github.run_id }}
+      POLLIPI_IMAGE_DIR: /tmp/pollipi-tnoa-development-${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare safe artifact directory
+        run: |
+          rm -rf "$IMAGE_DIR"
+          mkdir -p "$IMAGE_DIR"
+          echo "Development collection directory: $IMAGE_DIR"
+
       - name: Validate prospective inputs before touching camera
         env:
+          COLLECTION_ID: ${{ inputs.collection_id }}
           REFERENCE_READY: ${{ inputs.reference_ready }}
           DURATION_SECONDS: ${{ inputs.duration_seconds }}
           CAPTURE_INTERVAL_SEC: ${{ inputs.capture_interval_sec }}
           RECORDING_DAY: ${{ inputs.recording_day }}
         run: |
           python3 - <<'PY'
-          import datetime, os
+          import datetime, os, re
+          cid = os.environ['COLLECTION_ID']
+          if not re.fullmatch(r'[A-Za-z0-9._-]+', cid):
+              raise SystemExit('collection_id must match [A-Za-z0-9._-]+')
           if os.environ['REFERENCE_READY'].lower() != 'true':
               raise SystemExit('Independent reference channel must be confirmed ready before primary recording')
           duration = float(os.environ['DURATION_SECONDS'])
@@ -187,13 +200,6 @@ jobs:
           cd dist
           sha256sum -c pollipi_api_server.sha256
 
-      - name: Prepare isolated collection directory
-        run: |
-          IMAGE_DIR=$(mktemp -d)
-          echo "IMAGE_DIR=$IMAGE_DIR" >> "$GITHUB_ENV"
-          echo "POLLIPI_IMAGE_DIR=$IMAGE_DIR" >> "$GITHUB_ENV"
-          echo "Development collection directory: $IMAGE_DIR"
-
       - name: Start physical-camera server fail-closed
         run: |
           uvicorn --app-dir dist pollipi_api_server:app \
@@ -230,7 +236,8 @@ jobs:
           python3 - <<'PY'
           import json, os
           from pathlib import Path
-          device = json.loads((Path(os.environ['IMAGE_DIR']) / 'device_before_recording.json').read_text())
+          root = Path(os.environ['IMAGE_DIR'])
+          device = json.loads((root / 'device_before_recording.json').read_text())
           manifest = {
               'schema': 'rec-pollipi-development-collection-v1',
               'collection_id': os.environ['COLLECTION_ID'],
@@ -249,14 +256,14 @@ jobs:
               'comparison_session_id': os.environ['COMPARISON_SESSION_ID'],
               'pollipi_source_commit': os.environ['GITHUB_SHA'],
               'github_workflow_run_id': os.environ['GITHUB_RUN_ID'],
-              'governance_note': 'independent_reference_recorded stays false until the operator verifies the synchronized reference material was actually archived',
+              'governance_note': 'independent_reference_recorded stays false until synchronized reference material is verified and archived by the operator',
           }
-          out = Path(os.environ['IMAGE_DIR']) / 'rec_pollipi_collection_manifest.json'
+          out = root / 'rec_pollipi_collection_manifest.json'
           out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
           print(out.read_text())
           PY
 
-      - name: Create and start frozen development capture request
+      - name: Create frozen development capture request
         env:
           SITE_ID: ${{ inputs.site_id }}
           FLOWER_ID: ${{ inputs.flower_id }}
@@ -294,12 +301,15 @@ jobs:
               json.dump(payload, fh)
           PY
           cat /tmp/tnoa_development_start.json
+
+      - name: Start prospectively designated primary recording
+        run: |
           curl -sf -X POST \
             -H 'Content-Type: application/json' \
             --data-binary @/tmp/tnoa_development_start.json \
             "http://${SERVER_HOST}:${SERVER_PORT}/start" | tee "$IMAGE_DIR/start_response.json"
 
-      - name: Record prospectively designated primary stream
+      - name: Record fixed development duration
         run: sleep "${{ inputs.duration_seconds }}"
 
       - name: Stop capture cleanly
@@ -356,25 +366,26 @@ jobs:
           print(json.dumps(summary, indent=2, sort_keys=True))
           PY
 
-      - name: Freeze artifact inventory
-        if: always()
-        run: |
-          cp /tmp/pollipi_tnoa_development_server.log "$IMAGE_DIR/server.log" 2>/dev/null || true
-          find "$IMAGE_DIR" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/tnoa_development_artifact_sha256.txt
-          mv /tmp/tnoa_development_artifact_sha256.txt "$IMAGE_DIR/artifact_sha256.txt"
-
       - name: Stop server
         if: always()
         run: |
-          if [ -n "$SERVER_PID" ]; then
+          if [ -n "${SERVER_PID:-}" ]; then
             kill "$SERVER_PID" 2>/dev/null || true
           fi
+
+      - name: Freeze safe artifact inventory
+        if: always()
+        run: |
+          mkdir -p "$IMAGE_DIR"
+          cp /tmp/pollipi_tnoa_development_server.log "$IMAGE_DIR/server.log" 2>/dev/null || true
+          find "$IMAGE_DIR" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/tnoa_development_artifact_sha256.txt
+          mv /tmp/tnoa_development_artifact_sha256.txt "$IMAGE_DIR/artifact_sha256.txt"
 
       - name: Upload prospective development artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tnoa-development-${{ inputs.collection_id }}
+          name: tnoa-development-${{ github.run_id }}
           path: ${{ env.IMAGE_DIR }}/
           retention-days: 90
           if-no-files-found: error
