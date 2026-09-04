@@ -1,0 +1,380 @@
+name: TNOA Phase-A Development Recording
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/tnoa-development-recording.yml'
+      - 'docs/TNOA_DEVELOPMENT_RECORDING.md'
+  workflow_dispatch:
+    inputs:
+      collection_id:
+        description: 'Prospective collection ID (must be assigned before recording)'
+        required: true
+        type: string
+      prospective_role:
+        description: 'Development role; heldout is intentionally not available here'
+        required: true
+        type: choice
+        options:
+          - development
+          - calibration
+        default: development
+      recording_day:
+        description: 'Recording day YYYY-MM-DD'
+        required: true
+        type: string
+      site_id:
+        description: 'Site identifier'
+        required: true
+        type: string
+      flower_id:
+        description: 'Focal flower/scene object identifier'
+        required: true
+        type: string
+      plant_species:
+        description: 'Plant species label (optional)'
+        required: false
+        type: string
+        default: ''
+      focal_scene_id:
+        description: 'Focal scene identifier used in grouped split'
+        required: true
+        type: string
+      recording_block:
+        description: 'Recording block identifier used in grouped split'
+        required: true
+        type: string
+      comparison_session_id:
+        description: 'Comparison session identifier written into every Pi row'
+        required: true
+        type: string
+      reference_source_id:
+        description: 'Independent reference camera/source identifier'
+        required: true
+        type: string
+      reference_ready:
+        description: 'Confirm the independent reference channel is physically ready before primary recording starts'
+        required: true
+        type: boolean
+        default: false
+      duration_seconds:
+        description: 'Primary development recording duration in seconds (10-3600)'
+        required: true
+        type: number
+        default: 300
+      capture_interval_sec:
+        description: 'Scheduled high-resolution capture interval in seconds (>=1)'
+        required: true
+        type: number
+        default: 5
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Development workflow contract
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm workflow remains development-only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/tnoa-development-recording.yml').read_text()
+          assert 'prospective_role:' in text
+          assert '- development' in text
+          assert '- calibration' in text
+          assert '- heldout' not in text
+          assert 'POLLIPI_LIVE_ADAPTIVE_ENABLED: "0"' in text
+          assert "POLLIPI_FAKE_CAMERA: '0'" in text or 'POLLIPI_FAKE_CAMERA: "0"' in text
+          assert 'independent_reference_recorded' in text
+          print('Development-only workflow contract OK')
+          PY
+
+  build:
+    name: Build pinned server bundle
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install bundle dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e 'packages/analysis'
+          pip install -e 'packages/server'
+      - name: Build single-file server
+        run: |
+          mkdir -p dist
+          python -m visit_monitor_server.distribution.bundle_single_file \
+            --output dist/pollipi_api_server.py
+          python -m py_compile dist/pollipi_api_server.py
+          sha256sum dist/pollipi_api_server.py > dist/pollipi_api_server.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tnoa-development-server-bundle
+          path: |
+            dist/pollipi_api_server.py
+            dist/pollipi_api_server.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+  record:
+    name: Physical Pi prospective development recording
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: [self-hosted, linux, arm64, raspberry-pi]
+    timeout-minutes: 90
+    env:
+      SERVER_HOST: '127.0.0.1'
+      SERVER_PORT: '8766'
+      POLLIPI_PROBE_INTERVAL_SEC: '1'
+      POLLIPI_LIVE_ADAPTIVE_ENABLED: '0'
+      POLLIPI_FAKE_CAMERA: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate prospective inputs before touching camera
+        env:
+          REFERENCE_READY: ${{ inputs.reference_ready }}
+          DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          CAPTURE_INTERVAL_SEC: ${{ inputs.capture_interval_sec }}
+          RECORDING_DAY: ${{ inputs.recording_day }}
+        run: |
+          python3 - <<'PY'
+          import datetime, os
+          if os.environ['REFERENCE_READY'].lower() != 'true':
+              raise SystemExit('Independent reference channel must be confirmed ready before primary recording')
+          duration = float(os.environ['DURATION_SECONDS'])
+          interval = float(os.environ['CAPTURE_INTERVAL_SEC'])
+          if not (10 <= duration <= 3600):
+              raise SystemExit('duration_seconds must be between 10 and 3600')
+          if interval < 1:
+              raise SystemExit('capture_interval_sec must be >=1')
+          datetime.date.fromisoformat(os.environ['RECORDING_DAY'])
+          print('Prospective inputs valid')
+          PY
+
+      - name: Refuse to interrupt live field service
+        run: |
+          if systemctl is-active --quiet pollipi.service 2>/dev/null; then
+            echo 'pollipi.service is active; refusing to stop an ongoing field service automatically.'
+            echo 'Use a designated development Pi or intentionally stop the service before rerunning.'
+            exit 2
+          fi
+
+      - name: Require physical Camera Module
+        run: |
+          python3 - <<'PY'
+          from picamera2 import Picamera2
+          info = Picamera2.global_camera_info()
+          if not info:
+              raise SystemExit('No physical Raspberry Pi camera detected')
+          print('Detected physical camera(s):', info)
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tnoa-development-server-bundle
+          path: dist/
+
+      - name: Verify server bundle integrity
+        run: |
+          cd dist
+          sha256sum -c pollipi_api_server.sha256
+
+      - name: Prepare isolated collection directory
+        run: |
+          IMAGE_DIR=$(mktemp -d)
+          echo "IMAGE_DIR=$IMAGE_DIR" >> "$GITHUB_ENV"
+          echo "POLLIPI_IMAGE_DIR=$IMAGE_DIR" >> "$GITHUB_ENV"
+          echo "Development collection directory: $IMAGE_DIR"
+
+      - name: Start physical-camera server fail-closed
+        run: |
+          uvicorn --app-dir dist pollipi_api_server:app \
+            --host "$SERVER_HOST" \
+            --port "$SERVER_PORT" \
+            --log-level info \
+            > /tmp/pollipi_tnoa_development_server.log 2>&1 &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf "http://${SERVER_HOST}:${SERVER_PORT}/device" > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/pollipi_tnoa_development_server.log || true
+          exit 1
+
+      - name: Freeze collection sidecar before capture starts
+        env:
+          COLLECTION_ID: ${{ inputs.collection_id }}
+          PROSPECTIVE_ROLE: ${{ inputs.prospective_role }}
+          RECORDING_DAY: ${{ inputs.recording_day }}
+          SITE_ID: ${{ inputs.site_id }}
+          FLOWER_ID: ${{ inputs.flower_id }}
+          FOCAL_SCENE_ID: ${{ inputs.focal_scene_id }}
+          RECORDING_BLOCK: ${{ inputs.recording_block }}
+          COMPARISON_SESSION_ID: ${{ inputs.comparison_session_id }}
+          REFERENCE_SOURCE_ID: ${{ inputs.reference_source_id }}
+        run: |
+          curl -sf "http://${SERVER_HOST}:${SERVER_PORT}/device" > "$IMAGE_DIR/device_before_recording.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          device = json.loads((Path(os.environ['IMAGE_DIR']) / 'device_before_recording.json').read_text())
+          manifest = {
+              'schema': 'rec-pollipi-development-collection-v1',
+              'collection_id': os.environ['COLLECTION_ID'],
+              'prospective_role': os.environ['PROSPECTIVE_ROLE'],
+              'recording_day': os.environ['RECORDING_DAY'],
+              'focal_scene_id': os.environ['FOCAL_SCENE_ID'],
+              'recording_block': os.environ['RECORDING_BLOCK'],
+              'reference_source_id': os.environ['REFERENCE_SOURCE_ID'],
+              'independent_reference_expected': True,
+              'independent_reference_recorded': False,
+              'reference_ready_confirmed_before_primary': True,
+              'primary_device_id': device['device_id'],
+              'primary_device_name': device['device_name'],
+              'site_id': os.environ['SITE_ID'],
+              'flower_id': os.environ['FLOWER_ID'],
+              'comparison_session_id': os.environ['COMPARISON_SESSION_ID'],
+              'pollipi_source_commit': os.environ['GITHUB_SHA'],
+              'github_workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'governance_note': 'independent_reference_recorded stays false until the operator verifies the synchronized reference material was actually archived',
+          }
+          out = Path(os.environ['IMAGE_DIR']) / 'rec_pollipi_collection_manifest.json'
+          out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
+          print(out.read_text())
+          PY
+
+      - name: Create and start frozen development capture request
+        env:
+          SITE_ID: ${{ inputs.site_id }}
+          FLOWER_ID: ${{ inputs.flower_id }}
+          PLANT_SPECIES: ${{ inputs.plant_species }}
+          COMPARISON_SESSION_ID: ${{ inputs.comparison_session_id }}
+          FOCAL_SCENE_ID: ${{ inputs.focal_scene_id }}
+          RECORDING_BLOCK: ${{ inputs.recording_block }}
+          REFERENCE_SOURCE_ID: ${{ inputs.reference_source_id }}
+          COLLECTION_ID: ${{ inputs.collection_id }}
+          PROSPECTIVE_ROLE: ${{ inputs.prospective_role }}
+          CAPTURE_INTERVAL_SEC: ${{ inputs.capture_interval_sec }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          payload = {
+              'interval_sec': float(os.environ['CAPTURE_INTERVAL_SEC']),
+              'autonomous_mode': False,
+              'adaptive_timelapse_mode': False,
+              'mesh_shadow_mode': True,
+              'site_id': os.environ['SITE_ID'],
+              'flower_id': os.environ['FLOWER_ID'],
+              'plant_species': os.environ['PLANT_SPECIES'] or None,
+              'observer': 'github-actions-tnoa-development',
+              'notes': (
+                  f"REC-H6 {os.environ['PROSPECTIVE_ROLE']} collection={os.environ['COLLECTION_ID']} "
+                  f"scene={os.environ['FOCAL_SCENE_ID']} block={os.environ['RECORDING_BLOCK']} "
+                  f"reference={os.environ['REFERENCE_SOURCE_ID']}"
+              ),
+              'comparison_session_id': os.environ['COMPARISON_SESSION_ID'],
+              'camera_role': 'primary',
+              'method_mode': 'plain',
+              'live_adaptive_requested': False,
+          }
+          with open('/tmp/tnoa_development_start.json', 'w') as fh:
+              json.dump(payload, fh)
+          PY
+          cat /tmp/tnoa_development_start.json
+          curl -sf -X POST \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/tnoa_development_start.json \
+            "http://${SERVER_HOST}:${SERVER_PORT}/start" | tee "$IMAGE_DIR/start_response.json"
+
+      - name: Record prospectively designated primary stream
+        run: sleep "${{ inputs.duration_seconds }}"
+
+      - name: Stop capture cleanly
+        run: |
+          curl -sf -X POST "http://${SERVER_HOST}:${SERVER_PORT}/stop" | tee "$IMAGE_DIR/stop_response.json"
+          curl -sf "http://${SERVER_HOST}:${SERVER_PORT}/status" > "$IMAGE_DIR/status_after_recording.json"
+
+      - name: Validate Phase-A physical development record
+        run: |
+          python3 - <<'PY'
+          import csv, json, os
+          from pathlib import Path
+          root = Path(os.environ['IMAGE_DIR'])
+          manifest = json.loads((root / 'rec_pollipi_collection_manifest.json').read_text())
+          files = sorted(root.glob('tnoa_observation_v1_*.csv'))
+          assert len(files) == 1, f'expected one TNOA Phase-A log, found {files}'
+          with files[0].open(newline='', encoding='utf-8') as fh:
+              rows = list(csv.DictReader(fh))
+          assert len(rows) >= 3, f'expected >=3 probes, got {len(rows)}'
+          for row in rows:
+              assert row['log_schema_version'] == 'tnoa-observation-log-1'
+              assert row['schema_version'] == 'tnoa-shadow-1'
+              assert row['calibration_status'] == 'unavailable'
+              assert row['observation_state'] == 'U'
+              assert row['would_be_action'] == 'observe_only'
+              assert row['action_applied'] == 'False'
+              assert not row['target_calibrated_support']
+              assert not row['nuisance_calibrated_support']
+              assert not row['observability_calibrated_support']
+              assert not row['coupled_calibrated_support']
+              assert not row['absence_calibrated_support']
+              assert row['observability_frame_available'] == 'True'
+              assert row['observability_actual_probe_interval_sec']
+              assert row['device_id'] == manifest['primary_device_id']
+              assert row['site_id'] == manifest['site_id']
+              assert row['flower_id'] == manifest['flower_id']
+              assert row['comparison_session_id'] == manifest['comparison_session_id']
+              assert row['camera_role'] == 'primary'
+              assert row['method_mode'] == 'plain'
+          summary = {
+              'schema': 'pollipi-tnoa-development-recording-summary-v1',
+              'collection_id': manifest['collection_id'],
+              'prospective_role': manifest['prospective_role'],
+              'phase_a_file': files[0].name,
+              'probe_rows': len(rows),
+              'independent_reference_expected': True,
+              'independent_reference_recorded': False,
+              'phase_b_truth_preparation_allowed': False,
+              'reason': 'operator must verify and archive synchronized independent reference material first',
+          }
+          (root / 'development_recording_summary.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Freeze artifact inventory
+        if: always()
+        run: |
+          cp /tmp/pollipi_tnoa_development_server.log "$IMAGE_DIR/server.log" 2>/dev/null || true
+          find "$IMAGE_DIR" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/tnoa_development_artifact_sha256.txt
+          mv /tmp/tnoa_development_artifact_sha256.txt "$IMAGE_DIR/artifact_sha256.txt"
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then
+            kill "$SERVER_PID" 2>/dev/null || true
+          fi
+
+      - name: Upload prospective development artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnoa-development-${{ inputs.collection_id }}
+          path: ${{ env.IMAGE_DIR }}/
+          retention-days: 90
+          if-no-files-found: error
