@@ -1,0 +1,56 @@
+name: latent-disturbance-v3-temporal-robustness
+
+on:
+  push:
+    branches:
+      - feature/latent-disturbance-v3-temporal-subspace
+    paths:
+      - "packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v3_robustness.py"
+      - "packages/analysis/tests/test_latent_disturbance_v3_robustness.py"
+      - "docs/LATENT_DISTURBANCE_V3_TEMPORAL_ROBUSTNESS.md"
+      - ".github/workflows/latent-disturbance-v3-robustness.yml"
+  pull_request:
+    paths:
+      - "packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v3_robustness.py"
+      - "packages/analysis/tests/test_latent_disturbance_v3_robustness.py"
+      - "docs/LATENT_DISTURBANCE_V3_TEMPORAL_ROBUSTNESS.md"
+      - ".github/workflows/latent-disturbance-v3-robustness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  robustness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install analysis package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "packages/analysis[dev]"
+      - name: Compile robustness module
+        run: python -m py_compile packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v3_robustness.py
+      - name: Run robustness invariant tests
+        run: pytest packages/analysis/tests/test_latent_disturbance_v3_robustness.py -q
+      - name: Run frozen 48-replicate robustness benchmark
+        run: |
+          python -m pollipi_analysis.simulation.latent_disturbance_v3_robustness \
+            --n-reps 48 \
+            --seed 20260905 \
+            --output latent_disturbance_v3_temporal_robustness.json \
+            > stdout.txt
+      - name: Write result digest
+        run: sha256sum latent_disturbance_v3_temporal_robustness.json > artifact_sha256.txt
+      - name: Upload robustness artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-disturbance-v3-temporal-robustness-result
+          path: |
+            latent_disturbance_v3_temporal_robustness.json
+            stdout.txt
+            artifact_sha256.txt
+          retention-days: 30
