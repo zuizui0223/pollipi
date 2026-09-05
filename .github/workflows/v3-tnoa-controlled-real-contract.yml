@@ -5,7 +5,10 @@ on:
     paths:
       - "docs/V3_TNOA_CONTROLLED_REAL_BENCHMARK.md"
       - "packages/analysis/src/pollipi_analysis/controlled_real_v3_tnoa.py"
+      - "packages/analysis/src/pollipi_analysis/controlled_real_plan.py"
       - "packages/analysis/tests/test_controlled_real_v3_tnoa.py"
+      - "packages/analysis/tests/test_controlled_real_plan.py"
+      - "tools/v3_tnoa_make_controlled_plan.py"
       - ".github/workflows/v3-tnoa-controlled-real-contract.yml"
   push:
     branches:
@@ -13,7 +16,10 @@ on:
     paths:
       - "docs/V3_TNOA_CONTROLLED_REAL_BENCHMARK.md"
       - "packages/analysis/src/pollipi_analysis/controlled_real_v3_tnoa.py"
+      - "packages/analysis/src/pollipi_analysis/controlled_real_plan.py"
       - "packages/analysis/tests/test_controlled_real_v3_tnoa.py"
+      - "packages/analysis/tests/test_controlled_real_plan.py"
+      - "tools/v3_tnoa_make_controlled_plan.py"
       - ".github/workflows/v3-tnoa-controlled-real-contract.yml"
 
 jobs:
@@ -26,5 +32,8 @@ jobs:
           python-version: "3.11"
       - name: Install analysis package
         run: python -m pip install -e 'packages/analysis[dev]'
-      - name: Run controlled-real contract tests
-        run: python -m pytest -q packages/analysis/tests/test_controlled_real_v3_tnoa.py
+      - name: Run controlled-real contract and planner tests
+        run: >-
+          python -m pytest -q
+          packages/analysis/tests/test_controlled_real_v3_tnoa.py
+          packages/analysis/tests/test_controlled_real_plan.py
