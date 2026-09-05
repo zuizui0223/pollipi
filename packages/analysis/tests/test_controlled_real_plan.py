@@ -18,7 +18,8 @@ def _kwargs() -> dict[str, object]:
         "experiment_id": "bench-001",
         "recording_day": "2026-09-05",
         "setup_id": "setup-a",
-        "truth_schedule_id": "schedule-v1",
+        "target_truth_schedule_id": "target-schedule-v1",
+        "nuisance_truth_schedule_id": "nuisance-schedule-v1",
         "seed": 20260908,
         "n_development_per_cell": 12,
         "n_heldout_per_cell": 24,
@@ -36,28 +37,27 @@ def test_plan_is_deterministic_and_balanced() -> None:
 
 def test_seed_changes_order_not_factorial_validity() -> None:
     a = generate_balanced_trial_plan(**_kwargs())
-    kwargs = _kwargs()
-    kwargs["seed"] = 20260909
+    kwargs = _kwargs(); kwargs["seed"] = 20260909
     b = generate_balanced_trial_plan(**kwargs)
     assert [row["trial_id"] for row in a] == [row["trial_id"] for row in b]
-    assert [(row["target_state"], row["nuisance_family"]) for row in a] != [
-        (row["target_state"], row["nuisance_family"]) for row in b
-    ]
+    assert [(row["target_state"], row["nuisance_family"]) for row in a] != [(row["target_state"], row["nuisance_family"]) for row in b]
     assert validate_trial_plan(b) == []
 
 
-def test_manifest_builder_preserves_frozen_contract() -> None:
+def test_manifest_builder_preserves_frozen_contract_and_truth_separation() -> None:
     manifest = manifest_for_role(
         experiment_id="bench-001",
         prospective_role="development",
         setup_id="setup-a",
         primary_source_id="camera-primary",
         nuisance_reference_source_id="reference-roi",
-        target_truth_source_id="programmed-target",
+        nuisance_truth_source_id="nuisance-controller-log",
+        target_truth_source_id="target-controller-log",
         frame_interval_s=1.0,
     )
     assert validate_manifest(manifest) == []
     assert manifest["representation_activity_score"] == "target_free_reference_temporal_rms_v1"
+    assert manifest["nuisance_truth_source_id"] != manifest["nuisance_reference_source_id"]
 
 
 def test_write_plan_bundle_links_manifests_to_plan_hash(tmp_path: Path) -> None:
@@ -66,17 +66,19 @@ def test_write_plan_bundle_links_manifests_to_plan_hash(tmp_path: Path) -> None:
         experiment_id="bench-001",
         recording_day="2026-09-05",
         setup_id="setup-a",
-        truth_schedule_id="schedule-v1",
+        target_truth_schedule_id="target-schedule-v1",
+        nuisance_truth_schedule_id="nuisance-schedule-v1",
         primary_source_id="camera-primary",
         nuisance_reference_source_id="reference-roi",
-        target_truth_source_id="programmed-target",
+        nuisance_truth_source_id="nuisance-controller-log",
+        target_truth_source_id="target-controller-log",
         frame_interval_s=1.0,
     )
-
     with (tmp_path / "trial_plan.csv").open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     assert len(rows) == 360
-
+    assert all(row["target_truth_schedule_id"] == "target-schedule-v1" for row in rows)
+    assert all(row["nuisance_truth_schedule_id"] == "nuisance-schedule-v1" for row in rows)
     development = json.loads((tmp_path / "development_manifest.json").read_text(encoding="utf-8"))
     heldout = json.loads((tmp_path / "heldout_manifest.json").read_text(encoding="utf-8"))
     assert development["trial_plan_sha256"] == result["sha256"]

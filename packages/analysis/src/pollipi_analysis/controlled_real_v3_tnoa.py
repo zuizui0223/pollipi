@@ -1,18 +1,18 @@
 """Pre-data contract helpers for the controlled-real V3–TNOA benchmark.
 
-This module does not access cameras, run V3, or score heldout outcomes.  It freezes
+This module does not access cameras, run V3, or score heldout outcomes. It freezes
 Layer-R representation-entitlement semantics and validates the prospective
 factorial plan defined in docs/V3_TNOA_CONTROLLED_REAL_BENCHMARK.md.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import floor, sqrt
+from math import floor
 from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
-SCHEMA = "pollipi-v3-tnoa-controlled-real-v1"
+SCHEMA = "pollipi-v3-tnoa-controlled-real-v2"
 TARGET_STATES = ("absent", "present")
 NUISANCE_FAMILIES = (
     "none",
@@ -34,12 +34,7 @@ class EntitlementCalibration:
 
 
 def reference_temporal_rms(frames: np.ndarray, *, scale: float = 255.0) -> float:
-    """Return target-free reference temporal RMS activity, normalized by ``scale``.
-
-    ``frames`` must have time on axis 0 and at least one additional sample axis.
-    The score uses only deviations from each reference sample's temporal mean.
-    """
-
+    """Return target-free reference temporal RMS activity, normalized by ``scale``."""
     arr = np.asarray(frames, dtype=np.float64)
     if arr.ndim < 2:
         raise ValueError("frames must have time on axis 0 and at least one sample axis")
@@ -49,7 +44,6 @@ def reference_temporal_rms(frames: np.ndarray, *, scale: float = 255.0) -> float
         raise ValueError("frames contain non-finite values")
     if not np.isfinite(scale) or scale <= 0:
         raise ValueError("scale must be finite and positive")
-
     centered = arr - arr.mean(axis=0, keepdims=True)
     return float(np.sqrt(np.mean(centered * centered)) / scale)
 
@@ -59,11 +53,8 @@ def calibrate_representation_entitlement(
 ) -> EntitlementCalibration:
     """Calibrate a strict ``score > threshold`` Layer-R support rule.
 
-    Calibration uses nuisance-off development scores only.  The returned order
-    statistic guarantees that the empirical false-activation fraction on those
-    calibration scores is no greater than ``alpha`` under the strict comparison.
+    Calibration uses nuisance-off development scores only.
     """
-
     if not 0.0 < alpha < 1.0:
         raise ValueError("alpha must lie strictly between 0 and 1")
     scores = np.asarray(list(nuisance_off_scores), dtype=np.float64)
@@ -74,11 +65,7 @@ def calibrate_representation_entitlement(
 
     ordered = np.sort(scores)
     allowed = floor(alpha * ordered.size + 1e-12)
-    if allowed <= 0:
-        threshold = float(ordered[-1])
-    else:
-        threshold = float(ordered[ordered.size - allowed - 1])
-
+    threshold = float(ordered[-1]) if allowed <= 0 else float(ordered[ordered.size - allowed - 1])
     false_activations = int(np.count_nonzero(scores > threshold))
     rate = false_activations / float(ordered.size)
     if rate > alpha + 1e-12:
@@ -101,7 +88,6 @@ def representation_entitled(score: float, calibration: EntitlementCalibration) -
 
 def validate_manifest(manifest: Mapping[str, object]) -> list[str]:
     errors: list[str] = []
-
     required = (
         "schema",
         "experiment_id",
@@ -109,6 +95,7 @@ def validate_manifest(manifest: Mapping[str, object]) -> list[str]:
         "setup_id",
         "primary_source_id",
         "nuisance_reference_source_id",
+        "nuisance_truth_source_id",
         "target_truth_source_id",
         "frame_interval_s",
         "sequence_length",
@@ -130,16 +117,22 @@ def validate_manifest(manifest: Mapping[str, object]) -> list[str]:
     if not str(manifest.get("setup_id", "")).strip():
         errors.append("setup_id must be non-empty")
 
-    primary = str(manifest.get("primary_source_id", "")).strip()
-    nuisance = str(manifest.get("nuisance_reference_source_id", "")).strip()
-    truth = str(manifest.get("target_truth_source_id", "")).strip()
-    if not primary:
-        errors.append("primary_source_id must be non-empty")
-    if not nuisance:
-        errors.append("nuisance_reference_source_id must be non-empty")
-    if not truth:
-        errors.append("target_truth_source_id must be non-empty")
-    if nuisance and truth and nuisance == truth:
+    source_fields = {
+        "primary_source_id": str(manifest.get("primary_source_id", "")).strip(),
+        "nuisance_reference_source_id": str(manifest.get("nuisance_reference_source_id", "")).strip(),
+        "nuisance_truth_source_id": str(manifest.get("nuisance_truth_source_id", "")).strip(),
+        "target_truth_source_id": str(manifest.get("target_truth_source_id", "")).strip(),
+    }
+    for key, value in source_fields.items():
+        if not value:
+            errors.append(f"{key} must be non-empty")
+
+    nuisance_ref = source_fields["nuisance_reference_source_id"]
+    nuisance_truth = source_fields["nuisance_truth_source_id"]
+    target_truth = source_fields["target_truth_source_id"]
+    if nuisance_ref and nuisance_truth and nuisance_ref == nuisance_truth:
+        errors.append("nuisance reference and nuisance truth must be distinct sources")
+    if nuisance_ref and target_truth and nuisance_ref == target_truth:
         errors.append("nuisance reference and target/process truth must be distinct sources")
 
     try:
@@ -153,7 +146,6 @@ def validate_manifest(manifest: Mapping[str, object]) -> list[str]:
         errors.append("sequence_length is frozen at 9")
     if manifest.get("temporal_rank") != 3:
         errors.append("temporal_rank is frozen at 3")
-
     for key in ("alpha_representation", "alpha_semantic"):
         try:
             value = float(manifest.get(key, -1.0))
@@ -161,10 +153,8 @@ def validate_manifest(manifest: Mapping[str, object]) -> list[str]:
             value = -1.0
         if abs(value - 0.05) > 1e-12:
             errors.append(f"{key} is frozen at 0.05")
-
     if manifest.get("heldout_scoring_allowed") is not False:
         errors.append("heldout_scoring_allowed must remain false in the acquisition contract")
-
     return errors
 
 
@@ -191,7 +181,6 @@ def validate_trial_plan(
 ) -> list[str]:
     errors: list[str] = []
     seen_ids: set[str] = set()
-
     for idx, row in enumerate(trials):
         trial_id = str(row.get("trial_id", "")).strip()
         if not trial_id:
@@ -211,7 +200,13 @@ def validate_trial_plan(
         if nuisance not in NUISANCE_FAMILIES:
             errors.append(f"trial {idx}: invalid nuisance_family {nuisance!r}")
 
-        for field in ("recording_day", "setup_id", "block_id", "truth_schedule_id"):
+        for field in (
+            "recording_day",
+            "setup_id",
+            "block_id",
+            "target_truth_schedule_id",
+            "nuisance_truth_schedule_id",
+        ):
             if not str(row.get(field, "")).strip():
                 errors.append(f"trial {idx}: {field} must be non-empty")
 
@@ -220,8 +215,6 @@ def validate_trial_plan(
         minimum = min_development_per_cell if role == "development" else min_heldout_per_cell
         if count < minimum:
             errors.append(
-                f"insufficient {role} trials for target={target}, nuisance={nuisance}: "
-                f"{count} < {minimum}"
+                f"insufficient {role} trials for target={target}, nuisance={nuisance}: {count} < {minimum}"
             )
-
     return errors
