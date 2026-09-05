@@ -1,0 +1,88 @@
+{
+  "schema": "pollipi-latent-disturbance-v2-benchmark-v1",
+  "master_seed": 20260905,
+  "n_reps_per_scenario": 64,
+  "reference_conditions": ["correct_reference", "corrupted_reference", "no_reference"],
+  "scenarios": ["target_only", "target_plus_wind", "target_plus_shadow", "target_plus_shake", "target_plus_local_sway", "wind_only", "shadow_only", "shake_only", "local_sway_only"],
+  "downstream_classifier": "unchanged PolliPi V1 pipeline.analyze default configuration",
+  "metrics": {
+    "correct_reference": {
+      "mixed_target_recall": 1.0,
+      "target_only_recall": 1.0,
+      "nuisance_false_event_rate": 0.0,
+      "balanced_utility": 1.0,
+      "per_scenario_local_candidate_rate": {
+        "target_only": 1.0,
+        "target_plus_wind": 1.0,
+        "target_plus_shadow": 1.0,
+        "target_plus_shake": 1.0,
+        "target_plus_local_sway": 1.0,
+        "wind_only": 0.0,
+        "shadow_only": 0.0,
+        "shake_only": 0.0,
+        "local_sway_only": 0.0
+      },
+      "alpha_mean": 0.8874466386947079,
+      "alpha_median": 1.0,
+      "alpha_min": 0.0,
+      "alpha_max": 1.0119961719162787
+    },
+    "corrupted_reference": {
+      "mixed_target_recall": 0.3984375,
+      "target_only_recall": 1.0,
+      "nuisance_false_event_rate": 0.23828125,
+      "balanced_utility": 0.580078125,
+      "per_scenario_local_candidate_rate": {
+        "target_only": 1.0,
+        "target_plus_wind": 0.0,
+        "target_plus_shadow": 0.15625,
+        "target_plus_shake": 0.4375,
+        "target_plus_local_sway": 1.0,
+        "wind_only": 0.0,
+        "shadow_only": 0.0,
+        "shake_only": 0.0,
+        "local_sway_only": 0.953125
+      },
+      "alpha_mean": 0.31587186948974066,
+      "alpha_median": 0.20199203869246202,
+      "alpha_min": 0.0,
+      "alpha_max": 0.9298958665519224
+    },
+    "no_reference": {
+      "mixed_target_recall": 0.296875,
+      "target_only_recall": 1.0,
+      "nuisance_false_event_rate": 0.23828125,
+      "balanced_utility": 0.529296875,
+      "per_scenario_local_candidate_rate": {
+        "target_only": 1.0,
+        "target_plus_wind": 0.0,
+        "target_plus_shadow": 0.1875,
+        "target_plus_shake": 0.0,
+        "target_plus_local_sway": 1.0,
+        "wind_only": 0.0,
+        "shadow_only": 0.0,
+        "shake_only": 0.0,
+        "local_sway_only": 0.953125
+      },
+      "alpha_mean": 0.0,
+      "alpha_median": 0.0,
+      "alpha_min": 0.0,
+      "alpha_max": 0.0
+    }
+  },
+  "promotion_rule": {
+    "criteria": {
+      "mixed_target_recall_gain_ge_0_10": true,
+      "nuisance_fpr_not_worse": true,
+      "balanced_utility_gain_vs_corrupted_ge_0_08": true,
+      "target_only_recall_loss_le_0_05": true
+    },
+    "promoted_to_candidate_method": true
+  },
+  "workflow_run": 33934058487,
+  "workflow_head_sha": "288e920034e6d679a3ad0210f9d8227a5268ed73",
+  "artifact_id": 9959556875,
+  "artifact_digest": "sha256:bf51c5311ab247c0c59e859c6fee5116beddb878a5cbca6fcc9031f154d5951e",
+  "result_json_sha256": "66d2d8f5524bfe627dc0635844c504fd20557f50a8a6f381c3ac1853c5151198",
+  "claim_boundary": "Simulation-only. The exact event-matched reference condition is an oracle-like upper bound; promotion means the representation is a candidate for robustness testing, not field readiness."
+}
