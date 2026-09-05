@@ -1,0 +1,122 @@
+{
+  "schema": "pollipi-v3-tnoa-trajectory-bridge-summary-v1",
+  "source_workflow_run": 33950889927,
+  "source_artifact_id": 9964838229,
+  "artifact_digest": "sha256:a106ea0b20b0ec6b7c9cff79b7d0633606962f8d277f0ac978009388c99c7e59",
+  "source_pollipi_sha": "85daf24c4035ededa2ff1707b25791c7f4686657",
+  "source_tnoa_sha": "40fa8f66132cd86bdd5294b7360e024d13f9d9c4",
+  "design": {
+    "master_seed": 20260907,
+    "n_reps_per_scenario": 96,
+    "development_reps": 48,
+    "heldout_reps": 48,
+    "alpha": 0.05,
+    "bootstrap_reps": 5000,
+    "bootstrap_seed": 2026090701,
+    "sequence_length": 9,
+    "temporal_rank": 3,
+    "target_score": "candidate_fraction * path_efficiency * (1 - reversal_rate)"
+  },
+  "calibration": {
+    "raw": {
+      "target_threshold": 0.22222222222222224,
+      "nuisance_threshold": 5e-324,
+      "target_development_false_support_max": 0.0,
+      "nuisance_development_false_support": 0.0
+    },
+    "matched_v3": {
+      "target_threshold": 0.33333333333333337,
+      "nuisance_threshold": 0.4371035396963547,
+      "target_development_false_support_max": 0.0,
+      "nuisance_development_false_support": 0.041666666666666664
+    },
+    "time_broken_v3": {
+      "target_threshold": 0.33317930068597557,
+      "nuisance_threshold": 0.4263796199712041,
+      "target_development_false_support_max": 0.041666666666666664,
+      "nuisance_development_false_support": 0.041666666666666664
+    }
+  },
+  "heldout_metrics": {
+    "raw": {
+      "safe_unique_coverage": 0.775,
+      "pooled_false_certainty_rate": 0.3125,
+      "overlap_abstention_rate": 0.296875,
+      "overlap_reason_rate": 0.046875,
+      "forced_unique_overlap_rate": 0.703125,
+      "target_only_T_rate": 0.875,
+      "max_target_false_support_rate": 0.0,
+      "nuisance_false_support_rate_target_only": 0.0
+    },
+    "matched_v3": {
+      "safe_unique_coverage": 0.8541666666666666,
+      "pooled_false_certainty_rate": 0.24074074074074073,
+      "overlap_abstention_rate": 0.4635416666666667,
+      "overlap_reason_rate": 0.4635416666666667,
+      "forced_unique_overlap_rate": 0.5364583333333334,
+      "target_only_T_rate": 0.2708333333333333,
+      "max_target_false_support_rate": 0.0,
+      "nuisance_false_support_rate_target_only": 0.020833333333333332
+    },
+    "time_broken_v3": {
+      "safe_unique_coverage": 0.7833333333333333,
+      "pooled_false_certainty_rate": 0.26851851851851855,
+      "overlap_abstention_rate": 0.40625,
+      "overlap_reason_rate": 0.28125,
+      "forced_unique_overlap_rate": 0.59375,
+      "target_only_T_rate": 0.5625,
+      "max_target_false_support_rate": 0.041666666666666664,
+      "nuisance_false_support_rate_target_only": 0.0625
+    }
+  },
+  "contrasts": {
+    "matched_minus_raw_safe_unique_coverage": 0.07916666666666661,
+    "matched_minus_time_broken_safe_unique_coverage": 0.0708333333333333,
+    "matched_minus_raw_false_certainty": -0.07175925925925927
+  },
+  "paired_bootstrap": {
+    "matched_minus_raw_safe_unique_coverage": {
+      "estimate": 0.07916666666666666,
+      "ci95_low": 0.05000000000000001,
+      "ci95_high": 0.10833333333333332
+    },
+    "matched_minus_time_broken_safe_unique_coverage": {
+      "estimate": 0.07083333333333335,
+      "ci95_low": 0.029166666666666674,
+      "ci95_high": 0.1125
+    },
+    "matched_minus_raw_false_certainty": {
+      "estimate": -0.07175925925925924,
+      "ci95_low": -0.10416666666666667,
+      "ci95_high": -0.03935185185185185
+    }
+  },
+  "promotion_rule": {
+    "matched_safe_coverage_gain_vs_raw_ge_0_10": false,
+    "matched_minus_raw_bootstrap_low_gt_0": true,
+    "matched_safe_coverage_gain_vs_time_broken_ge_0_05": true,
+    "matched_minus_time_broken_bootstrap_low_gt_0": true,
+    "matched_false_certainty_le_0_10_and_within_raw_plus_0_01": false,
+    "matched_target_only_T_loss_vs_raw_le_0_05": false,
+    "matched_forced_unique_overlap_within_raw_plus_0_05": true,
+    "promoted_to_joint_v3_tnoa_candidate": false
+  },
+  "trajectory_diagnostic_highlights": {
+    "raw_target_only": {
+      "candidate_fraction_mean": 0.3588,
+      "path_efficiency_mean": 0.8948,
+      "reversal_rate_mean": 0.0,
+      "target_score_mean": 0.3491,
+      "trajectory_points_mean": 3.2292
+    },
+    "matched_v3_target_only": {
+      "candidate_fraction_mean": 0.3472,
+      "path_efficiency_mean": 0.7829,
+      "reversal_rate_mean": 0.0729,
+      "target_score_mean": 0.2753,
+      "trajectory_points_mean": 3.125
+    },
+    "interpretation": "Trajectory evidence improved overlap preservation and reduced false certainty, but unconditional V3 projection degraded target-only trajectory geometry and final target support."
+  },
+  "claim_boundary": "Fresh controlled synthetic trajectory bridge only. The joint architecture was not promoted. Retain significant coverage and false-certainty improvements alongside the adverse absolute-risk and target-retention failures."
+}
