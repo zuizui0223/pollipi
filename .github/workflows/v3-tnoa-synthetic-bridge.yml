@@ -1,0 +1,73 @@
+name: v3-tnoa-synthetic-bridge
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "docs/V3_TNOA_TWO_LAYER_ARCHITECTURE.md"
+      - "docs/V3_TNOA_SYNTHETIC_BRIDGE.md"
+      - "packages/analysis/src/pollipi_analysis/simulation/v3_tnoa_bridge.py"
+      - "packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v3_temporal_subspace.py"
+      - "packages/analysis/tests/test_v3_tnoa_bridge.py"
+      - ".github/workflows/v3-tnoa-synthetic-bridge.yml"
+  pull_request:
+    paths:
+      - "docs/V3_TNOA_TWO_LAYER_ARCHITECTURE.md"
+      - "docs/V3_TNOA_SYNTHETIC_BRIDGE.md"
+      - "packages/analysis/src/pollipi_analysis/simulation/v3_tnoa_bridge.py"
+      - "packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v3_temporal_subspace.py"
+      - "packages/analysis/tests/test_v3_tnoa_bridge.py"
+      - ".github/workflows/v3-tnoa-synthetic-bridge.yml"
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PolliPi
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned TNOA
+        uses: actions/checkout@v4
+        with:
+          repository: zuizui0223/tnoa
+          ref: 40fa8f66132cd86bdd5294b7360e024d13f9d9c4
+          path: _external/tnoa
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install analysis package and test dependency
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e packages/analysis pytest
+
+      - name: Compile bridge module
+        run: python -m py_compile packages/analysis/src/pollipi_analysis/simulation/v3_tnoa_bridge.py
+
+      - name: Run bridge invariant tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/_external/tnoa
+        run: pytest -q packages/analysis/tests/test_v3_tnoa_bridge.py
+
+      - name: Run fresh frozen bridge generation
+        env:
+          PYTHONPATH: ${{ github.workspace }}/_external/tnoa
+        run: |
+          mkdir -p _artifacts
+          python -m pollipi_analysis.simulation.v3_tnoa_bridge \
+            --pollipi-sha "${GITHUB_SHA}" \
+            --tnoa-sha "40fa8f66132cd86bdd5294b7360e024d13f9d9c4" \
+            --output _artifacts/v3_tnoa_synthetic_bridge_v1.json \
+            > _artifacts/v3_tnoa_synthetic_bridge_stdout.json
+
+      - name: Write result digest
+        run: sha256sum _artifacts/v3_tnoa_synthetic_bridge_v1.json > _artifacts/SHA256SUMS.txt
+
+      - name: Upload bridge artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: v3-tnoa-synthetic-bridge-result
+          path: _artifacts/
+          if-no-files-found: error
