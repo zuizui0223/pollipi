@@ -1,0 +1,37 @@
+{
+  "schema": "pollipi-latent-disturbance-v2-reference-robustness-v1",
+  "master_seed": 20260905,
+  "n_reps_per_scenario": 64,
+  "metrics": {
+    "gain_noise_reference": {"mixed_target_recall": 1.0, "target_only_recall": 1.0, "nuisance_false_event_rate": 0.0, "balanced_utility": 1.0},
+    "shift2_reference": {"mixed_target_recall": 0.69140625, "target_only_recall": 1.0, "nuisance_false_event_rate": 0.3046875, "balanced_utility": 0.693359375},
+    "partial75_reference": {"mixed_target_recall": 0.9921875, "target_only_recall": 1.0, "nuisance_false_event_rate": 0.0, "balanced_utility": 0.99609375},
+    "no_reference": {"mixed_target_recall": 0.296875, "target_only_recall": 1.0, "nuisance_false_event_rate": 0.23828125, "balanced_utility": 0.529296875}
+  },
+  "shift2_per_scenario_local_candidate_rate": {
+    "target_plus_wind": 0.671875,
+    "target_plus_shadow": 0.90625,
+    "target_plus_shake": 0.296875,
+    "target_plus_local_sway": 0.890625,
+    "wind_only": 0.140625,
+    "shadow_only": 0.265625,
+    "shake_only": 0.15625,
+    "local_sway_only": 0.65625
+  },
+  "promotion_rule": {
+    "criteria": {
+      "gain_noise_mixed_recall_gain_ge_0_10": true,
+      "shift2_mixed_recall_gain_ge_0_10": true,
+      "partial75_balanced_utility_gain_ge_0_08": true,
+      "all_degraded_nuisance_fpr_within_plus_0_05": false,
+      "all_degraded_target_only_loss_le_0_05": true
+    },
+    "promoted_to_reference_robust_candidate": false
+  },
+  "workflow_run": 33934280470,
+  "workflow_head_sha": "d95c190703d35425b25cead22531aaa328f5b156",
+  "artifact_id": 9959633777,
+  "artifact_digest": "sha256:90308c8c6dd7a5c758d1f564f7eab7ed1c2a36faab4e00a65a09acd07fa0a497",
+  "result_json_sha256": "2546651fb9b751b18de6d12e981d0bed41b93def39c32c5c4eb0735128206229",
+  "diagnosis": "The frozen robustness test fails only the nuisance-FPR criterion. Small spatial mismatch leaves edge-like local residuals, especially for local sway and shadow, so the minimal unaligned linear projection is not promoted to field-shadow use."
+}

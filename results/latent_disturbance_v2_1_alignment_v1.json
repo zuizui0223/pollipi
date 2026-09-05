@@ -1,0 +1,50 @@
+{
+  "schema": "pollipi-latent-disturbance-v2-1-alignment-v1",
+  "master_seed": 20260905,
+  "n_reps_per_scenario": 64,
+  "max_shift_px": 2,
+  "trim_fraction": 0.1,
+  "metrics": {
+    "shift2_aligned_v2_1": {
+      "mixed_target_recall": 0.87109375,
+      "target_only_recall": 1.0,
+      "nuisance_false_event_rate": 0.390625,
+      "balanced_utility": 0.740234375
+    },
+    "shift2_unaligned": {
+      "mixed_target_recall": 0.69140625,
+      "target_only_recall": 1.0,
+      "nuisance_false_event_rate": 0.3046875,
+      "balanced_utility": 0.693359375
+    },
+    "no_reference": {
+      "mixed_target_recall": 0.296875,
+      "target_only_recall": 1.0,
+      "nuisance_false_event_rate": 0.23828125,
+      "balanced_utility": 0.529296875
+    }
+  },
+  "alignment": {
+    "distinct_shift_count": 25,
+    "alpha_mean": 0.7589841041396659,
+    "alpha_median": 0.9556628997426531,
+    "loss_mean": 0.760613865799448,
+    "loss_median": 0.9707138676262373
+  },
+  "promotion_rule": {
+    "criteria": {
+      "aligned_mixed_recall_gain_vs_none_ge_0_10": true,
+      "aligned_nuisance_fpr_within_none_plus_0_05": false,
+      "aligned_balanced_utility_gain_vs_unaligned_ge_0_08": false,
+      "aligned_target_only_loss_le_0_05": true,
+      "multiple_alignment_shifts_selected": true
+    },
+    "promoted_to_simulation_robust_field_shadow_candidate": false
+  },
+  "workflow_run": 33934445009,
+  "workflow_head_sha": "fc01c7cf5e758d3493bf9dfc0c9fab19ceab2637",
+  "artifact_id": 9959684467,
+  "artifact_digest": "sha256:1d5997def4332cc465d197af9d5a47c01e991b1c1f4f52ad143ac2969ae75f8c",
+  "result_json_sha256": "5c8d63556d059ee0d576d9f9769b692d35674b63e8a5465b1b89231ebbe193cf",
+  "diagnosis": "Label-free single-pair translation search increased recall but worsened nuisance false events. The selected shifts span all 25 candidates, suggesting the trimmed residual objective does not identify the injected spatial offset reliably."
+}

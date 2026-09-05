@@ -1,0 +1,60 @@
+name: latent-disturbance-v2-reference-robustness
+
+on:
+  push:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_robustness.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2_robustness.py'
+      - 'docs/LATENT_DISTURBANCE_V2_REFERENCE_ROBUSTNESS.md'
+      - '.github/workflows/latent-disturbance-v2-robustness.yml'
+  pull_request:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_robustness.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2_robustness.py'
+      - 'docs/LATENT_DISTURBANCE_V2_REFERENCE_ROBUSTNESS.md'
+      - '.github/workflows/latent-disturbance-v2-robustness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  robustness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install analysis package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e 'packages/analysis[dev]'
+      - name: Compile robustness module
+        run: python -m py_compile packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_robustness.py
+      - name: Run robustness invariant tests
+        run: pytest packages/analysis/tests/test_latent_disturbance_v2_robustness.py -q
+      - name: Run frozen 64-replicate robustness benchmark
+        run: |
+          mkdir -p /tmp/latent-v2-robustness
+          python -m pollipi_analysis.simulation.latent_disturbance_v2_robustness \
+            --n-reps 64 \
+            --seed 20260905 \
+            --output /tmp/latent-v2-robustness/latent_disturbance_v2_robustness.json \
+            > /tmp/latent-v2-robustness/stdout.txt
+          test -s /tmp/latent-v2-robustness/latent_disturbance_v2_robustness.json
+          cat /tmp/latent-v2-robustness/latent_disturbance_v2_robustness.json
+      - name: Write result digest
+        run: |
+          cd /tmp/latent-v2-robustness
+          sha256sum latent_disturbance_v2_robustness.json > artifact_sha256.txt
+      - name: Upload robustness artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-disturbance-v2-robustness-result
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/latent-v2-robustness/latent_disturbance_v2_robustness.json
+            /tmp/latent-v2-robustness/artifact_sha256.txt
+            /tmp/latent-v2-robustness/stdout.txt

@@ -1,0 +1,31 @@
+{
+  "schema": "pollipi-latent-disturbance-v2-shift-identifiability-v1",
+  "master_seed": 20260905,
+  "n_reps_per_scenario": 64,
+  "overall": {
+    "n": 512,
+    "exact_rate": 0.748046875,
+    "within_manhattan_1_rate": 0.75,
+    "mean_manhattan_error": 1.60546875,
+    "median_manhattan_error": 0.0,
+    "mean_loss_margin": 0.2055129791692104,
+    "median_loss_margin": 0.0028049550671783163
+  },
+  "by_nuisance": {
+    "wind": {"n": 128, "exact_rate": 0.9921875, "within_manhattan_1_rate": 1.0, "mean_manhattan_error": 0.0078125, "median_manhattan_error": 0.0, "mean_loss_margin": 0.0022357883425944457, "median_loss_margin": 0.0022695005059879536},
+    "shadow": {"n": 128, "exact_rate": 1.0, "within_manhattan_1_rate": 1.0, "mean_manhattan_error": 0.0, "median_manhattan_error": 0.0, "mean_loss_margin": 0.0022893575629765878, "median_loss_margin": 0.0023628226047625045},
+    "shake": {"n": 128, "exact_rate": 1.0, "within_manhattan_1_rate": 1.0, "mean_manhattan_error": 0.0, "median_manhattan_error": 0.0, "mean_loss_margin": 0.7975564475470323, "median_loss_margin": 0.77791814323556},
+    "local_sway": {"n": 128, "exact_rate": 0.0, "within_manhattan_1_rate": 0.0, "mean_manhattan_error": 6.4140625, "median_manhattan_error": 6.0, "mean_loss_margin": 0.019970323224238404, "median_loss_margin": 0.027625039788901684}
+  },
+  "by_target_status": {
+    "target_bearing": {"n": 256, "exact_rate": 0.74609375, "within_manhattan_1_rate": 0.75, "mean_manhattan_error": 1.609375, "median_manhattan_error": 0.0, "mean_loss_margin": 0.20381720776648812, "median_loss_margin": 0.0030014229257872005},
+    "nuisance_only": {"n": 256, "exact_rate": 0.75, "within_manhattan_1_rate": 0.75, "mean_manhattan_error": 1.6015625, "median_manhattan_error": 0.0, "mean_loss_margin": 0.20720875057193266, "median_loss_margin": 0.002713239831222458}
+  },
+  "distinct_selected_shift_count": 24,
+  "workflow_run": 33934595416,
+  "workflow_head_sha": "c65eca197cbe4a25766b4acc60931aa40b7cd658",
+  "artifact_id": 9959735304,
+  "artifact_digest": "sha256:d2c64957607f0f52e35c8e6a6afc84c1780786f9bd3ce81d3d3c67301f3e8002",
+  "result_json_sha256": "104f6462ea18fc4d0b2e6344bda9fd09a7010bb04f0143a8e4a234222392c668",
+  "diagnosis": "Shift identifiability is nuisance-specific: wind/shadow/shake are recovered almost perfectly, while compact local sway is never recovered. Because V2.1 still produced high wind/shake nuisance false-event rates despite near-perfect shift recovery, those failures cannot be attributed primarily to shift estimation and instead implicate projection/boundary residuals or downstream classifier interaction."
+}

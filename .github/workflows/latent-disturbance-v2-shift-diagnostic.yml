@@ -1,0 +1,60 @@
+name: latent-disturbance-v2-shift-identifiability
+
+on:
+  push:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_shift_diagnostic.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2_shift_diagnostic.py'
+      - 'docs/LATENT_DISTURBANCE_V2_SHIFT_IDENTIFIABILITY.md'
+      - '.github/workflows/latent-disturbance-v2-shift-diagnostic.yml'
+  pull_request:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_shift_diagnostic.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2_shift_diagnostic.py'
+      - 'docs/LATENT_DISTURBANCE_V2_SHIFT_IDENTIFIABILITY.md'
+      - '.github/workflows/latent-disturbance-v2-shift-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install analysis package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e 'packages/analysis[dev]'
+      - name: Compile diagnostic module
+        run: python -m py_compile packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_shift_diagnostic.py
+      - name: Run diagnostic invariant tests
+        run: pytest packages/analysis/tests/test_latent_disturbance_v2_shift_diagnostic.py -q
+      - name: Run frozen 64-replicate diagnostic
+        run: |
+          mkdir -p /tmp/latent-v2-shift
+          python -m pollipi_analysis.simulation.latent_disturbance_v2_shift_diagnostic \
+            --n-reps 64 \
+            --seed 20260905 \
+            --output /tmp/latent-v2-shift/latent_disturbance_v2_shift_identifiability.json \
+            > /tmp/latent-v2-shift/stdout.txt
+          test -s /tmp/latent-v2-shift/latent_disturbance_v2_shift_identifiability.json
+          cat /tmp/latent-v2-shift/latent_disturbance_v2_shift_identifiability.json
+      - name: Write result digest
+        run: |
+          cd /tmp/latent-v2-shift
+          sha256sum latent_disturbance_v2_shift_identifiability.json > artifact_sha256.txt
+      - name: Upload diagnostic artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-disturbance-v2-shift-identifiability-result
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/latent-v2-shift/latent_disturbance_v2_shift_identifiability.json
+            /tmp/latent-v2-shift/artifact_sha256.txt
+            /tmp/latent-v2-shift/stdout.txt

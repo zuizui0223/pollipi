@@ -1,0 +1,60 @@
+name: latent-disturbance-v2-1-alignment
+
+on:
+  push:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_alignment.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2_alignment.py'
+      - 'docs/LATENT_DISTURBANCE_V2_1_ALIGNMENT.md'
+      - '.github/workflows/latent-disturbance-v2-alignment.yml'
+  pull_request:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_alignment.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2_alignment.py'
+      - 'docs/LATENT_DISTURBANCE_V2_1_ALIGNMENT.md'
+      - '.github/workflows/latent-disturbance-v2-alignment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  alignment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install analysis package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e 'packages/analysis[dev]'
+      - name: Compile V2.1 alignment module
+        run: python -m py_compile packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_alignment.py
+      - name: Run V2.1 invariant tests
+        run: pytest packages/analysis/tests/test_latent_disturbance_v2_alignment.py -q
+      - name: Run frozen 64-replicate V2.1 benchmark
+        run: |
+          mkdir -p /tmp/latent-v2-alignment
+          python -m pollipi_analysis.simulation.latent_disturbance_v2_alignment \
+            --n-reps 64 \
+            --seed 20260905 \
+            --output /tmp/latent-v2-alignment/latent_disturbance_v2_alignment.json \
+            > /tmp/latent-v2-alignment/stdout.txt
+          test -s /tmp/latent-v2-alignment/latent_disturbance_v2_alignment.json
+          cat /tmp/latent-v2-alignment/latent_disturbance_v2_alignment.json
+      - name: Write result digest
+        run: |
+          cd /tmp/latent-v2-alignment
+          sha256sum latent_disturbance_v2_alignment.json > artifact_sha256.txt
+      - name: Upload alignment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-disturbance-v2-alignment-result
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/latent-v2-alignment/latent_disturbance_v2_alignment.json
+            /tmp/latent-v2-alignment/artifact_sha256.txt
+            /tmp/latent-v2-alignment/stdout.txt
