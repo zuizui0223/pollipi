@@ -1,0 +1,37 @@
+{
+  "schema": "pollipi-latent-disturbance-v2-oracle-shift-diagnostic-v1",
+  "master_seed": 20260905,
+  "n_reps_per_scenario": 64,
+  "border_width_px": 4,
+  "metrics": {
+    "exact_reference": {"mixed_target_recall": 1.0, "nuisance_false_event_rate": 0.0, "balanced_utility": 1.0, "target_only_recall": 1.0, "nuisance_border_excess_mean": 0.0},
+    "oracle_shift_reference": {"mixed_target_recall": 0.890625, "nuisance_false_event_rate": 0.234375, "balanced_utility": 0.828125, "target_only_recall": 1.0, "nuisance_border_excess_mean": 2.089544247984772},
+    "estimated_shift_v2_1": {"mixed_target_recall": 0.87109375, "nuisance_false_event_rate": 0.390625, "balanced_utility": 0.740234375, "target_only_recall": 1.0, "nuisance_border_excess_mean": 2.0389313067680694},
+    "shift2_unaligned": {"mixed_target_recall": 0.69140625, "nuisance_false_event_rate": 0.3046875, "balanced_utility": 0.693359375, "target_only_recall": 1.0, "nuisance_border_excess_mean": 1.936387587369528},
+    "no_reference": {"mixed_target_recall": 0.296875, "nuisance_false_event_rate": 0.23828125, "balanced_utility": 0.529296875, "target_only_recall": 1.0, "nuisance_border_excess_mean": 1.5222368025296276}
+  },
+  "oracle_nuisance_local_candidate_rates": {
+    "wind_only": 0.4375,
+    "shadow_only": 0.0,
+    "shake_only": 0.5,
+    "local_sway_only": 0.0
+  },
+  "estimated_v2_1_nuisance_local_candidate_rates": {
+    "wind_only": 0.4375,
+    "shadow_only": 0.0,
+    "shake_only": 0.5,
+    "local_sway_only": 0.625
+  },
+  "oracle_border_excess_by_nuisance": {
+    "wind_only": 2.9609977615699927,
+    "shadow_only": 1.956875637556425,
+    "shake_only": 2.6262317740755794,
+    "local_sway_only": 0.8140718187370902
+  },
+  "workflow_run": 33934738580,
+  "workflow_head_sha": "12815d7758dead9d0fe544dd037f5b86c0650642",
+  "artifact_id": 9959794143,
+  "artifact_digest": "sha256:72405bad72418db5b31e422ab7be0cadb2125db03eda75dd619c7428d3938276",
+  "result_json_sha256": "1d2ed5d1626ba454e3ea5ae127bce9ff4626e9de950bc4601c5fdca402ad8550",
+  "diagnosis": "Failure is bifurcated. Local sway becomes clean under oracle alignment but remains noisy under estimated V2.1 alignment, so its main seam is single-pair shift identifiability. Wind and shake remain false local events even with the true inverse shift, while oracle residual energy is strongly concentrated at image borders; their main seam is post-alignment support/boundary representation rather than shift estimation."
+}
