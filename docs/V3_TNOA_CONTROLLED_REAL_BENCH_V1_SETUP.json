@@ -1,0 +1,25 @@
+{
+  "schema": "pollipi-v3-tnoa-controlled-real-bench-setup-v1",
+  "setup_id": "controlled-real-bench-v1",
+  "primary_source_id": "fixed-camera-primary-v1",
+  "nuisance_reference_source_id": "target-free-reference-roi-v1",
+  "nuisance_truth_source_id": "nuisance-controller-log-v1",
+  "target_truth_source_id": "target-controller-log-v1",
+  "target_truth_schedule_id": "target-schedule-v1",
+  "nuisance_truth_schedule_id": "nuisance-schedule-v1",
+  "frame_interval_s": 0.5,
+  "sequence_length": 9,
+  "temporal_rank": 3,
+  "alpha_representation": 0.05,
+  "alpha_semantic": 0.05,
+  "development_per_cell": 12,
+  "heldout_per_cell": 24,
+  "plan_seed": 20260908,
+  "physical_contract": {
+    "primary_region": "deterministic local target/process plus nuisance carriers",
+    "nuisance_reference": "target-free visual region/stream; algorithm input only",
+    "nuisance_truth": "independent controller/event log for commanded nuisance family",
+    "target_truth": "independent programmed target/process schedule or actuator log"
+  },
+  "regeneration_rule": "Any physical source, timing, truth-channel, or setup change requires a new setup_id and a newly hashed trial plan before acquisition."
+}
