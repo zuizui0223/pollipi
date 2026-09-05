@@ -1,0 +1,60 @@
+name: latent-disturbance-v3-temporal-subspace
+
+on:
+  push:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v3_temporal_subspace.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v3_temporal_subspace.py'
+      - 'docs/LATENT_DISTURBANCE_V3_TEMPORAL_SUBSPACE.md'
+      - '.github/workflows/latent-disturbance-v3-temporal-subspace.yml'
+  pull_request:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v3_temporal_subspace.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v3_temporal_subspace.py'
+      - 'docs/LATENT_DISTURBANCE_V3_TEMPORAL_SUBSPACE.md'
+      - '.github/workflows/latent-disturbance-v3-temporal-subspace.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install analysis package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e 'packages/analysis[dev]'
+      - name: Compile V3 module
+        run: python -m py_compile packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v3_temporal_subspace.py
+      - name: Run V3 invariant tests
+        run: pytest packages/analysis/tests/test_latent_disturbance_v3_temporal_subspace.py -q
+      - name: Run frozen V3 benchmark
+        run: |
+          mkdir -p /tmp/latent-v3
+          python -m pollipi_analysis.simulation.latent_disturbance_v3_temporal_subspace \
+            --n-reps 48 \
+            --seed 20260905 \
+            --output /tmp/latent-v3/latent_disturbance_v3_temporal_subspace.json \
+            > /tmp/latent-v3/stdout.txt
+          test -s /tmp/latent-v3/latent_disturbance_v3_temporal_subspace.json
+          cat /tmp/latent-v3/latent_disturbance_v3_temporal_subspace.json
+      - name: Write result digest
+        run: |
+          cd /tmp/latent-v3
+          sha256sum latent_disturbance_v3_temporal_subspace.json > artifact_sha256.txt
+      - name: Upload V3 benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-disturbance-v3-temporal-subspace-result
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/latent-v3/latent_disturbance_v3_temporal_subspace.json
+            /tmp/latent-v3/artifact_sha256.txt
+            /tmp/latent-v3/stdout.txt
