@@ -1,0 +1,109 @@
+{
+  "schema": "pollipi-v3-tnoa-synthetic-bridge-summary-v1",
+  "source_workflow_run": 33950390877,
+  "source_artifact_id": 9964697441,
+  "artifact_digest": "sha256:eb949ab961a863df1cbe278bbe716eedc7451c581094d23baa55d3350fd626a2",
+  "source_pollipi_sha": "95697a9548c13567af63dbd392a04a96ec7fadf1",
+  "source_tnoa_sha": "40fa8f66132cd86bdd5294b7360e024d13f9d9c4",
+  "design": {
+    "master_seed": 20260906,
+    "n_reps_per_scenario": 96,
+    "development_reps": 48,
+    "heldout_reps": 48,
+    "alpha": 0.05,
+    "bootstrap_reps": 5000,
+    "sequence_length": 9,
+    "temporal_rank": 3
+  },
+  "calibration": {
+    "raw": {
+      "target_threshold": 1.0000000000000002,
+      "nuisance_threshold": 5e-324,
+      "target_development_false_support_max": 0.0,
+      "nuisance_development_false_support": 0.0
+    },
+    "matched_v3": {
+      "target_threshold": 0.4444444444444445,
+      "nuisance_threshold": 0.4371035396963587,
+      "target_development_false_support_max": 0.0,
+      "nuisance_development_false_support": 0.041666666666666664
+    },
+    "time_broken_v3": {
+      "target_threshold": 0.7777777777777779,
+      "nuisance_threshold": 0.4263796199712028,
+      "target_development_false_support_max": 0.0,
+      "nuisance_development_false_support": 0.041666666666666664
+    }
+  },
+  "heldout_metrics": {
+    "raw": {
+      "safe_unique_coverage": 0.6,
+      "pooled_false_certainty_rate": 0.3333333333333333,
+      "overlap_abstention_rate": 0.25,
+      "overlap_reason_rate": 0.0,
+      "forced_unique_overlap_rate": 0.75,
+      "target_only_T_rate": 0.0,
+      "max_target_false_support_rate": 0.0,
+      "nuisance_false_support_rate_target_only": 0.0
+    },
+    "matched_v3": {
+      "safe_unique_coverage": 0.8166666666666667,
+      "pooled_false_certainty_rate": 0.3194444444444444,
+      "overlap_abstention_rate": 0.2864583333333333,
+      "overlap_reason_rate": 0.2864583333333333,
+      "forced_unique_overlap_rate": 0.7135416666666666,
+      "target_only_T_rate": 0.08333333333333333,
+      "max_target_false_support_rate": 0.0,
+      "nuisance_false_support_rate_target_only": 0.020833333333333332
+    },
+    "time_broken_v3": {
+      "safe_unique_coverage": 0.6666666666666666,
+      "pooled_false_certainty_rate": 0.3726851851851852,
+      "overlap_abstention_rate": 0.17708333333333334,
+      "overlap_reason_rate": 0.020833333333333332,
+      "forced_unique_overlap_rate": 0.8229166666666666,
+      "target_only_T_rate": 0.0,
+      "max_target_false_support_rate": 0.041666666666666664,
+      "nuisance_false_support_rate_target_only": 0.0625
+    }
+  },
+  "contrasts": {
+    "matched_minus_raw_safe_unique_coverage": 0.21666666666666667,
+    "matched_minus_time_broken_safe_unique_coverage": 0.15000000000000002,
+    "matched_minus_raw_false_certainty": -0.013888888888888895
+  },
+  "paired_bootstrap": {
+    "matched_minus_raw_safe_unique_coverage": {
+      "estimate": 0.21666666666666676,
+      "ci95_low": 0.20416666666666675,
+      "ci95_high": 0.2333333333333334
+    },
+    "matched_minus_time_broken_safe_unique_coverage": {
+      "estimate": 0.15000000000000005,
+      "ci95_low": 0.12072916666666672,
+      "ci95_high": 0.17916666666666672
+    },
+    "matched_minus_raw_false_certainty": {
+      "estimate": -0.01388888888888889,
+      "ci95_low": -0.043981481481481476,
+      "ci95_high": 0.013888888888888893
+    }
+  },
+  "promotion_rule": {
+    "matched_safe_coverage_gain_vs_raw_ge_0_10": true,
+    "matched_minus_raw_bootstrap_low_gt_0": true,
+    "matched_safe_coverage_gain_vs_time_broken_ge_0_05": true,
+    "matched_minus_time_broken_bootstrap_low_gt_0": true,
+    "matched_false_certainty_le_0_10_and_within_raw_plus_0_01": false,
+    "matched_target_only_T_loss_vs_raw_le_0_05": true,
+    "matched_forced_unique_overlap_within_raw_plus_0_05": true,
+    "promoted_to_joint_v3_tnoa_candidate": false
+  },
+  "failure_localization": {
+    "primary_failed_gate": "matched pooled false-certainty rate 0.31944 exceeded frozen absolute ceiling 0.10",
+    "matched_target_only_T_rate": 0.08333333333333333,
+    "matched_v3_prior_target_only_frame_recall_seed_20260905": 0.625,
+    "interpretation": "V3 improves nuisance representation and unique-process coverage, but the bridge target-evidence adapter based on local-candidate frame fraction remains too weak under the fixed alpha calibration to preserve target+nuisance overlap safely."
+  },
+  "claim_boundary": "Fresh controlled synthetic bridge only. The joint architecture was not promoted. Retain the positive coverage gains and the adverse false-certainty result without rescue tuning."
+}
