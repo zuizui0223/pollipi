@@ -1,0 +1,30 @@
+name: v3-tnoa-controlled-real-contract
+
+on:
+  pull_request:
+    paths:
+      - "docs/V3_TNOA_CONTROLLED_REAL_BENCHMARK.md"
+      - "packages/analysis/src/pollipi_analysis/controlled_real_v3_tnoa.py"
+      - "packages/analysis/tests/test_controlled_real_v3_tnoa.py"
+      - ".github/workflows/v3-tnoa-controlled-real-contract.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/V3_TNOA_CONTROLLED_REAL_BENCHMARK.md"
+      - "packages/analysis/src/pollipi_analysis/controlled_real_v3_tnoa.py"
+      - "packages/analysis/tests/test_controlled_real_v3_tnoa.py"
+      - ".github/workflows/v3-tnoa-controlled-real-contract.yml"
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install analysis package
+        run: python -m pip install -e 'packages/analysis[dev]'
+      - name: Run controlled-real contract tests
+        run: python -m pytest -q packages/analysis/tests/test_controlled_real_v3_tnoa.py
