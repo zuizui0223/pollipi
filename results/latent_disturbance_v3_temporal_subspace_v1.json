@@ -1,0 +1,53 @@
+{
+  "schema": "pollipi-latent-disturbance-v3-temporal-subspace-result-v1",
+  "source_workflow_run": 33935214319,
+  "source_artifact_id": 9959942782,
+  "artifact_digest": "sha256:10c5c679a73f08d9289fb633addc9129c4b71e1c74167d55999e7e657f613cb5",
+  "master_seed": 20260905,
+  "n_reps_per_scenario": 48,
+  "sequence_length": 9,
+  "temporal_rank": 3,
+  "downstream_classifier": "unchanged PolliPi V1 pipeline.analyze default configuration",
+  "metrics": {
+    "matched_temporal_reference": {
+      "mixed_target_frame_recall": 0.6927083333333334,
+      "target_only_frame_recall": 0.625,
+      "nuisance_false_frame_rate": 0.027199074074074073,
+      "local_sway_false_frame_rate": 0.1087962962962963,
+      "broad_nuisance_false_frame_rate": 0.0,
+      "target_episode_recall": 0.9583333333333334,
+      "nuisance_false_episode_rate": 0.041666666666666664,
+      "balanced_utility": 0.8327546296296297
+    },
+    "time_permuted_reference": {
+      "mixed_target_frame_recall": 0.5916666666666667,
+      "target_only_frame_recall": 0.6458333333333334,
+      "nuisance_false_frame_rate": 0.13136574074074076,
+      "local_sway_false_frame_rate": 0.41203703703703703,
+      "broad_nuisance_false_frame_rate": 0.03780864197530864,
+      "target_episode_recall": 0.9041666666666668,
+      "nuisance_false_episode_rate": 0.17708333333333331,
+      "balanced_utility": 0.7301504629629629
+    },
+    "no_reference": {
+      "mixed_target_frame_recall": 0.43645833333333334,
+      "target_only_frame_recall": 0.6583333333333333,
+      "nuisance_false_frame_rate": 0.2986111111111111,
+      "local_sway_false_frame_rate": 1.0,
+      "broad_nuisance_false_frame_rate": 0.06481481481481481,
+      "target_episode_recall": 0.5666666666666667,
+      "nuisance_false_episode_rate": 0.25,
+      "balanced_utility": 0.5689236111111111
+    }
+  },
+  "promotion_rule": {
+    "matched_mixed_recall_gain_vs_none_ge_0_15": true,
+    "matched_nuisance_fpr_reduction_vs_none_ge_0_10": true,
+    "matched_balanced_utility_gain_vs_permuted_ge_0_10": true,
+    "matched_target_only_loss_le_0_05": true,
+    "matched_local_sway_fpr_reduction_vs_none_ge_0_30": true,
+    "matched_broad_fpr_within_none_plus_0_05": true,
+    "promoted_to_temporal_reference_candidate": true
+  },
+  "claim_boundary": "Simulation-only temporal-reference candidate; no physical wind identity, field performance, biological absence, or live-capture claim."
+}

@@ -1,0 +1,66 @@
+{
+  "schema": "pollipi-latent-disturbance-v3-temporal-robustness-result-v1",
+  "source_workflow_run": 33937674461,
+  "source_artifact_id": 9960746398,
+  "artifact_digest": "sha256:d6fee8e0cb669a1ee186b3eb933972e87a0e97b4ffc689e25560f5d300255554",
+  "master_seed": 20260905,
+  "n_reps_per_scenario": 48,
+  "sequence_length": 9,
+  "temporal_rank": 3,
+  "metrics": {
+    "matched_temporal_reference": {
+      "mixed_target_frame_recall": 0.6927083333333334,
+      "target_only_frame_recall": 0.625,
+      "nuisance_false_frame_rate": 0.027199074074074073,
+      "local_sway_false_frame_rate": 0.1087962962962963,
+      "broad_nuisance_false_frame_rate": 0.0,
+      "target_episode_recall": 0.9583333333333334,
+      "nuisance_false_episode_rate": 0.041666666666666664,
+      "balanced_utility": 0.8327546296296297
+    },
+    "lag1_reference": {
+      "mixed_target_frame_recall": 0.6531250000000001,
+      "target_only_frame_recall": 0.6541666666666667,
+      "nuisance_false_frame_rate": 0.08449074074074076,
+      "local_sway_false_frame_rate": 0.2476851851851852,
+      "broad_nuisance_false_frame_rate": 0.030092592592592598,
+      "target_episode_recall": 0.9541666666666666,
+      "nuisance_false_episode_rate": 0.06770833333333333,
+      "balanced_utility": 0.7843171296296297
+    },
+    "partial75_reference": {
+      "mixed_target_frame_recall": 0.6375000000000001,
+      "target_only_frame_recall": 0.6583333333333333,
+      "nuisance_false_frame_rate": 0.07002314814814815,
+      "local_sway_false_frame_rate": 0.2662037037037037,
+      "broad_nuisance_false_frame_rate": 0.004629629629629629,
+      "target_episode_recall": 0.8916666666666666,
+      "nuisance_false_episode_rate": 0.10416666666666667,
+      "balanced_utility": 0.783738425925926
+    },
+    "no_reference": {
+      "mixed_target_frame_recall": 0.43645833333333334,
+      "target_only_frame_recall": 0.6583333333333333,
+      "nuisance_false_frame_rate": 0.2986111111111111,
+      "local_sway_false_frame_rate": 1.0,
+      "broad_nuisance_false_frame_rate": 0.06481481481481481,
+      "target_episode_recall": 0.5666666666666667,
+      "nuisance_false_episode_rate": 0.25,
+      "balanced_utility": 0.5689236111111111
+    }
+  },
+  "promotion_rule": {
+    "lag1_utility_gain_vs_none_ge_0_08": true,
+    "lag1_nuisance_fpr_reduction_vs_none_ge_0_08": true,
+    "lag1_target_only_loss_le_0_06": true,
+    "lag1_local_sway_fpr_reduction_vs_none_ge_0_25": true,
+    "lag1_broad_fpr_within_none_plus_0_05": true,
+    "partial75_utility_gain_vs_none_ge_0_10": true,
+    "partial75_nuisance_fpr_reduction_vs_none_ge_0_10": true,
+    "partial75_target_only_loss_le_0_06": true,
+    "partial75_local_sway_fpr_reduction_vs_none_ge_0_25": true,
+    "partial75_broad_fpr_within_none_plus_0_05": true,
+    "promoted_to_temporally_robust_simulation_candidate": true
+  },
+  "claim_boundary": "Simulation-only stress test of one-frame lag and 75% temporal coupling; no arbitrary clock drift, field performance, physical wind identity, biological absence, or live-capture claim."
+}
