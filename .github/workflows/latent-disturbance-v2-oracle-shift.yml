@@ -1,0 +1,60 @@
+name: latent-disturbance-v2-oracle-shift
+
+on:
+  push:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_oracle_shift.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2_oracle_shift.py'
+      - 'docs/LATENT_DISTURBANCE_V2_ORACLE_SHIFT_DIAGNOSTIC.md'
+      - '.github/workflows/latent-disturbance-v2-oracle-shift.yml'
+  pull_request:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_oracle_shift.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2_oracle_shift.py'
+      - 'docs/LATENT_DISTURBANCE_V2_ORACLE_SHIFT_DIAGNOSTIC.md'
+      - '.github/workflows/latent-disturbance-v2-oracle-shift.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install analysis package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e 'packages/analysis[dev]'
+      - name: Compile diagnostic module
+        run: python -m py_compile packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2_oracle_shift.py
+      - name: Run oracle diagnostic tests
+        run: pytest packages/analysis/tests/test_latent_disturbance_v2_oracle_shift.py -q
+      - name: Run frozen 64-replicate oracle diagnostic
+        run: |
+          mkdir -p /tmp/latent-v2-oracle
+          python -m pollipi_analysis.simulation.latent_disturbance_v2_oracle_shift \
+            --n-reps 64 \
+            --seed 20260905 \
+            --output /tmp/latent-v2-oracle/latent_disturbance_v2_oracle_shift.json \
+            > /tmp/latent-v2-oracle/stdout.txt
+          test -s /tmp/latent-v2-oracle/latent_disturbance_v2_oracle_shift.json
+          cat /tmp/latent-v2-oracle/latent_disturbance_v2_oracle_shift.json
+      - name: Write result digest
+        run: |
+          cd /tmp/latent-v2-oracle
+          sha256sum latent_disturbance_v2_oracle_shift.json > artifact_sha256.txt
+      - name: Upload oracle diagnostic artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-disturbance-v2-oracle-shift-result
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/latent-v2-oracle/latent_disturbance_v2_oracle_shift.json
+            /tmp/latent-v2-oracle/artifact_sha256.txt
+            /tmp/latent-v2-oracle/stdout.txt
