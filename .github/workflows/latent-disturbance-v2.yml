@@ -1,0 +1,60 @@
+name: latent-disturbance-v2-benchmark
+
+on:
+  push:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2.py'
+      - 'docs/LATENT_DISTURBANCE_V2_BENCHMARK.md'
+      - '.github/workflows/latent-disturbance-v2.yml'
+  pull_request:
+    paths:
+      - 'packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2.py'
+      - 'packages/analysis/tests/test_latent_disturbance_v2.py'
+      - 'docs/LATENT_DISTURBANCE_V2_BENCHMARK.md'
+      - '.github/workflows/latent-disturbance-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install analysis package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e 'packages/analysis[dev]'
+      - name: Compile V2 module
+        run: python -m py_compile packages/analysis/src/pollipi_analysis/simulation/latent_disturbance_v2.py
+      - name: Run V2 invariant tests
+        run: pytest packages/analysis/tests/test_latent_disturbance_v2.py -q
+      - name: Run frozen 64-replicate benchmark
+        run: |
+          mkdir -p /tmp/latent-v2
+          python -m pollipi_analysis.simulation.latent_disturbance_v2 \
+            --n-reps 64 \
+            --seed 20260905 \
+            --output /tmp/latent-v2/latent_disturbance_v2_result.json \
+            > /tmp/latent-v2/stdout.txt
+          test -s /tmp/latent-v2/latent_disturbance_v2_result.json
+          cat /tmp/latent-v2/latent_disturbance_v2_result.json
+      - name: Write benchmark digest
+        run: |
+          cd /tmp/latent-v2
+          sha256sum latent_disturbance_v2_result.json > artifact_sha256.txt
+      - name: Upload inspectable benchmark result
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-disturbance-v2-result
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/latent-v2/latent_disturbance_v2_result.json
+            /tmp/latent-v2/artifact_sha256.txt
+            /tmp/latent-v2/stdout.txt
