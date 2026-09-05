@@ -1,0 +1,164 @@
+name: latent-v3-field-shadow-audit
+
+on:
+  pull_request:
+    paths:
+      - "docs/LATENT_DISTURBANCE_V3_FIELD_SHADOW_AUDIT.md"
+      - "packages/analysis/src/pollipi_analysis/field_v3_shadow.py"
+      - "packages/analysis/tests/test_field_v3_shadow.py"
+      - "tools/latent_v3_field_capture.py"
+      - "tools/latent_v3_field_intake.py"
+      - ".github/workflows/latent-v3-field-shadow.yml"
+  workflow_dispatch:
+    inputs:
+      collection_id:
+        description: "Prospective collection ID [A-Za-z0-9._-]+"
+        required: true
+      recording_day:
+        description: "Recording day YYYY-MM-DD"
+        required: true
+      site_id:
+        required: true
+      focal_scene_id:
+        required: true
+      recording_block:
+        required: true
+      comparison_session_id:
+        required: true
+      plant_species:
+        required: false
+        default: ""
+      nuisance_reference_roi:
+        description: "Target-free ROI x0,y0,x1,y1 in 640x360 probe frame"
+        required: true
+      truth_reference_source_id:
+        description: "Independent biological truth source ID"
+        required: true
+      truth_reference_ready:
+        description: "Independent truth recorder is configured and ready before primary collection"
+        required: true
+        type: boolean
+        default: false
+      frame_count:
+        description: "Number of 5-s probe frames; choose before collection (>=9)"
+        required: true
+        default: "120"
+      probe_interval_sec:
+        description: "Fixed probe interval seconds"
+        required: true
+        default: "5"
+      max_timing_error_sec:
+        description: "Prospective maximum absolute inter-probe timing error"
+        required: true
+        default: "1"
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: packages/analysis/src
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install analysis test dependency
+        run: python -m pip install pytest
+      - name: Compile acquisition/intake tools
+        run: |
+          python -m py_compile tools/latent_v3_field_capture.py
+          python -m py_compile tools/latent_v3_field_intake.py
+          python -m py_compile packages/analysis/src/pollipi_analysis/field_v3_shadow.py
+      - name: Run field intake contract tests
+        run: pytest packages/analysis/tests/test_field_v3_shadow.py -q
+
+  record-development:
+    if: github.event_name == 'workflow_dispatch'
+    needs: contract
+    runs-on: [self-hosted, linux, arm64, raspberry-pi]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate prospective inputs before camera access
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.collection_id }}" =~ ^[A-Za-z0-9._-]+$ ]]
+          test "${{ inputs.truth_reference_ready }}" = "true"
+          python3 - <<'PY'
+          fc = int("${{ inputs.frame_count }}")
+          interval = float("${{ inputs.probe_interval_sec }}")
+          maxerr = float("${{ inputs.max_timing_error_sec }}")
+          assert fc >= 9
+          assert interval >= 1
+          assert maxerr >= 0
+          PY
+          if systemctl is-active --quiet pollipi.service; then
+            echo "pollipi.service is active; refusing to interrupt an active field service" >&2
+            exit 1
+          fi
+      - name: Require physical Picamera2 camera
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from picamera2 import Picamera2
+          cams = Picamera2.global_camera_info()
+          if not cams:
+              raise SystemExit("No physical Picamera2 camera detected")
+          print(cams)
+          PY
+      - name: Record fixed-interval V3 development sequence
+        shell: bash
+        env:
+          OUT: /tmp/pollipi-v3-field-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          rm -rf "$OUT"
+          python3 tools/latent_v3_field_capture.py \
+            --output-dir "$OUT" \
+            --collection-id "${{ inputs.collection_id }}" \
+            --prospective-role development \
+            --recording-day "${{ inputs.recording_day }}" \
+            --site-id "${{ inputs.site_id }}" \
+            --focal-scene-id "${{ inputs.focal_scene_id }}" \
+            --recording-block "${{ inputs.recording_block }}" \
+            --comparison-session-id "${{ inputs.comparison_session_id }}" \
+            --plant-species "${{ inputs.plant_species }}" \
+            --nuisance-reference-roi "${{ inputs.nuisance_reference_roi }}" \
+            --truth-reference-source-id "${{ inputs.truth_reference_source_id }}" \
+            --frame-count "${{ inputs.frame_count }}" \
+            --probe-interval-sec "${{ inputs.probe_interval_sec }}" \
+            --max-timing-error-sec "${{ inputs.max_timing_error_sec }}" \
+            --source-commit "${{ github.sha }}"
+      - name: Run structural intake without asserting truth was recorded
+        shell: bash
+        env:
+          OUT: /tmp/pollipi-v3-field-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH=packages/analysis/src python3 tools/latent_v3_field_intake.py \
+            "$OUT/collection_manifest.json" \
+            "$OUT/v3_shadow_frames.csv" \
+            --output "$OUT/v3_field_intake.json"
+      - name: Write artifact inventory
+        if: always()
+        shell: bash
+        env:
+          OUT: /tmp/pollipi-v3-field-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -d "$OUT" ]; then
+            (cd "$OUT" && find . -type f -print0 | sort -z | xargs -0 sha256sum > artifact_sha256.txt)
+          fi
+      - name: Upload development collection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: latent-v3-field-development-${{ github.run_id }}
+          path: /tmp/pollipi-v3-field-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: error
