@@ -1,0 +1,30 @@
+name: v3-tnoa-theory-core
+
+on:
+  pull_request:
+    paths:
+      - "docs/V3_TNOA_THEORY_CORE.md"
+      - "packages/analysis/src/pollipi_analysis/v3_tnoa_theory.py"
+      - "packages/analysis/tests/test_v3_tnoa_theory.py"
+      - ".github/workflows/v3-tnoa-theory-core.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/V3_TNOA_THEORY_CORE.md"
+      - "packages/analysis/src/pollipi_analysis/v3_tnoa_theory.py"
+      - "packages/analysis/tests/test_v3_tnoa_theory.py"
+      - ".github/workflows/v3-tnoa-theory-core.yml"
+
+jobs:
+  theory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install analysis package
+        run: python -m pip install -e 'packages/analysis[dev]'
+      - name: Run theory witnesses
+        run: python -m pytest -q packages/analysis/tests/test_v3_tnoa_theory.py
