@@ -24,7 +24,13 @@ where:
 - `M` collects measurement-side latent state, including nuisance processes, geometry, visibility and sensor effects;
 - `F` may be nonlinear and need not be invertible.
 
-A target-free reference `R` supplies information about `M`, not direct target truth.
+A target-excluding reference `R` supplies additional information about `M`; it is not direct target truth.
+
+### Terminology note
+
+“Independent reference” in this theory means **an additional retained observation channel whose scientific definition does not use the target answer being inferred**. It does **not** require statistical independence between `R`, `S` and `M`. Indeed, a useful reference is expected to be statistically dependent on relevant parts of `M`.
+
+The information-refinement theorem also assumes **non-destructive acquisition**: retaining `R` does not replace or alter the already-defined primary record `Y`. If installing or measuring the reference physically perturbs the primary process, that is a different joint forward model and must be represented explicitly.
 
 ## 2. Compatible measurement-state set
 
@@ -72,7 +78,60 @@ If `s` belongs to `S_F(y,R2)`, there exists an `m` in `M(R2)` with `F(s,m)=y`. S
 
 No linearity, Gaussian noise, optical-flow model or projection assumption is needed.
 
-## 4. Additive model as a special case
+## 4. Theorem — measurement-state coverage transfers to target-state coverage
+
+Let the true world satisfy
+
+\[
+Y=F(S,M).
+\]
+
+For any reference-derived compatible set `M_alpha(R)`, define
+
+\[
+\mathcal S_{F,\alpha}(Y,R)
+=
+\{s:\exists m\in\mathcal M_\alpha(R),\;F(s,m)=Y\}.
+\]
+
+Whenever the true measurement state is covered,
+
+\[
+M\in\mathcal M_\alpha(R),
+\]
+
+the true target state is automatically covered because the true pair `(S,M)` itself witnesses
+
+\[
+S\in\mathcal S_{F,\alpha}(Y,R).
+\]
+
+Therefore, if
+
+\[
+P\{M\in\mathcal M_\alpha(R)\}\ge 1-\alpha_R,
+\]
+
+then
+
+\[
+\boxed{
+P\{S\in\mathcal S_{F,\alpha}(Y,R)\}\ge 1-\alpha_R.
+}
+\]
+
+This is a general coverage-transfer result and does not require an additive observation model.
+
+### Important boundary
+
+A smaller compatible set is useful only if it remains **valid**. Arbitrarily excluding the true measurement state can make the target set narrow while destroying coverage. Thus reference refinement has two distinct requirements:
+
+1. **contraction** — exclude measurement states that are no longer compatible with the reference;
+2. **calibration / validity** — retain the true measurement state at the declared coverage level.
+
+The first is set geometry; the second is an empirical or assumption-based entitlement condition.
+
+## 5. Additive model as a special case
 
 For
 
@@ -96,13 +155,13 @@ In this special case translation/reflection is an isometry, giving the stronger 
 
 Thus the additive model is useful because it yields closed-form uncertainty geometry, not because the general framework depends on additive pixels.
 
-## 5. Reference value is about state restriction, not physical naming
+## 6. Reference value is about valid state restriction, not physical naming
 
-The reference is scientifically useful when it excludes measurement-side states that would otherwise remain compatible with the primary observation.
+The reference is scientifically useful when it **validly excludes** measurement-side states that would otherwise remain compatible with the primary observation.
 
 Therefore the generic question is
 
-> **How much does the reference contract the compatible measurement-state set relevant to the target query?**
+> **How much does a calibrated reference contract the compatible measurement-state set relevant to the target query?**
 
 not
 
@@ -110,7 +169,7 @@ not
 
 A reference may be informative about shared motion/illumination structure even when the physical source identity remains unresolved.
 
-## 6. Causal-claim boundary
+## 7. Causal-claim boundary
 
 The compatible-set theorem is an identification statement, not automatically a causal theorem.
 
@@ -124,17 +183,17 @@ rather than named causal attribution.
 
 Controlled interventions may later identify a physical cause, but the general method does not require such naming to refine the observation problem.
 
-## 7. TNOA connection
+## 8. TNOA connection
 
 The general forward-model formulation gives the same architecture at two layers:
 
-1. reference information contracts `M(R)` and therefore `S_F(Y,R)`;
+1. reference information validly contracts `M(R)` and therefore `S_F(Y,R)`;
 2. TNOA contracts semantic compatible states only when positive calibrated evidence warrants it;
 3. if either layer remains non-singleton, unresolved structure is preserved rather than forced to a point label.
 
-The common mathematical operation is **compatible-set contraction under added justified information**.
+The common mathematical operation is **valid compatible-set contraction under added justified information**.
 
-## 8. Practical implication
+## 9. Practical implication
 
 The current temporal-subspace V3 is one computational approximation to this general idea. It should not define the theory.
 
