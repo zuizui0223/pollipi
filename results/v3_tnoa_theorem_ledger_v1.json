@@ -5,8 +5,8 @@
   "theorems": [
     {
       "id": "T1_reference_refinement",
-      "claim": "Retaining an additional reference channel weakly contracts compatible-world and identified sets relative to the primary observation alone.",
-      "assumptions": ["the reference is retained as an additional observation rather than replacing the primary observation"],
+      "claim": "Retaining an additional non-destructive reference channel weakly contracts compatible-world and identified sets relative to the primary observation alone.",
+      "assumptions": ["the reference is retained as an additional observation rather than replacing the primary observation", "reference acquisition does not silently redefine the primary observation process"],
       "proof_type": "set inclusion",
       "requires_real_data": false,
       "empirical_boundary": "Whether a physical reference produces strict contraction for a scientifically relevant estimand is empirical."
@@ -90,10 +90,19 @@
       "proof_type": "pointwise monotonicity of singleton identified sets under set inclusion",
       "requires_real_data": false,
       "empirical_boundary": "Approximate observers may fail to represent the true compatible sets and can violate the ideal behavior."
+    },
+    {
+      "id": "T12_general_forward_model_coverage_transfer",
+      "claim": "For arbitrary Y=F(S,M), any valid reference-derived compatible set that covers the true measurement state also induces a target-compatible set covering the true target; probabilistic measurement-state coverage transfers to target-state coverage.",
+      "assumptions": ["the true world satisfies Y=F(S,M)", "the target-compatible set is defined by existential inversion over the reference-derived measurement-state set"],
+      "proof_type": "truth-pair witness and event inclusion",
+      "requires_real_data": false,
+      "empirical_boundary": "Constructing a calibrated physical measurement-state set with the declared coverage is empirical; unsupported contraction can destroy coverage."
     }
   ],
   "overall_empirical_boundary": [
     "physical reference informativeness",
+    "calibration and validity of physical measurement-state compatible sets",
     "finite-sample nuisance representation calibration",
     "target/nuisance coupling in a domain",
     "observer approximation quality",
