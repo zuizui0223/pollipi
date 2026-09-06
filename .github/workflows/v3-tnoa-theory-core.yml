@@ -5,10 +5,13 @@ on:
     paths:
       - "docs/V3_TNOA_THEORY_CORE.md"
       - "docs/V3_TNOA_REVERSIBLE_DECOMPOSITION.md"
+      - "docs/V3_TNOA_PARTIAL_DECOMPOSITION.md"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_theory.py"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_decision_risk.py"
+      - "packages/analysis/src/pollipi_analysis/v3_tnoa_partial_decomposition.py"
       - "packages/analysis/tests/test_v3_tnoa_theory.py"
       - "packages/analysis/tests/test_v3_tnoa_decision_risk.py"
+      - "packages/analysis/tests/test_v3_tnoa_partial_decomposition.py"
       - ".github/workflows/v3-tnoa-theory-core.yml"
   push:
     branches:
@@ -16,10 +19,13 @@ on:
     paths:
       - "docs/V3_TNOA_THEORY_CORE.md"
       - "docs/V3_TNOA_REVERSIBLE_DECOMPOSITION.md"
+      - "docs/V3_TNOA_PARTIAL_DECOMPOSITION.md"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_theory.py"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_decision_risk.py"
+      - "packages/analysis/src/pollipi_analysis/v3_tnoa_partial_decomposition.py"
       - "packages/analysis/tests/test_v3_tnoa_theory.py"
       - "packages/analysis/tests/test_v3_tnoa_decision_risk.py"
+      - "packages/analysis/tests/test_v3_tnoa_partial_decomposition.py"
       - ".github/workflows/v3-tnoa-theory-core.yml"
 
 jobs:
@@ -37,3 +43,4 @@ jobs:
           python -m pytest -q
           packages/analysis/tests/test_v3_tnoa_theory.py
           packages/analysis/tests/test_v3_tnoa_decision_risk.py
+          packages/analysis/tests/test_v3_tnoa_partial_decomposition.py
