@@ -4,16 +4,22 @@ on:
   pull_request:
     paths:
       - "docs/V3_TNOA_THEORY_CORE.md"
+      - "docs/V3_TNOA_REVERSIBLE_DECOMPOSITION.md"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_theory.py"
+      - "packages/analysis/src/pollipi_analysis/v3_tnoa_decision_risk.py"
       - "packages/analysis/tests/test_v3_tnoa_theory.py"
+      - "packages/analysis/tests/test_v3_tnoa_decision_risk.py"
       - ".github/workflows/v3-tnoa-theory-core.yml"
   push:
     branches:
       - main
     paths:
       - "docs/V3_TNOA_THEORY_CORE.md"
+      - "docs/V3_TNOA_REVERSIBLE_DECOMPOSITION.md"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_theory.py"
+      - "packages/analysis/src/pollipi_analysis/v3_tnoa_decision_risk.py"
       - "packages/analysis/tests/test_v3_tnoa_theory.py"
+      - "packages/analysis/tests/test_v3_tnoa_decision_risk.py"
       - ".github/workflows/v3-tnoa-theory-core.yml"
 
 jobs:
@@ -27,4 +33,7 @@ jobs:
       - name: Install analysis package
         run: python -m pip install -e 'packages/analysis[dev]'
       - name: Run theory witnesses
-        run: python -m pytest -q packages/analysis/tests/test_v3_tnoa_theory.py
+        run: >-
+          python -m pytest -q
+          packages/analysis/tests/test_v3_tnoa_theory.py
+          packages/analysis/tests/test_v3_tnoa_decision_risk.py
