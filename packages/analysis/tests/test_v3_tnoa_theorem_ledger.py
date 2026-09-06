@@ -14,7 +14,7 @@ def test_theorem_ledger_is_complete_and_keeps_empirical_boundary_explicit() -> N
     assert payload["field_data_required_for_structural_claims"] is False
 
     theorems = payload["theorems"]
-    assert len(theorems) == 11
+    assert len(theorems) == 12
     ids = [row["id"] for row in theorems]
     assert len(set(ids)) == len(ids)
     assert ids == [f"T{index}_{suffix}" for index, suffix in [
@@ -29,6 +29,7 @@ def test_theorem_ledger_is_complete_and_keeps_empirical_boundary_explicit() -> N
         (9, "additive_diameter_equality"),
         (10, "general_forward_model_contraction"),
         (11, "resolvable_coverage_monotonicity"),
+        (12, "general_forward_model_coverage_transfer"),
     ]]
     assert all(row["requires_real_data"] is False for row in theorems)
     assert all(row["assumptions"] for row in theorems)
