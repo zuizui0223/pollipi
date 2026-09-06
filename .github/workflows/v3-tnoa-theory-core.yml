@@ -9,6 +9,7 @@ on:
       - "docs/V3_TNOA_IDENTIFICATION_COVERAGE.md"
       - "docs/V3_TNOA_GENERAL_FORWARD_MODEL.md"
       - "docs/V3_TNOA_THEORY_PAPER_BLUEPRINT.md"
+      - "results/v3_tnoa_theorem_ledger_v1.json"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_theory.py"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_decision_risk.py"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_partial_decomposition.py"
@@ -16,6 +17,7 @@ on:
       - "packages/analysis/tests/test_v3_tnoa_decision_risk.py"
       - "packages/analysis/tests/test_v3_tnoa_partial_decomposition.py"
       - "packages/analysis/tests/test_v3_tnoa_identification_coverage.py"
+      - "packages/analysis/tests/test_v3_tnoa_theorem_ledger.py"
       - ".github/workflows/v3-tnoa-theory-core.yml"
   push:
     branches:
@@ -27,6 +29,7 @@ on:
       - "docs/V3_TNOA_IDENTIFICATION_COVERAGE.md"
       - "docs/V3_TNOA_GENERAL_FORWARD_MODEL.md"
       - "docs/V3_TNOA_THEORY_PAPER_BLUEPRINT.md"
+      - "results/v3_tnoa_theorem_ledger_v1.json"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_theory.py"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_decision_risk.py"
       - "packages/analysis/src/pollipi_analysis/v3_tnoa_partial_decomposition.py"
@@ -34,6 +37,7 @@ on:
       - "packages/analysis/tests/test_v3_tnoa_decision_risk.py"
       - "packages/analysis/tests/test_v3_tnoa_partial_decomposition.py"
       - "packages/analysis/tests/test_v3_tnoa_identification_coverage.py"
+      - "packages/analysis/tests/test_v3_tnoa_theorem_ledger.py"
       - ".github/workflows/v3-tnoa-theory-core.yml"
 
 jobs:
@@ -53,3 +57,4 @@ jobs:
           packages/analysis/tests/test_v3_tnoa_decision_risk.py
           packages/analysis/tests/test_v3_tnoa_partial_decomposition.py
           packages/analysis/tests/test_v3_tnoa_identification_coverage.py
+          packages/analysis/tests/test_v3_tnoa_theorem_ledger.py
