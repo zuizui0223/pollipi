@@ -1,0 +1,103 @@
+{
+  "schema": "v3-tnoa-theorem-ledger-v1",
+  "paper_route": "conceptual-mathematical",
+  "field_data_required_for_structural_claims": false,
+  "theorems": [
+    {
+      "id": "T1_reference_refinement",
+      "claim": "Retaining an additional reference channel weakly contracts compatible-world and identified sets relative to the primary observation alone.",
+      "assumptions": ["the reference is retained as an additional observation rather than replacing the primary observation"],
+      "proof_type": "set inclusion",
+      "requires_real_data": false,
+      "empirical_boundary": "Whether a physical reference produces strict contraction for a scientifically relevant estimand is empirical."
+    },
+    {
+      "id": "T2_semantic_coarsening",
+      "claim": "A deterministic coarsening of a rich evidence record weakly expands compatible-world and identified sets.",
+      "assumptions": ["coarsening is a deterministic function of the rich record"],
+      "proof_type": "preimage inclusion",
+      "requires_real_data": false,
+      "empirical_boundary": "The practical size of the resulting uncertainty expansion depends on the application and record distribution."
+    },
+    {
+      "id": "T3_additive_nonidentifiability",
+      "claim": "In Y=S+N with unrestricted S and N, primary-only target/nuisance decomposition is not identifiable.",
+      "assumptions": ["S and N are unrestricted over a common additive vector space"],
+      "proof_type": "constructive observational equivalence via S+Delta and N-Delta",
+      "requires_real_data": false,
+      "empirical_boundary": "Domain restrictions can restore partial or point identification and must be justified separately."
+    },
+    {
+      "id": "T4_projection_energy_tradeoff",
+      "claim": "For an orthogonal projector P, target-to-nuisance energy ratio improves exactly when the nuisance capture fraction a_N exceeds target capture fraction a_S.",
+      "assumptions": ["P is an orthogonal projector", "target and nuisance vectors are nonzero", "performance quantity is the defined energy ratio"],
+      "proof_type": "Pythagorean projection identity",
+      "requires_real_data": false,
+      "empirical_boundary": "Values of a_N and a_S for a physical system are empirical."
+    },
+    {
+      "id": "T5_universal_nonharm_impossibility",
+      "claim": "Any nonzero reference-only projector can completely erase at least one target in an unrestricted target class.",
+      "assumptions": ["projector is nonzero", "target class contains nonzero vectors in projector range"],
+      "proof_type": "constructive counterexample",
+      "requires_real_data": false,
+      "empirical_boundary": "A restricted target class may avoid the counterexample but the restriction requires domain justification."
+    },
+    {
+      "id": "T6_reversible_decomposition",
+      "claim": "The decomposition pair (PY,(I-P)Y) is exactly invertible because the two components sum to Y.",
+      "assumptions": ["both decomposition channels are retained without lossy alteration"],
+      "proof_type": "algebraic identity",
+      "requires_real_data": false,
+      "empirical_boundary": "Numerical quantization, lossy compression or omitted provenance can break practical reversibility."
+    },
+    {
+      "id": "T7_decision_risk_order",
+      "claim": "For a fixed decision problem and loss, richer retained observation cannot worsen minimum achievable decision risk; deterministic coarsening cannot improve it.",
+      "assumptions": ["decision maker may use any rule measurable in the retained observation", "decision problem and loss are fixed"],
+      "proof_type": "nested decision-rule classes",
+      "requires_real_data": false,
+      "empirical_boundary": "A restricted or misspecified implemented learner may fail to achieve the information-theoretic optimum."
+    },
+    {
+      "id": "T8_partial_decomposition_coverage",
+      "claim": "If true nuisance lies in a reference-derived nuisance-compatible set, true target signal lies in the translated target-compatible set; calibrated nuisance-set coverage transfers to target-set coverage in the exact additive model.",
+      "assumptions": ["Y=S+N", "primary Y is treated as exactly observed for the basic result"],
+      "proof_type": "set transformation",
+      "requires_real_data": false,
+      "empirical_boundary": "Calibration of the physical nuisance-compatible set is empirical."
+    },
+    {
+      "id": "T9_additive_diameter_equality",
+      "claim": "Under a norm metric in the additive model, target-compatible set diameter equals nuisance-compatible set diameter.",
+      "assumptions": ["Y=S+N", "diameter uses a translation/reflection-invariant norm metric"],
+      "proof_type": "isometry",
+      "requires_real_data": false,
+      "empirical_boundary": "How narrow the nuisance set can be made by a physical reference is empirical."
+    },
+    {
+      "id": "T10_general_forward_model_contraction",
+      "claim": "For arbitrary Y=F(S,M), contraction of the compatible measurement-state set M(R) implies contraction of the compatible target set defined by existential inversion through F.",
+      "assumptions": ["the forward relation F and compatible measurement-state set are well-defined"],
+      "proof_type": "existential set monotonicity",
+      "requires_real_data": false,
+      "empirical_boundary": "Scientific validity of F and reference-induced restrictions on M require domain evidence."
+    },
+    {
+      "id": "T11_resolvable_coverage_monotonicity",
+      "claim": "Under exact compatible-set inference, reference refinement cannot reduce point-identification coverage and semantic coarsening cannot increase it.",
+      "assumptions": ["resolvability means the estimand is singleton over the complete compatible-world fiber"],
+      "proof_type": "pointwise monotonicity of singleton identified sets under set inclusion",
+      "requires_real_data": false,
+      "empirical_boundary": "Approximate observers may fail to represent the true compatible sets and can violate the ideal behavior."
+    }
+  ],
+  "overall_empirical_boundary": [
+    "physical reference informativeness",
+    "finite-sample nuisance representation calibration",
+    "target/nuisance coupling in a domain",
+    "observer approximation quality",
+    "transport across applications",
+    "named causal attribution without additional structural or interventional assumptions"
+  ]
+}
