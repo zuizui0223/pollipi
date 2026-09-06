@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 
 from pollipi_analysis.v3_tnoa_theory import (
@@ -15,15 +17,28 @@ from pollipi_analysis.v3_tnoa_theory import (
 )
 
 
+class ReferenceWorld(NamedTuple):
+    name: str
+    y: int
+    r: int
+    theta: int
+
+
+class SemanticWorld(NamedTuple):
+    evidence: str
+    binary: int
+    theta: str
+
+
 def test_reference_refinement_shrinks_compatible_worlds_and_identified_set() -> None:
     worlds = (
-        {"id": "a", "y": 0, "r": 0, "theta": 0},
-        {"id": "b", "y": 0, "r": 1, "theta": 1},
-        {"id": "c", "y": 1, "r": 0, "theta": 2},
+        ReferenceWorld("a", 0, 0, 0),
+        ReferenceWorld("b", 0, 1, 1),
+        ReferenceWorld("c", 1, 0, 2),
     )
-    y = lambda w: w["y"]
-    yr = lambda w: (w["y"], w["r"])
-    theta = lambda w: w["theta"]
+    y = lambda w: w.y
+    yr = lambda w: (w.y, w.r)
+    theta = lambda w: w.theta
 
     assert refinement_is_subset(worlds, y, yr, worlds[0])
     assert set(compatible_fiber(worlds, y, 0)) == {worlds[0], worlds[1]}
@@ -34,13 +49,13 @@ def test_reference_refinement_shrinks_compatible_worlds_and_identified_set() -> 
 
 def test_deterministic_coarsening_expands_compatible_worlds() -> None:
     worlds = (
-        {"e": "T", "binary": 1, "theta": "target-only"},
-        {"e": "U-overlap", "binary": 1, "theta": "target+nuisance"},
-        {"e": "N", "binary": 0, "theta": "nuisance-only"},
+        SemanticWorld("T", 1, "target-only"),
+        SemanticWorld("U-overlap", 1, "target+nuisance"),
+        SemanticWorld("N", 0, "nuisance-only"),
     )
-    rich = lambda w: w["e"]
-    coarse = lambda w: w["binary"]
-    theta = lambda w: w["theta"]
+    rich = lambda w: w.evidence
+    coarse = lambda w: w.binary
+    theta = lambda w: w.theta
 
     assert identified_set(worlds, rich, "T", theta) == frozenset({"target-only"})
     assert identified_set(worlds, coarse, 1, theta) == frozenset({"target-only", "target+nuisance"})
