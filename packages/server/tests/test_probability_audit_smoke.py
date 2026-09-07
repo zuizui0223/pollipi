@@ -77,3 +77,6 @@ def test_fake_camera_probability_audit_window_smoke(monkeypatch, tmp_path: Path)
     assert reference.ndim == 2
     assert primary.shape[0] == reference.shape[0]
     assert 0 < reference.shape[1] < primary.shape[1]
+
+    # Avoid leaving an enabled audit singleton in sys.modules for later tests.
+    _clear_server_modules()
