@@ -9,9 +9,9 @@ set of wrappers at application startup:
 * the existing TNOA log call supplies the stable run/device/probe identity;
 * an outer run wrapper finalizes edge/incomplete audit centres.
 
-When ``POLLIPI_AUDIT_ENABLED`` is false (the default), the wrappers preserve the
-existing behavior and perform no audit storage.  When enabled, configuration is
-validated at application startup and live adaptive capture is rejected.
+When ``POLLIPI_AUDIT_ENABLED`` is false (the default), installation returns before
+importing or patching the capture loop.  When enabled, configuration is validated at
+application startup and live adaptive capture is rejected.
 """
 from __future__ import annotations
 
@@ -75,6 +75,10 @@ def install_audit_capture_instrumentation() -> None:
 
     # Validate all benchmark settings before the application begins capturing.
     _config = AuditCaptureConfig.from_environment()
+    if not _config.enabled:
+        # Strong default-off contract: do not import/replace any capture-loop symbol.
+        _installed = True
+        return
 
     import visit_monitor_server.services.capture_loop as capture_loop
 
@@ -87,10 +91,9 @@ def install_audit_capture_instrumentation() -> None:
     @wraps(original_build_tnoa)
     def build_tnoa_wrapper(*args: Any, **kwargs: Any) -> Any:
         frame = args[1] if len(args) >= 2 else kwargs.get("frame")
-        if _config.enabled:
-            if frame is None:
-                raise RuntimeError("audit instrumentation could not observe probe frame")
-            _state.latest_frame = frame
+        if frame is None:
+            raise RuntimeError("audit instrumentation could not observe probe frame")
+        _state.latest_frame = frame
         return original_build_tnoa(*args, **kwargs)
 
     @wraps(original_create_controller)
@@ -100,8 +103,6 @@ def install_audit_capture_instrumentation() -> None:
     @wraps(original_write_tnoa)
     def write_tnoa_wrapper(path: Path, *args: Any, **kwargs: Any) -> Any:
         result = original_write_tnoa(path, *args, **kwargs)
-        if not _config.enabled:
-            return result
 
         frame = getattr(_state, "latest_frame", None)
         out = getattr(_state, "latest_policy_output", None)
@@ -138,7 +139,7 @@ def install_audit_capture_instrumentation() -> None:
     @wraps(original_live_active)
     def live_active_wrapper(*args: Any, **kwargs: Any) -> bool:
         active = bool(original_live_active(*args, **kwargs))
-        if active and _config.enabled:
+        if active:
             raise RuntimeError(
                 "POLLIPI_AUDIT_ENABLED requires shadow-only capture; live adaptive is forbidden"
             )
