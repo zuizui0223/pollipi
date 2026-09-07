@@ -12,11 +12,19 @@ from visit_monitor_server import __version__
 from visit_monitor_server.api.router import router
 from visit_monitor_server.config import ENABLE_LEGACY_ROUTES, WEB_DIR, get_image_dir
 from visit_monitor_server.services import TimelapseController
+from visit_monitor_server.services.audit_capture_instrumentation import (
+    install_audit_capture_instrumentation,
+)
 import visit_monitor_server.services as _services
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+
+    # Default-off scientific audit instrumentation.  When explicitly enabled it is
+    # validated before capture starts and remains shadow-only; otherwise this is an
+    # idempotent no-op with respect to acquisition timing and policy behavior.
+    install_audit_capture_instrumentation()
 
     controller = TimelapseController(get_image_dir())
 
