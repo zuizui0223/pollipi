@@ -22,7 +22,10 @@ def test_fake_camera_probability_audit_window_smoke(monkeypatch, tmp_path: Path)
     monkeypatch.setenv("POLLIPI_IMAGE_DIR", str(image_dir))
     monkeypatch.setenv("POLLIPI_DEVICE_ID", "audit-pi")
     monkeypatch.setenv("POLLIPI_DEVICE_NAME", "Audit Test Pi")
-    monkeypatch.setenv("POLLIPI_PROBE_INTERVAL_SEC", "0.1")
+    # The current probe-shadow/TNOA schemas persist probe_timestamp at second
+    # resolution. Keep the end-to-end smoke inside that canonical identity domain;
+    # sub-second duplicate IDs are separately fail-closed by AuditWindowCoordinator.
+    monkeypatch.setenv("POLLIPI_PROBE_INTERVAL_SEC", "1.0")
     monkeypatch.delenv("POLLIPI_LIVE_ADAPTIVE_ENABLED", raising=False)
     monkeypatch.setenv("POLLIPI_AUDIT_ENABLED", "true")
     monkeypatch.setenv("POLLIPI_AUDIT_SEED", "audit-smoke-seed")
@@ -41,7 +44,7 @@ def test_fake_camera_probability_audit_window_smoke(monkeypatch, tmp_path: Path)
         )
         assert started.status_code == 200
 
-        deadline = time.monotonic() + 8.0
+        deadline = time.monotonic() + 12.0
         window_dirs: list[Path] = []
         while time.monotonic() < deadline:
             audit_roots = list((image_dir / "probability_audit").glob("*/windows/*"))
