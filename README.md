@@ -14,6 +14,24 @@ It is **not** an automatic pollinator classifier, a pure motion-triggered camera
 
 > 日本語の実際の操作手順: [現行運用ガイド](docs/OPERATION_GUIDE_JA.md)
 
+## Current scientific scope — 2026-09-26
+
+PolliPi's primary research question is now deliberately narrow:
+
+> **Can classifier-informed adaptive temporal sampling capture more true flower-visitation events than fixed-interval timelapse while avoiding the noise-driven recording cost of simple motion-reactive sampling?**
+
+The primary field comparison is therefore:
+
+1. **① Plain timelapse** — fixed-interval stills;
+2. **② Motion-reactive** — any detected motion increases still-image density;
+3. **③ Classified adaptive** — broad environmental motion is rejected while local candidate activity increases still-image density.
+
+Mode ④ (classified + video) is useful for candidate confirmation, but it is **not part of the primary stills-only method comparison**.
+
+The implementation is simulation-informed, runtime-integrated, and CI-tested, but **③ is not yet field-validated**. The canonical next scientific milestone is [Issue #81](https://github.com/zuizui0223/pollipi/issues/81), which requires an independently reviewed field reference sequence and a reproducible fixed-vs-motion-vs-classified comparison.
+
+The general V3 / TNOA information-refinement theory is no longer part of PolliPi's primary scientific scope. Its canonical home is [`zuizui0223/v3`](https://github.com/zuizui0223/v3), with physical validation tracked there in [V3 Issue #31](https://github.com/zuizui0223/v3/issues/31). PolliPi retains only acquisition/audit adapters and historical provenance needed for cross-project validation.
+
 ## System role and operating principle
 
 - Each Pi runs capture autonomously after a session has been started.
