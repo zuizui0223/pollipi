@@ -1,5 +1,20 @@
 # Repository cleanup audit
 
+## 2026-09-26 scope cleanup
+
+The repository now has one primary scientific task: **field validation of fixed, motion-reactive, and classified-adaptive still-image sampling**. Track that work in [#81](https://github.com/zuizui0223/pollipi/issues/81).
+
+Repository-boundary decisions:
+
+- PolliPi owns camera acquisition, local-LAN operation, mesh/probe observation, adaptive still allocation, field logging, and the three-way field comparison.
+- Mode ④ candidate video remains an auxiliary confirmation path and is not part of the primary ①/②/③ stills comparison.
+- V3 / TNOA general theory and controlled-real scientific validation belong to [`zuizui0223/v3`](https://github.com/zuizui0223/v3), now tracked by [`v3#31`](https://github.com/zuizui0223/v3/issues/31).
+- Historical V3/TNOA implementation files may remain in PolliPi when required for provenance or acquisition compatibility; they are not the scientific source of truth.
+- Old design issues are closed when their implementation has landed or their scientific ownership moved elsewhere. Git history and legacy code are retained rather than destructively rewritten.
+
+The intended active issue surface after this cleanup is small: field validation (#81) plus genuinely unresolved runtime/network hardening. Old migration, simulation-bridge, and V3/TNOA planning issues should not be used as current roadmaps.
+
+
 ## Source of truth
 
 - `packages/server/`: current FastAPI server source.
