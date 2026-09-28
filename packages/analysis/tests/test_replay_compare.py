@@ -18,10 +18,12 @@ from pollipi_analysis.replay.compare import (
     compare,
     load_probe_log,
     load_visits,
+    random_budget_baseline,
     read_run_start,
     replay_any_motion,
     replay_classified,
     replay_fixed,
+    replay_random_budget,
     replay_video,
 )
 from pollipi_analysis.policy.three_stage import ThreeStageConfig
@@ -123,3 +125,89 @@ def test_round_trip_through_csv_and_actual_cross_check(tmp_path) -> None:
     vpath.write_text("start,end\n2026-07-04T09:00:08,2026-07-04T09:00:12\n", encoding="utf-8")
     visits = load_visits(vpath, read_run_start(path))
     assert visits == [(8.0, 12.0)]
+
+
+def test_random_budget_replay_preserves_budget_and_first_anchor() -> None:
+    probes = _probes([NO_ACTIVITY] * 20)
+    import random
+
+    events = replay_random_budget(
+        probes,
+        5,
+        rng=random.Random(123),
+        anchor_first=True,
+    )
+    assert len(events) == 5
+    assert events[0].time_sec == 0.0
+    assert len({e.time_sec for e in events}) == 5
+
+
+def test_random_budget_null_is_reproducible_and_can_show_temporal_value() -> None:
+    # One rare visit occupies exactly one probe opportunity. With a two-still
+    # budget and the first anchor fixed, a random schedule has roughly a 1/99
+    # chance to hit the visit. A classified schedule that deliberately places its
+    # second still there should therefore sit well above the random null.
+    probes = _probes([NO_ACTIVITY] * 100)
+    visits = [(250.0, 250.0)]  # probe index 50
+    a = random_budget_baseline(
+        probes,
+        visits,
+        budget_stills=2,
+        classified_visit_capture_rate=1.0,
+        reps=10_000,
+        seed=20260928,
+        anchor_first=True,
+    )
+    b = random_budget_baseline(
+        probes,
+        visits,
+        budget_stills=2,
+        classified_visit_capture_rate=1.0,
+        reps=10_000,
+        seed=20260928,
+        anchor_first=True,
+    )
+    assert a == b
+    assert a.mean_visit_capture_rate < 0.03
+    assert a.q95_visit_capture_rate == 0.0
+    assert a.upper_tail_p_ge_classified < 0.05
+
+
+def test_compare_attaches_equal_budget_null_to_classified_policy() -> None:
+    seq = [NO_ACTIVITY] * 5 + [
+        UNCERTAIN_LOCAL_ACTIVITY,
+        STRONG_VISITATION_CANDIDATE,
+    ] + [NO_ACTIVITY] * 20
+    probes = _probes(seq)
+    visits = [(25.0, 35.0)]
+
+    cmp = compare(
+        probes,
+        fixed_interval_sec=60.0,
+        visits=visits,
+        random_reps=2_000,
+        random_seed=11,
+    )
+    classified = next(r for r in cmp.results if r.name == "3 classified")
+    assert cmp.random_budget is not None
+    assert cmp.random_budget.budget_stills == classified.stills
+    assert cmp.random_budget.classified_visit_capture_rate == classified.visit_capture_rate
+    payload = cmp.as_dict()
+    assert "random_budget_null" in payload
+    assert payload["random_budget_null"]["reps"] == 2_000
+
+
+def test_random_budget_free_first_sensitivity_does_not_force_anchor() -> None:
+    probes = _probes([NO_ACTIVITY] * 10)
+    import random
+
+    events = replay_random_budget(
+        probes,
+        1,
+        rng=random.Random(7),
+        anchor_first=False,
+    )
+    assert len(events) == 1
+    # Seed 7 does not choose index 0 for range(10); this guards that the
+    # sensitivity mode really randomises the first capture.
+    assert events[0].time_sec != 0.0

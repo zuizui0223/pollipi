@@ -10,9 +10,15 @@ policy would have done on that identical field record:
 
 For each policy it reports the capture COST (stills, video clips + seconds,
 estimated storage) and — when a visit-annotation file is supplied — the visit
-CAPTURE RATE and mean latency. This is the offline evaluation for the study:
-show that ③ sits between ①'s missed short visits and ②'s wind/shadow-driven
-wasted captures, i.e. the best capture-rate vs storage/energy balance.
+CAPTURE RATE and mean latency. The same visit truth also supports a predeclared
+random-budget null: keep ③'s still-image budget fixed, distribute those captures
+uniformly over the same probe opportunities, and ask whether ③'s observed visit
+capture exceeds the resulting Monte Carlo distribution.
+
+This is the offline evaluation for the study: show that ③ sits between ①'s missed
+short visits and ②'s wind/shadow-driven wasted captures, and separately test
+whether activity-informed temporal allocation itself beats an equal-cost random
+allocation.
 
 The decision states are read from the field log, but every policy is replayed
 through the SAME :class:`ThreeStageController` the Pi runs, so the control logic
@@ -26,6 +32,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -136,6 +144,50 @@ class PolicyResult:
         return d
 
 
+@dataclass(frozen=True)
+class RandomBudgetSummary:
+    """Monte Carlo null for equal-budget temporal allocation.
+
+    The primary null preserves the mandatory first capture used by the replayed
+    schedules, then places the remaining stills uniformly without replacement
+    across the remaining probe opportunities. Setting anchor_first=False provides
+    a fully random sensitivity analysis.
+    """
+
+    reps: int
+    seed: int
+    anchor_first: bool
+    probe_opportunities: int
+    budget_stills: int
+    classified_visit_capture_rate: float
+    mean_visit_capture_rate: float
+    q05_visit_capture_rate: float
+    q50_visit_capture_rate: float
+    q95_visit_capture_rate: float
+    upper_tail_p_ge_classified: float
+
+    @property
+    def classified_minus_random_mean(self) -> float:
+        return self.classified_visit_capture_rate - self.mean_visit_capture_rate
+
+    def as_dict(self) -> dict:
+        return {
+            "null": "equal-budget uniform temporal allocation",
+            "reps": self.reps,
+            "seed": self.seed,
+            "anchor_first": self.anchor_first,
+            "probe_opportunities": self.probe_opportunities,
+            "budget_stills": self.budget_stills,
+            "classified_visit_capture_rate": round(self.classified_visit_capture_rate, 4),
+            "mean_visit_capture_rate": round(self.mean_visit_capture_rate, 4),
+            "q05_visit_capture_rate": round(self.q05_visit_capture_rate, 4),
+            "q50_visit_capture_rate": round(self.q50_visit_capture_rate, 4),
+            "q95_visit_capture_rate": round(self.q95_visit_capture_rate, 4),
+            "classified_minus_random_mean": round(self.classified_minus_random_mean, 4),
+            "upper_tail_p_ge_classified": round(self.upper_tail_p_ge_classified, 6),
+        }
+
+
 def _summarize(name: str, events: list[CaptureEvent], cost: CostModel) -> PolicyResult:
     stills = sum(1 for e in events if e.kind == "image")
     clips = sum(1 for e in events if e.kind == "video")
@@ -158,6 +210,35 @@ def replay_fixed(probes: list[Probe], interval_sec: float) -> list[CaptureEvent]
             events.append(CaptureEvent(p.elapsed_sec, "image"))
             last = p.elapsed_sec
     return events
+
+
+def replay_random_budget(
+    probes: list[Probe],
+    budget_stills: int,
+    *,
+    rng: random.Random,
+    anchor_first: bool = True,
+) -> list[CaptureEvent]:
+    """Uniformly allocate an equal still-image budget over probe opportunities.
+
+    This is a temporal-allocation null, not another detector. The main analysis
+    preserves the first mandatory capture and randomises only the remaining
+    budget; anchor_first=False randomises all captures as a sensitivity check.
+    Sampling is without replacement because the live/replay scheduler cannot save
+    two distinct stills at the same probe opportunity.
+    """
+    if budget_stills <= 0 or not probes:
+        return []
+    budget = min(int(budget_stills), len(probes))
+    if anchor_first:
+        chosen = [0]
+        remaining = budget - 1
+        if remaining > 0:
+            chosen.extend(rng.sample(range(1, len(probes)), remaining))
+    else:
+        chosen = rng.sample(range(len(probes)), budget)
+    chosen.sort()
+    return [CaptureEvent(probes[i].elapsed_sec, "image") for i in chosen]
 
 
 def _replay_controller(
@@ -238,6 +319,80 @@ def _apply_coverage(result: PolicyResult, visits: list[tuple[float, float]]) -> 
     result.mean_first_capture_latency_sec = (sum(latencies) / len(latencies)) if latencies else None
 
 
+def _still_capture_rate(events: list[CaptureEvent], visits: list[tuple[float, float]]) -> float:
+    """Event-level visit capture rate for still-image schedules."""
+    if not visits:
+        return 0.0
+    times = sorted(e.time_sec for e in events if e.kind == "image")
+    captured = 0
+    for start, end in visits:
+        i = bisect_left(times, start)
+        if i < len(times) and times[i] <= end:
+            captured += 1
+    return captured / len(visits)
+
+
+def _empirical_quantile(values: list[float], q: float) -> float:
+    if not values:
+        raise ValueError("quantile requires at least one value")
+    if not 0.0 <= q <= 1.0:
+        raise ValueError("q must be between 0 and 1")
+    xs = sorted(values)
+    pos = (len(xs) - 1) * q
+    lo = int(pos)
+    hi = min(lo + 1, len(xs) - 1)
+    frac = pos - lo
+    return xs[lo] * (1.0 - frac) + xs[hi] * frac
+
+
+def random_budget_baseline(
+    probes: list[Probe],
+    visits: list[tuple[float, float]],
+    *,
+    budget_stills: int,
+    classified_visit_capture_rate: float,
+    reps: int = 10_000,
+    seed: int = 20260928,
+    anchor_first: bool = True,
+) -> RandomBudgetSummary:
+    """Monte Carlo equal-budget null for activity-informed temporal allocation.
+
+    upper_tail_p_ge_classified uses the standard +1 correction:
+    (1 + count(null >= observed)) / (reps + 1).
+    """
+    if reps <= 0:
+        raise ValueError("reps must be positive")
+    if budget_stills < 0:
+        raise ValueError("budget_stills must be non-negative")
+    rng = random.Random(seed)
+    rates: list[float] = []
+    ge_observed = 0
+    for _ in range(reps):
+        events = replay_random_budget(
+            probes,
+            budget_stills,
+            rng=rng,
+            anchor_first=anchor_first,
+        )
+        rate = _still_capture_rate(events, visits)
+        rates.append(rate)
+        if rate >= classified_visit_capture_rate:
+            ge_observed += 1
+    return RandomBudgetSummary(
+        reps=reps,
+        seed=seed,
+        anchor_first=anchor_first,
+        probe_opportunities=len(probes),
+        budget_stills=min(budget_stills, len(probes)),
+        classified_visit_capture_rate=classified_visit_capture_rate,
+        mean_visit_capture_rate=sum(rates) / len(rates),
+        q05_visit_capture_rate=_empirical_quantile(rates, 0.05),
+        q50_visit_capture_rate=_empirical_quantile(rates, 0.50),
+        q95_visit_capture_rate=_empirical_quantile(rates, 0.95),
+        upper_tail_p_ge_classified=(1 + ge_observed) / (reps + 1),
+    )
+
+
 def read_run_start(path: Union[str, Path]) -> Optional[datetime]:
     """The first probe's absolute timestamp (the elapsed-time zero point)."""
     with Path(path).open(newline="", encoding="utf-8") as handle:
@@ -280,14 +435,18 @@ class Comparison:
     duration_sec: float
     fixed_interval_sec: float
     results: list[PolicyResult]
+    random_budget: Optional[RandomBudgetSummary] = None
 
     def as_dict(self) -> dict:
-        return {
+        out = {
             "run_probes": self.run_probes,
             "duration_sec": round(self.duration_sec, 1),
             "fixed_interval_sec": self.fixed_interval_sec,
             "policies": [r.as_dict() for r in self.results],
         }
+        if self.random_budget is not None:
+            out["random_budget_null"] = self.random_budget.as_dict()
+        return out
 
 
 def compare(
@@ -297,6 +456,9 @@ def compare(
     config: Optional[ThreeStageConfig] = None,
     cost: Optional[CostModel] = None,
     visits: Optional[list[tuple[float, float]]] = None,
+    random_reps: int = 10_000,
+    random_seed: int = 20260928,
+    random_anchor_first: bool = True,
 ) -> Comparison:
     base = config or ThreeStageConfig()
     cost = cost or CostModel()
@@ -310,11 +472,23 @@ def compare(
         _summarize("4 video", replay_video(probes, base), cost),
         _summarize("actual(log)", actual_from_log(probes), cost),
     ]
+    random_summary: Optional[RandomBudgetSummary] = None
     if visits:
         for r in results:
             _apply_coverage(r, visits)
+        if random_reps > 0:
+            classified = next(r for r in results if r.name == "3 classified")
+            random_summary = random_budget_baseline(
+                probes,
+                visits,
+                budget_stills=classified.stills,
+                classified_visit_capture_rate=float(classified.visit_capture_rate or 0.0),
+                reps=random_reps,
+                seed=random_seed,
+                anchor_first=random_anchor_first,
+            )
     duration = probes[-1].elapsed_sec - probes[0].elapsed_sec if probes else 0.0
-    return Comparison(len(probes), duration, fixed_interval_sec, results)
+    return Comparison(len(probes), duration, fixed_interval_sec, results, random_summary)
 
 
 def format_report(cmp: Comparison) -> str:
@@ -339,6 +513,29 @@ def format_report(cmp: Comparison) -> str:
             lat = "-" if r.mean_first_capture_latency_sec is None else f"{r.mean_first_capture_latency_sec:>7.0f}"
             row += f"{rate:>9}{lat:>8}"
         lines.append(row)
+    if cmp.random_budget is not None:
+        rb = cmp.random_budget
+        lines.extend(
+            [
+                "",
+                "Equal-budget random temporal-allocation null:",
+                (
+                    f"  N={rb.budget_stills} stills, reps={rb.reps}, seed={rb.seed}, "
+                    f"anchor_first={rb.anchor_first}"
+                ),
+                (
+                    f"  random visit capture: mean={rb.mean_visit_capture_rate*100:.1f}% "
+                    f"q05={rb.q05_visit_capture_rate*100:.1f}% "
+                    f"q50={rb.q50_visit_capture_rate*100:.1f}% "
+                    f"q95={rb.q95_visit_capture_rate*100:.1f}%"
+                ),
+                (
+                    f"  classified={rb.classified_visit_capture_rate*100:.1f}% "
+                    f"delta_vs_random_mean={rb.classified_minus_random_mean*100:+.1f} pp "
+                    f"upper-tail p={rb.upper_tail_p_ge_classified:.4f}"
+                ),
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -355,6 +552,23 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--still-kb", type=float, default=500.0, help="bytes/still estimate (KB)")
     parser.add_argument("--video-mbps", type=float, default=6.0, help="clip bitrate (Mbit/s)")
     parser.add_argument("--visits", type=Path, default=None, help="CSV of start,end visit windows (seconds)")
+    parser.add_argument(
+        "--random-reps",
+        type=int,
+        default=10_000,
+        help="equal-budget random temporal-allocation replicates (0 disables; default 10000)",
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=20260928,
+        help="seed for the random-budget null",
+    )
+    parser.add_argument(
+        "--random-free-first",
+        action="store_true",
+        help="sensitivity analysis: randomise the first capture too (default preserves the first anchor)",
+    )
     parser.add_argument("--json", action="store_true", help="emit JSON instead of a table")
     args = parser.parse_args(argv)
 
@@ -381,7 +595,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         video_bitrate_bits=int(args.video_mbps * 1_000_000),
     )
     visits = load_visits(args.visits, read_run_start(args.log)) if args.visits else None
-    cmp = compare(probes, fixed_interval_sec=args.fixed_interval, config=base, cost=cost, visits=visits)
+    cmp = compare(
+        probes,
+        fixed_interval_sec=args.fixed_interval,
+        config=base,
+        cost=cost,
+        visits=visits,
+        random_reps=args.random_reps,
+        random_seed=args.random_seed,
+        random_anchor_first=not args.random_free_first,
+    )
 
     if args.json:
         print(json.dumps(cmp.as_dict(), indent=2, ensure_ascii=False))
