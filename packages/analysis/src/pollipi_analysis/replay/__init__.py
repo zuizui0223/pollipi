@@ -72,3 +72,15 @@ __all__ += [
     "analyze_field_validation",
     "format_field_validation_report",
 ]
+
+from pollipi_analysis.replay.preflight import (
+    FieldInputPreflight,
+    RunInputAudit,
+    preflight_field_inputs,
+)
+
+__all__ += [
+    "FieldInputPreflight",
+    "RunInputAudit",
+    "preflight_field_inputs",
+]
