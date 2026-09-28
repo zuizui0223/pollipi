@@ -48,7 +48,7 @@ def _sha256(path: Path) -> str:
 
 def _module_source_hash(module) -> tuple[str, str]:
     path = Path(module.__file__).resolve()
-    return str(path), _sha256(path)
+    return path.name, _sha256(path)
 
 
 def _analysis_code_provenance() -> dict:
@@ -60,8 +60,8 @@ def _analysis_code_provenance() -> dict:
     }
     rows = {}
     for name, module in modules.items():
-        path, digest = _module_source_hash(module)
-        rows[name] = {"path": path, "sha256": digest}
+        filename, digest = _module_source_hash(module)
+        rows[name] = {"file": filename, "sha256": digest}
     canonical = json.dumps(
         {name: row["sha256"] for name, row in sorted(rows.items())},
         sort_keys=True,
