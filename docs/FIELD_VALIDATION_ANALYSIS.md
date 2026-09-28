@@ -174,6 +174,24 @@ enter the bootstrap sampling frame.
 For the non-visit still burden, all positive-duration runs enter the bootstrap
 sampling frame, including zero-visit runs.
 
+## Independent visit-event truth
+
+The paper-level analysis must use policy-independent visit-event truth as defined
+in [`VISIT_EVENT_TRUTH_CONTRACT.md`](VISIT_EVENT_TRUTH_CONTRACT.md).
+
+The run-level `visits_csv` must contain at least:
+
+```text
+event_id,start,end,truth_source
+```
+
+and `truth_source` must name an allowed independent reference channel such as
+`continuous_reference_video`.
+
+Saved PolliPi JPEG labels alone are not valid primary event truth because they
+cannot reveal visits that occurred when PolliPi did not save an image. The input
+preflight rejects policy-selected stills as declared truth.
+
 ## Canonical input
 
 Use the same joint manifest as the random-budget analysis:
@@ -244,6 +262,38 @@ python -m pollipi_analysis.replay.field_validation joint_manifest.csv \
 
 Use `--random-free-first` only for the already-predeclared sensitivity analysis
 where the first capture is randomised too.
+
+## Auditable result bundle
+
+The preferred paper-level command is:
+
+```bash
+python -m pollipi_analysis.replay.bundle joint_manifest.csv \
+  --output-dir results/field_validation_v1
+```
+
+With default frozen settings this writes:
+
+```text
+pollipi_field_input_preflight_v1.json
+pollipi_field_validation_v1.json
+pollipi_field_validation_v1.txt
+pollipi_field_validation_bundle_v1.json
+```
+
+The bundle manifest records:
+
+- the input fingerprint derived from the manifest, every probe log and every
+  independent visit-truth file;
+- SHA-256 of the exact analysis source modules used for compare, joint random
+  inference, preflight and field validation;
+- the analysis-code fingerprint derived from those module hashes;
+- all frozen bootstrap/randomization parameters;
+- SHA-256 of the preflight JSON, validation JSON and human-readable report;
+- the resulting claim-gate booleans.
+
+If preflight fails, no validation result/report is produced. The bundle records
+`status=input_preflight_failed` and preserves the errors.
 
 ## Result artifact
 

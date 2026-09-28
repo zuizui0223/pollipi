@@ -27,7 +27,11 @@ def test_valid_preflight_hashes_inputs_and_warns_on_naive_time(tmp_path) -> None
     visits = tmp_path / "visits.csv"
     manifest = tmp_path / "manifest.csv"
     _write_probe(probe)
-    visits.write_text("start,end\n5,10\n", encoding="utf-8")
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,10,continuous_reference_video\n",
+        encoding="utf-8",
+    )
     manifest.write_text(
         "run_id,probe_log,visits_csv,low_interval_sec,mid_interval_sec,high_interval_sec\n"
         "r1,probe.csv,visits.csv,30,15,5\n",
@@ -53,14 +57,23 @@ def test_fingerprint_changes_when_truth_file_changes(tmp_path) -> None:
     visits = tmp_path / "visits.csv"
     manifest = tmp_path / "manifest.csv"
     _write_probe(probe)
-    visits.write_text("start,end\n5,10\n", encoding="utf-8")
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,10,continuous_reference_video\n",
+        encoding="utf-8",
+    )
     manifest.write_text(
         "run_id,probe_log,visits_csv\nr1,probe.csv,visits.csv\n",
         encoding="utf-8",
     )
 
     first = preflight_field_inputs(manifest)
-    visits.write_text("start,end\n5,10\n15,20\n", encoding="utf-8")
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,10,continuous_reference_video\n"
+        "E2,15,20,continuous_reference_video\n",
+        encoding="utf-8",
+    )
     second = preflight_field_inputs(manifest)
 
     assert first.input_fingerprint != second.input_fingerprint
@@ -72,7 +85,11 @@ def test_preflight_fails_duplicate_probe_timestamp(tmp_path) -> None:
     visits = tmp_path / "visits.csv"
     manifest = tmp_path / "manifest.csv"
     _write_probe(probe, duplicate=True)
-    visits.write_text("start,end\n5,10\n", encoding="utf-8")
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,10,continuous_reference_video\n",
+        encoding="utf-8",
+    )
     manifest.write_text(
         "run_id,probe_log,visits_csv\nr1,probe.csv,visits.csv\n",
         encoding="utf-8",
@@ -88,7 +105,11 @@ def test_preflight_fails_unknown_state_and_out_of_range_visit(tmp_path) -> None:
     visits = tmp_path / "visits.csv"
     manifest = tmp_path / "manifest.csv"
     _write_probe(probe, bad_state=True)
-    visits.write_text("start,end\n5,50\n", encoding="utf-8")
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,50,continuous_reference_video\n",
+        encoding="utf-8",
+    )
     manifest.write_text(
         "run_id,probe_log,visits_csv\nr1,probe.csv,visits.csv\n",
         encoding="utf-8",
@@ -109,7 +130,11 @@ def test_preflight_rejects_invalid_interval_order(tmp_path) -> None:
     visits = tmp_path / "visits.csv"
     manifest = tmp_path / "manifest.csv"
     _write_probe(probe)
-    visits.write_text("start,end\n5,10\n", encoding="utf-8")
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,10,continuous_reference_video\n",
+        encoding="utf-8",
+    )
     manifest.write_text(
         "run_id,probe_log,visits_csv,low_interval_sec,mid_interval_sec,high_interval_sec\n"
         "r1,probe.csv,visits.csv,10,15,5\n",
@@ -126,7 +151,12 @@ def test_overlapping_visits_are_warning_not_error(tmp_path) -> None:
     visits = tmp_path / "visits.csv"
     manifest = tmp_path / "manifest.csv"
     _write_probe(probe)
-    visits.write_text("start,end\n5,12\n10,15\n", encoding="utf-8")
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,12,continuous_reference_video\n"
+        "E2,10,15,continuous_reference_video\n",
+        encoding="utf-8",
+    )
     manifest.write_text(
         "run_id,probe_log,visits_csv\nr1,probe.csv,visits.csv\n",
         encoding="utf-8",
@@ -135,3 +165,46 @@ def test_overlapping_visits_are_warning_not_error(tmp_path) -> None:
     result = preflight_field_inputs(manifest)
     assert result.ok
     assert any("overlapping/concurrent" in warning for warning in result.warnings)
+
+
+def test_preflight_rejects_policy_selected_stills_as_truth(tmp_path) -> None:
+    probe = tmp_path / "probe.csv"
+    visits = tmp_path / "visits.csv"
+    manifest = tmp_path / "manifest.csv"
+    _write_probe(probe)
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,10,pollipi_selected_stills\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "run_id,probe_log,visits_csv\n"
+        "r1,probe.csv,visits.csv\n",
+        encoding="utf-8",
+    )
+
+    result = preflight_field_inputs(manifest)
+    assert not result.ok
+    assert any("invalid/non-independent truth_source" in error for error in result.errors)
+
+
+def test_preflight_rejects_duplicate_event_ids(tmp_path) -> None:
+    probe = tmp_path / "probe.csv"
+    visits = tmp_path / "visits.csv"
+    manifest = tmp_path / "manifest.csv"
+    _write_probe(probe)
+    visits.write_text(
+        "event_id,start,end,truth_source\n"
+        "E1,5,10,continuous_reference_video\n"
+        "E1,12,15,continuous_reference_video\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(
+        "run_id,probe_log,visits_csv\n"
+        "r1,probe.csv,visits.csv\n",
+        encoding="utf-8",
+    )
+
+    result = preflight_field_inputs(manifest)
+    assert not result.ok
+    assert any("duplicate event_id" in error for error in result.errors)

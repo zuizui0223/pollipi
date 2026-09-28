@@ -268,6 +268,13 @@ Modes ①/②/③, run-cluster bootstrap uncertainty, the 5-percentage-point H2
 non-inferiority margin, non-visit recording burden, and the equal-budget random
 temporal-allocation test into one versioned result artifact.
 
+Primary visit truth must come from an independent reference stream, not from
+PolliPi-selected stills; see
+[`VISIT_EVENT_TRUTH_CONTRACT.md`](docs/VISIT_EVENT_TRUTH_CONTRACT.md). The
+preferred paper-level execution is `pollipi_analysis.replay.bundle`, which
+fail-closes on invalid inputs and writes an input/code/output-hashed validation
+bundle.
+
 Implemented:
 
 - pure non-ML mesh analysis;

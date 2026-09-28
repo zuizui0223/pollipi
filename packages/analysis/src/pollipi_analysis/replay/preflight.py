@@ -16,6 +16,12 @@ from pollipi_analysis.replay.compare import load_visits, read_run_start
 from pollipi_analysis.schemas.states import ALL_DECISION_STATES
 
 SCHEMA = "pollipi-field-input-preflight-v1"
+INDEPENDENT_TRUTH_SOURCES = frozenset({
+    "continuous_reference_video",
+    "high_frequency_reference_video",
+    "controlled_event_schedule",
+    "independent_sensor",
+})
 
 
 def _sha256(path: Path) -> str:
@@ -168,15 +174,32 @@ def _audit_visits(
     duration_sec: float,
 ) -> tuple[list[tuple[float, float]], tuple[str, ...]]:
     warnings: list[str] = []
+    event_ids: list[str] = []
+    truth_sources: list[str] = []
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        required = {"start", "end"}
+        required = {"event_id", "start", "end", "truth_source"}
         missing = required - set(reader.fieldnames or [])
         if missing:
             raise ValueError(
                 f"{run_id}: visits CSV missing required columns: "
                 + ", ".join(sorted(missing))
             )
+        for line_no, row in enumerate(reader, start=2):
+            event_id = (row.get("event_id") or "").strip()
+            truth_source = (row.get("truth_source") or "").strip()
+            if not event_id:
+                raise ValueError(f"{run_id}: empty event_id at visits line {line_no}")
+            if truth_source not in INDEPENDENT_TRUTH_SOURCES:
+                allowed = ", ".join(sorted(INDEPENDENT_TRUTH_SOURCES))
+                raise ValueError(
+                    f"{run_id}: invalid/non-independent truth_source at visits line "
+                    f"{line_no}: {truth_source!r}; allowed: {allowed}"
+                )
+            event_ids.append(event_id)
+            truth_sources.append(truth_source)
+    if len(set(event_ids)) != len(event_ids):
+        raise ValueError(f"{run_id}: duplicate event_id in visits CSV")
 
     try:
         visits = load_visits(path, run_start)

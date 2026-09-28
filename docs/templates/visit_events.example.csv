@@ -1,0 +1,3 @@
+event_id,start,end,truth_source,visitor_group,reviewer_id,confidence,reference_file,notes
+V0001,125.0,133.5,continuous_reference_video,bee,R01,high,reference_run01.mp4,visitor contacted focal flower
+V0002,418.2,421.0,continuous_reference_video,fly,R01,medium,reference_run01.mp4,small visitor; broad group only
