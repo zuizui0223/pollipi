@@ -44,6 +44,7 @@ def test_full_positive_pattern_supports_all_frozen_claim_gates() -> None:
         _informative_run("b", 33),  # 165 s
         _informative_run("c", 39),  # 195 s
         _informative_run("d", 45),  # 225 s
+        _informative_run("e", 51),  # 255 s
     ]
     summary = analyze_field_validation(
         runs,
@@ -59,6 +60,9 @@ def test_full_positive_pattern_supports_all_frozen_claim_gates() -> None:
     assert policies["3 classified"].visit_capture_rate == 1.0
     assert policies["3 classified"].nonvisit_stills_per_hour < policies["2 any-motion"].nonvisit_stills_per_hour
 
+    assert summary.primary_inference_eligible
+    assert summary.visit_run_count == 5
+    assert summary.cost_run_count == 5
     assert summary.h1_capture_difference.lower > 0.0
     assert summary.h1_supported
     assert summary.h2_capture_difference.lower > -0.05
@@ -151,3 +155,29 @@ def test_report_and_json_expose_claim_gates() -> None:
         "random_timing_supported",
         "all_primary_criteria_supported",
     }
+
+
+def test_fewer_than_five_runs_reports_insufficient_evidence() -> None:
+    runs = [
+        _informative_run("a", 27),
+        _informative_run("b", 33),
+        _informative_run("c", 39),
+        _informative_run("d", 45),
+    ]
+    summary = analyze_field_validation(
+        runs,
+        bootstrap_reps=200,
+        random_reps=500,
+        bootstrap_seed=10,
+        random_seed=11,
+    )
+    # Point estimates can be excellent, but the frozen paper-level gates must
+    # remain closed when there are too few independent run clusters.
+    assert summary.h1_capture_difference.observed > 0
+    assert not summary.primary_inference_eligible
+    assert not summary.h1_supported
+    assert not summary.h2_capture_noninferior
+    assert not summary.h2_cost_reduction_supported
+    assert not summary.random_timing_supported
+    assert not summary.all_primary_criteria_supported
+    assert any("at least 5" in reason for reason in summary.eligibility_reasons)
