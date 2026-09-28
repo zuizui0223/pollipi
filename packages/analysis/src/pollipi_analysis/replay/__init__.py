@@ -38,3 +38,19 @@ __all__ = [
     "replay_random_budget",
     "replay_video",
 ]
+
+from pollipi_analysis.replay.joint import (
+    JointRandomBudgetSummary,
+    JointRun,
+    format_joint_report,
+    joint_random_budget_baseline,
+    load_joint_manifest,
+)
+
+__all__ += [
+    "JointRandomBudgetSummary",
+    "JointRun",
+    "format_joint_report",
+    "joint_random_budget_baseline",
+    "load_joint_manifest",
+]
