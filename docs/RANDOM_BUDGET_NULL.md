@@ -79,7 +79,7 @@ The anchor-preserving result is primary because it matches the actual scheduling
 contract. The fully random result is a sensitivity analysis, not a replacement
 chosen after looking at results.
 
-## Multiple runs / devices
+## Multiple runs / devices — frozen paper-level test
 
 Randomisation must be performed **within each run**.
 
@@ -87,9 +87,82 @@ Do not pool all probe opportunities across devices, days, flowers, or runs and
 then redistribute a global image budget. Each run keeps its own Mode ③ still
 budget, duration, probe opportunities, and annotated visit windows.
 
-For a multi-run paper-level test, combine run-level evidence with a predeclared
-aggregate statistic or generate a joint null by independently randomising within
-each run on every Monte Carlo replicate. Do not move captures between runs.
+The paper-level primary statistic is now frozen as the **micro-average event
+capture rate**:
+
+```text
+R_micro = total Mode-③-captured visit events / total annotated visit events
+```
+
+This weights each independently annotated visit event equally.
+
+For every Monte Carlo replicate, every run is independently randomised using its
+own unchanged Mode-③ still budget and opportunity set. The replicate-level null
+statistic is the corresponding pooled captured-event count divided by the same
+fixed total number of annotated visits.
+
+The primary one-sided joint p-value is:
+
+```text
+p_micro = (1 + number of null R_micro >= observed R_micro) / (B + 1)
+```
+
+with `B = 10,000`, master seed `20260928`, and `alpha = 0.05`.
+
+### Run-balanced sensitivity statistic
+
+Because high-visit runs contribute more events to the micro-average, report a
+second, predeclared **macro-average run capture rate**:
+
+```text
+R_macro = mean(run-level visit capture rate)
+```
+
+over runs containing at least one annotated visit.
+
+The macro-average is a sensitivity analysis, not a replacement primary endpoint.
+Report its random-null mean, q05/q50/q95, effect difference, and one-sided
+Monte Carlo p-value alongside the primary micro result.
+
+### Reproducible run-specific random streams
+
+Each run/replicate random stream is deterministically derived from:
+
+```text
+master seed × replicate index × run_id
+```
+
+using SHA-256 before seeding Python's PRNG. Therefore reordering rows in the
+manifest cannot change the exact joint null result.
+
+### Joint manifest
+
+Use a CSV with required columns:
+
+```text
+run_id,probe_log,visits_csv
+```
+
+and optional per-run runtime intervals:
+
+```text
+low_interval_sec,mid_interval_sec,high_interval_sec
+```
+
+Relative file paths are resolved against the manifest location. `run_id` must
+be unique. Runs with zero annotated visits may remain in the manifest and retain
+their resource budget, but they do not enter the macro-average denominator.
+
+Canonical command:
+
+```bash
+python -m pollipi_analysis.replay.joint joint_manifest.csv \
+  --random-reps 10000 \
+  --random-seed 20260928
+```
+
+Repeat with `--random-free-first` as the fully random first-capture sensitivity
+analysis. JSON output is available with `--json`.
 
 ## Relationship to the other PolliPi baselines
 
