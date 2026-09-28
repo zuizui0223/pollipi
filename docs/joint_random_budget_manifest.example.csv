@@ -1,0 +1,3 @@
+run_id,probe_log,visits_csv,low_interval_sec,mid_interval_sec,high_interval_sec
+device1_20260928_am,data/device1/run_am/adaptive_probe_shadow_v2.csv,data/device1/run_am/visits.csv,30,15,5
+device2_20260928_am,data/device2/run_am/adaptive_probe_shadow_v2.csv,data/device2/run_am/visits.csv,30,15,5
