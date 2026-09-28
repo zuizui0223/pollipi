@@ -6,6 +6,7 @@ from pollipi_analysis.replay.compare import (
     Probe,
     RandomBudgetSummary,
     compare,
+    count_still_captured_visits,
     format_report,
     load_probe_log,
     load_visits,
@@ -25,6 +26,7 @@ __all__ = [
     "Probe",
     "RandomBudgetSummary",
     "compare",
+    "count_still_captured_visits",
     "format_report",
     "load_probe_log",
     "load_visits",
@@ -35,4 +37,20 @@ __all__ = [
     "replay_fixed",
     "replay_random_budget",
     "replay_video",
+]
+
+from pollipi_analysis.replay.joint import (
+    JointRandomBudgetSummary,
+    JointRun,
+    format_joint_report,
+    joint_random_budget_baseline,
+    load_joint_manifest,
+)
+
+__all__ += [
+    "JointRandomBudgetSummary",
+    "JointRun",
+    "format_joint_report",
+    "joint_random_budget_baseline",
+    "load_joint_manifest",
 ]
