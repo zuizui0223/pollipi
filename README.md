@@ -261,6 +261,13 @@ See [FIELD_READINESS_CHECKLIST.md](docs/FIELD_READINESS_CHECKLIST.md) for the ex
 
 ## Validation status
 
+The frozen paper-level analysis for Issue #81 is implemented in
+`pollipi_analysis.replay.field_validation` and documented in
+[`FIELD_VALIDATION_ANALYSIS.md`](docs/FIELD_VALIDATION_ANALYSIS.md). It combines
+Modes ①/②/③, run-cluster bootstrap uncertainty, the 5-percentage-point H2
+non-inferiority margin, non-visit recording burden, and the equal-budget random
+temporal-allocation test into one versioned result artifact.
+
 Implemented:
 
 - pure non-ML mesh analysis;
