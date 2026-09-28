@@ -14,6 +14,39 @@ policies plus the equal-budget random temporal-allocation null:
 
 Mode 4 video is not part of the primary stills-only comparison.
 
+## Evidence-eligibility gate
+
+The paper-level claim gates must not be allowed to pass on a degenerate
+single-session bootstrap.
+
+Before interpreting H1, H2, or the equal-budget random timing result as primary
+support, require:
+
+```text
+at least 5 independent visit-containing runs
+AND
+at least 5 positive-duration runs for the recording-burden comparison
+```
+
+These are **minimum governance floors**, not a claim that five runs guarantee
+adequate statistical power. Larger independent field replication remains
+preferable.
+
+The analysis may still compute descriptive point estimates and bootstrap/random
+outputs below this floor, but:
+
+- `visit_inference_eligible=false` when fewer than five visit-containing runs
+  are available;
+- `cost_inference_eligible=false` when fewer than five positive-duration runs
+  are available;
+- H1, H2 capture non-inferiority, H2 cost reduction, and the random-timing claim
+  cannot be marked supported when their corresponding eligibility gate is closed;
+- `all_primary_criteria_supported` must remain false.
+
+This prevents a one-run or few-run dataset from producing a degenerate
+cluster-bootstrap interval that looks stronger than the independent replication
+actually supports.
+
 ## Primary hypotheses and gates
 
 ### H1 — classified adaptive versus fixed
