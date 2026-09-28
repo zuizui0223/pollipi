@@ -54,3 +54,21 @@ __all__ += [
     "joint_random_budget_baseline",
     "load_joint_manifest",
 ]
+
+from pollipi_analysis.replay.field_validation import (
+    BootstrapInterval,
+    FieldValidationSummary,
+    PolicyAggregate,
+    RunPolicyMetrics,
+    analyze_field_validation,
+    format_field_validation_report,
+)
+
+__all__ += [
+    "BootstrapInterval",
+    "FieldValidationSummary",
+    "PolicyAggregate",
+    "RunPolicyMetrics",
+    "analyze_field_validation",
+    "format_field_validation_report",
+]
