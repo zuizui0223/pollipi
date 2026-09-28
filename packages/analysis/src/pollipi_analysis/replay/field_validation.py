@@ -60,6 +60,8 @@ ALPHA = 0.05
 DEFAULT_NONINFERIORITY_MARGIN = 0.05
 DEFAULT_BOOTSTRAP_REPS = 10_000
 DEFAULT_BOOTSTRAP_SEED = 20260928
+MIN_INDEPENDENT_VISIT_RUNS = 5
+MIN_INDEPENDENT_COST_RUNS = 5
 
 
 @dataclass(frozen=True)
@@ -167,6 +169,12 @@ class FieldValidationSummary:
     h2_capture_difference: BootstrapInterval
     h2_nonvisit_stills_per_hour_difference: BootstrapInterval
     random_budget: JointRandomBudgetSummary
+    visit_run_count: int
+    cost_run_count: int
+    visit_inference_eligible: bool
+    cost_inference_eligible: bool
+    primary_inference_eligible: bool
+    eligibility_reasons: tuple[str, ...]
     h1_supported: bool
     h2_capture_noninferior: bool
     h2_cost_reduction_supported: bool
@@ -189,6 +197,16 @@ class FieldValidationSummary:
                 self.h2_nonvisit_stills_per_hour_difference.as_dict()
             ),
             "random_budget_null": self.random_budget.as_dict(),
+            "evidence_eligibility": {
+                "minimum_independent_visit_runs": MIN_INDEPENDENT_VISIT_RUNS,
+                "minimum_independent_cost_runs": MIN_INDEPENDENT_COST_RUNS,
+                "visit_run_count": self.visit_run_count,
+                "cost_run_count": self.cost_run_count,
+                "visit_inference_eligible": self.visit_inference_eligible,
+                "cost_inference_eligible": self.cost_inference_eligible,
+                "primary_inference_eligible": self.primary_inference_eligible,
+                "reasons": list(self.eligibility_reasons),
+            },
             "claim_gates": {
                 "h1_supported": self.h1_supported,
                 "h2_capture_noninferior": self.h2_capture_noninferior,
@@ -464,15 +482,33 @@ def analyze_field_validation(
         anchor_first=random_anchor_first,
     )
 
-    h1_supported = h1_ci.lower > 0.0
-    h2_noninferior = h2_ci.lower > -noninferiority_margin
-    h2_cost_supported = h2_cost_ci.upper < 0.0
+    visit_run_count = len(visit_run_ids)
+    cost_run_count = len(cost_run_ids)
+    visit_eligible = visit_run_count >= MIN_INDEPENDENT_VISIT_RUNS
+    cost_eligible = cost_run_count >= MIN_INDEPENDENT_COST_RUNS
+    eligibility_reasons: list[str] = []
+    if not visit_eligible:
+        eligibility_reasons.append(
+            f"visit inference requires at least {MIN_INDEPENDENT_VISIT_RUNS} "
+            f"independent visit-containing runs; observed {visit_run_count}"
+        )
+    if not cost_eligible:
+        eligibility_reasons.append(
+            f"cost inference requires at least {MIN_INDEPENDENT_COST_RUNS} "
+            f"positive-duration runs; observed {cost_run_count}"
+        )
+    primary_eligible = visit_eligible and cost_eligible
+
+    h1_supported = visit_eligible and h1_ci.lower > 0.0
+    h2_noninferior = visit_eligible and h2_ci.lower > -noninferiority_margin
+    h2_cost_supported = cost_eligible and h2_cost_ci.upper < 0.0
     h2_supported = h2_noninferior and h2_cost_supported
     random_supported = (
-        random_summary.micro_delta_vs_random_mean > 0.0
+        visit_eligible
+        and random_summary.micro_delta_vs_random_mean > 0.0
         and random_summary.micro_upper_tail_p_ge_classified < alpha
     )
-    all_supported = h1_supported and h2_supported and random_supported
+    all_supported = primary_eligible and h1_supported and h2_supported and random_supported
 
     return FieldValidationSummary(
         alpha=alpha,
@@ -484,6 +520,12 @@ def analyze_field_validation(
         h2_capture_difference=h2_ci,
         h2_nonvisit_stills_per_hour_difference=h2_cost_ci,
         random_budget=random_summary,
+        visit_run_count=visit_run_count,
+        cost_run_count=cost_run_count,
+        visit_inference_eligible=visit_eligible,
+        cost_inference_eligible=cost_eligible,
+        primary_inference_eligible=primary_eligible,
+        eligibility_reasons=tuple(eligibility_reasons),
         h1_supported=h1_supported,
         h2_capture_noninferior=h2_noninferior,
         h2_cost_reduction_supported=h2_cost_supported,
@@ -523,6 +565,17 @@ def format_field_validation_report(summary: FieldValidationSummary) -> str:
     rb = summary.random_budget
     lines.extend(
         [
+            "",
+            (
+                f"Evidence eligibility: visit_runs={summary.visit_run_count}/"
+                f"{MIN_INDEPENDENT_VISIT_RUNS}, cost_runs={summary.cost_run_count}/"
+                f"{MIN_INDEPENDENT_COST_RUNS}, "
+                f"eligible={summary.primary_inference_eligible}"
+            ),
+            *[
+                f"  INSUFFICIENT: {reason}"
+                for reason in summary.eligibility_reasons
+            ],
             "",
             "Frozen claim gates",
             (
