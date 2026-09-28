@@ -84,3 +84,13 @@ __all__ += [
     "RunInputAudit",
     "preflight_field_inputs",
 ]
+
+from pollipi_analysis.replay.bundle import (
+    BundleBuildResult,
+    build_field_validation_bundle,
+)
+
+__all__ += [
+    "BundleBuildResult",
+    "build_field_validation_bundle",
+]
