@@ -19,10 +19,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from pollipi_analysis.replay import compare as compare_module
-from pollipi_analysis.replay import field_validation as field_module
-from pollipi_analysis.replay import joint as joint_module
-from pollipi_analysis.replay import preflight as preflight_module
+import importlib
+
+compare_module = importlib.import_module("pollipi_analysis.replay.compare")
+field_module = importlib.import_module("pollipi_analysis.replay.field_validation")
+joint_module = importlib.import_module("pollipi_analysis.replay.joint")
+preflight_module = importlib.import_module("pollipi_analysis.replay.preflight")
 from pollipi_analysis.replay.field_validation import (
     DEFAULT_BOOTSTRAP_REPS,
     DEFAULT_BOOTSTRAP_SEED,
