@@ -192,6 +192,44 @@ Interval columns are optional and default to the current three-stage defaults.
 
 Relative paths are resolved against the manifest directory.
 
+## Required input preflight and provenance freeze
+
+Before scoring any field result, run the fail-closed input preflight.
+
+The preflight checks:
+
+- required manifest columns and unique `run_id`;
+- existence of every probe log and visit-truth CSV;
+- valid, strictly increasing and non-duplicate probe timestamps;
+- decision states restricted to the canonical four-state vocabulary;
+- positive and ordered intervals (`high <= mid < low`);
+- visit windows parse correctly and satisfy `start <= end`;
+- every visit window lies inside the same run's probe opportunity range;
+- zero-visit runs and large probe gaps are surfaced explicitly;
+- overlapping/concurrent visit windows are retained but warned because one still
+  can capture more than one independently labelled event.
+
+The preflight computes SHA-256 for:
+
+- the joint manifest;
+- every probe log;
+- every visit-truth CSV.
+
+It also writes one canonical `input_fingerprint` binding the run IDs, file
+hashes, row/event counts and interval settings.
+
+Canonical command:
+
+```bash
+python -m pollipi_analysis.replay.preflight joint_manifest.csv \
+  --output-json results/pollipi_field_input_preflight_v1.json
+```
+
+A failed preflight exits non-zero and the field-validation CLI refuses to score
+the dataset. The final `pollipi-field-validation-v1` JSON embeds the complete
+preflight record and fingerprint so the scored result remains tied to the exact
+input bytes.
+
 ## Canonical command
 
 ```bash
