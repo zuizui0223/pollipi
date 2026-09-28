@@ -54,6 +54,7 @@ from pollipi_analysis.replay.joint import (
     joint_random_budget_baseline,
     load_joint_manifest,
 )
+from pollipi_analysis.replay.preflight import preflight_field_inputs
 
 ALPHA = 0.05
 DEFAULT_NONINFERIORITY_MARGIN = 0.05
@@ -583,6 +584,27 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    preflight = preflight_field_inputs(args.manifest)
+    if not preflight.ok:
+        if args.output_json is not None:
+            args.output_json.parent.mkdir(parents=True, exist_ok=True)
+            args.output_json.write_text(
+                json.dumps(
+                    {
+                        "analysis_contract": "pollipi-field-validation-v1",
+                        "status": "input_preflight_failed",
+                        "input_preflight": preflight.as_dict(),
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        for error in preflight.errors:
+            print(f"INPUT ERROR: {error}")
+        return 2
+
     runs = load_joint_manifest(args.manifest)
     summary = analyze_field_validation(
         runs,
@@ -594,6 +616,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         random_anchor_first=not args.random_free_first,
     )
     payload = summary.as_dict()
+    payload["input_preflight"] = preflight.as_dict()
     if args.output_json is not None:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.write_text(
