@@ -319,17 +319,26 @@ def _apply_coverage(result: PolicyResult, visits: list[tuple[float, float]]) -> 
     result.mean_first_capture_latency_sec = (sum(latencies) / len(latencies)) if latencies else None
 
 
-def _still_capture_rate(events: list[CaptureEvent], visits: list[tuple[float, float]]) -> float:
-    """Event-level visit capture rate for still-image schedules."""
+def count_still_captured_visits(
+    events: list[CaptureEvent], visits: list[tuple[float, float]]
+) -> int:
+    """Count independently annotated visit windows hit by at least one still."""
     if not visits:
-        return 0.0
+        return 0
     times = sorted(e.time_sec for e in events if e.kind == "image")
     captured = 0
     for start, end in visits:
         i = bisect_left(times, start)
         if i < len(times) and times[i] <= end:
             captured += 1
-    return captured / len(visits)
+    return captured
+
+
+def _still_capture_rate(events: list[CaptureEvent], visits: list[tuple[float, float]]) -> float:
+    """Event-level visit capture rate for still-image schedules."""
+    if not visits:
+        return 0.0
+    return count_still_captured_visits(events, visits) / len(visits)
 
 
 def _empirical_quantile(values: list[float], q: float) -> float:
